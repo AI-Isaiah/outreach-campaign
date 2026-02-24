@@ -183,8 +183,8 @@ def enroll_contact(
     try:
         cursor = conn.execute(
             """INSERT INTO contact_campaign_status
-               (contact_id, campaign_id, assigned_variant, next_action_date)
-               VALUES (?, ?, ?, ?)""",
+               (contact_id, campaign_id, current_step, assigned_variant, next_action_date)
+               VALUES (?, ?, 1, ?, ?)""",
             (contact_id, campaign_id, variant, next_action_date),
         )
         conn.commit()
@@ -227,8 +227,8 @@ def bulk_enroll_contacts(
         variant = variant_assigner(contact_id) if variant_assigner else None
         conn.execute(
             """INSERT INTO contact_campaign_status
-               (contact_id, campaign_id, assigned_variant)
-               VALUES (?, ?, ?)""",
+               (contact_id, campaign_id, current_step, assigned_variant)
+               VALUES (?, ?, 1, ?)""",
             (contact_id, campaign_id, variant),
         )
         enrolled_count += 1

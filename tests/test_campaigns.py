@@ -369,7 +369,7 @@ class TestEnrollContact:
         enroll_contact(conn, sample_contact, sample_campaign)
         row = get_contact_campaign_status(conn, sample_contact, sample_campaign)
         assert row["status"] == "queued"
-        assert row["current_step"] == 0
+        assert row["current_step"] == 1
 
     def test_duplicate_returns_none(self, conn, sample_contact, sample_campaign):
         eid1 = enroll_contact(conn, sample_contact, sample_campaign)
