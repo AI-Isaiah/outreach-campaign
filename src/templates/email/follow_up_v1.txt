@@ -1,0 +1,12 @@
+Hi {{ first_name }},
+
+I wanted to follow up on my earlier note. I understand things get busy, so I will keep this short.
+
+We have been generating consistent alpha in crypto markets through systematic, rules-based strategies. I would be glad to share specifics on our methodology and performance in a quick call.
+
+Here is the link if you would like to find a time: {{ calendly_url }}
+
+Happy to answer any questions over email as well.
+
+Best,
+Helmut

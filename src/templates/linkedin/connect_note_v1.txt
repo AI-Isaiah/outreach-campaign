@@ -1,0 +1,1 @@
+Hi {{ first_name }}, I run algo strategies in crypto and noticed {{ company_name }}'s work in digital assets. Would love to connect and share insights.

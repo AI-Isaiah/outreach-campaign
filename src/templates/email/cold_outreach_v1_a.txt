@@ -1,0 +1,10 @@
+Hi {{ first_name }},
+
+I lead an algorithmic trading team focused on crypto markets. We have built systematic strategies that have delivered strong risk-adjusted returns across multiple market regimes.
+
+Given {{ company_name }}'s activity in the digital asset space, I think our approach would be worth a conversation.
+
+Would you be open to a brief call this week? You can pick a time here: {{ calendly_url }}
+
+Best,
+Helmut

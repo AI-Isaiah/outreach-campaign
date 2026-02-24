@@ -1,0 +1,12 @@
+Hi {{ first_name }},
+
+I came across {{ company_name }} while researching active allocators in the crypto space, and I wanted to reach out.
+
+Our team runs quantitative strategies in digital assets, combining systematic execution with rigorous risk management. We have been operating live for several years and have a track record we would be happy to share.
+
+If this is something {{ company_name }} is exploring, I would welcome the chance to walk you through our approach. Feel free to grab a time that works: {{ calendly_url }}
+
+Either way, I appreciate your time.
+
+Best regards,
+Helmut

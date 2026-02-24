@@ -1,0 +1,9 @@
+Hi {{ first_name }},
+
+I have reached out a couple of times and have not heard back, so I will assume the timing is not right. No worries at all.
+
+If {{ company_name }} ever looks into systematic crypto strategies in the future, I would be happy to reconnect. My calendar is always open: {{ calendly_url }}
+
+Wishing you and the team all the best.
+
+Helmut

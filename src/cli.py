@@ -1,4 +1,7 @@
+import json
 import os
+from pathlib import Path
+
 import typer
 from dotenv import load_dotenv
 from rich.console import Console
@@ -9,6 +12,35 @@ app = typer.Typer(name="outreach", help="Multi-channel outreach campaign manager
 console = Console()
 
 DB_PATH = os.getenv("DATABASE_PATH", "outreach.db")
+
+
+def _load_config() -> dict:
+    """Load config from config.yaml or config.yaml.example.
+
+    Also injects the SMTP password from the environment variable
+    ``SMTP_PASSWORD`` if it is set.
+
+    Returns:
+        The parsed YAML config as a dict.
+    """
+    import yaml
+
+    config_path = Path("config.yaml")
+    if not config_path.exists():
+        config_path = Path("config.yaml.example")
+    if not config_path.exists():
+        console.print("[red]ERROR: No config.yaml or config.yaml.example found[/red]")
+        raise typer.Exit(1)
+
+    with open(config_path) as f:
+        config = yaml.safe_load(f)
+
+    # Inject SMTP password from environment
+    smtp_password = os.getenv("SMTP_PASSWORD", "")
+    if smtp_password:
+        config["smtp_password"] = smtp_password
+
+    return config
 
 
 @app.command()
@@ -385,6 +417,245 @@ def enroll(
             enrolled_count += 1
 
     console.print(f"[green]Enrolled {enrolled_count} contacts into '{campaign}'[/green]")
+    conn.close()
+
+
+@app.command()
+def send(
+    campaign: str = typer.Argument(..., help="Campaign name"),
+    limit: int = typer.Option(10, help="Max emails to send"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without sending"),
+    date: str = typer.Option(None, help="Target date (YYYY-MM-DD)"),
+):
+    """Send today's outreach emails.
+
+    Gets today's queue, filters to email-channel actions only,
+    shows a preview, and asks for confirmation before sending.
+    """
+    from rich.table import Table
+    from src.models.database import get_connection, run_migrations
+    from src.models.campaigns import get_campaign_by_name
+    from src.services.priority_queue import get_daily_queue
+    from src.services.email_sender import send_campaign_email
+
+    conn = get_connection(DB_PATH)
+    run_migrations(conn)
+
+    camp = get_campaign_by_name(conn, campaign)
+    if not camp:
+        console.print(f"[red]ERROR: Campaign '{campaign}' not found[/red]")
+        conn.close()
+        raise typer.Exit(1)
+
+    campaign_id = camp["id"]
+
+    # Get today's queue (all channels)
+    queue_items = get_daily_queue(conn, campaign_id, target_date=date, limit=limit)
+
+    # Filter to email-channel only
+    email_items = [item for item in queue_items if item["channel"] == "email"]
+
+    if not email_items:
+        console.print("[yellow]No email actions queued for today.[/yellow]")
+        conn.close()
+        return
+
+    # Display preview table
+    table = Table(title=f"Email Queue: {campaign}")
+    table.add_column("#", style="dim")
+    table.add_column("Contact", style="bold")
+    table.add_column("Company")
+    table.add_column("Email")
+    table.add_column("Step", justify="center")
+    table.add_column("GDPR", justify="center")
+
+    for i, item in enumerate(email_items, 1):
+        gdpr_flag = "[red]Yes[/red]" if item["is_gdpr"] else "No"
+        step_display = f"{item['step_order']}/{item['total_steps']}"
+        table.add_row(
+            str(i),
+            item["contact_name"],
+            item["company_name"],
+            item.get("email", ""),
+            step_display,
+            gdpr_flag,
+        )
+
+    console.print(table)
+
+    if dry_run:
+        console.print(f"[cyan]DRY RUN: Would send {len(email_items)} email(s). No emails sent.[/cyan]")
+        conn.close()
+        return
+
+    # Ask for confirmation
+    typer.confirm(f"Send {len(email_items)} email(s)?", abort=True)
+
+    # Load SMTP config
+    config = _load_config()
+
+    sent = 0
+    failed = 0
+    for item in email_items:
+        success = send_campaign_email(
+            conn,
+            item["contact_id"],
+            campaign_id,
+            item["template_id"],
+            config,
+        )
+        if success:
+            sent += 1
+        else:
+            failed += 1
+
+    console.print(f"[green]Sent: {sent}[/green]  [red]Failed: {failed}[/red]")
+    conn.close()
+
+
+@app.command()
+def status(
+    action: str = typer.Argument(..., help="Action: reply"),
+    identifier: str = typer.Argument(..., help="Contact email or ID"),
+    outcome: str = typer.Argument(..., help="Outcome: positive, negative, call-booked, no-response"),
+    campaign: str = typer.Option(None, help="Campaign name (uses first active if not specified)"),
+):
+    """Log a reply or status update for a contact.
+
+    Examples:
+        outreach status reply john@fund.com positive
+        outreach status reply john@fund.com negative
+        outreach status reply john@fund.com call-booked
+    """
+    from src.models.database import get_connection, run_migrations
+    from src.models.campaigns import (
+        get_campaign_by_name,
+        get_contact_campaign_status,
+        log_event,
+        list_campaigns,
+    )
+    from src.services.state_machine import transition_contact, InvalidTransition
+
+    conn = get_connection(DB_PATH)
+    run_migrations(conn)
+
+    if action != "reply":
+        console.print(f"[red]ERROR: Unknown action '{action}'. Supported: reply[/red]")
+        conn.close()
+        raise typer.Exit(1)
+
+    # Validate outcome
+    outcome_map = {
+        "positive": "replied_positive",
+        "negative": "replied_negative",
+        "call-booked": "replied_positive",
+        "no-response": "no_response",
+    }
+    if outcome not in outcome_map:
+        console.print(f"[red]ERROR: Unknown outcome '{outcome}'. Supported: {', '.join(outcome_map.keys())}[/red]")
+        conn.close()
+        raise typer.Exit(1)
+
+    # Find the contact
+    if identifier.isdigit():
+        contact_row = conn.execute(
+            "SELECT id, email, full_name FROM contacts WHERE id = ?",
+            (int(identifier),),
+        ).fetchone()
+    else:
+        contact_row = conn.execute(
+            "SELECT id, email, full_name FROM contacts WHERE email = ? OR email_normalized = ?",
+            (identifier, identifier.lower().strip()),
+        ).fetchone()
+
+    if contact_row is None:
+        console.print(f"[red]ERROR: Contact '{identifier}' not found[/red]")
+        conn.close()
+        raise typer.Exit(1)
+
+    contact_id = contact_row["id"]
+
+    # Find the campaign
+    if campaign:
+        camp = get_campaign_by_name(conn, campaign)
+        if not camp:
+            console.print(f"[red]ERROR: Campaign '{campaign}' not found[/red]")
+            conn.close()
+            raise typer.Exit(1)
+        campaign_id = camp["id"]
+    else:
+        # Use first active campaign this contact is enrolled in
+        row = conn.execute(
+            """SELECT ccs.campaign_id FROM contact_campaign_status ccs
+               JOIN campaigns c ON c.id = ccs.campaign_id
+               WHERE ccs.contact_id = ? AND c.status = 'active'
+               ORDER BY ccs.id DESC LIMIT 1""",
+            (contact_id,),
+        ).fetchone()
+        if row is None:
+            console.print(f"[red]ERROR: Contact is not enrolled in any active campaign[/red]")
+            conn.close()
+            raise typer.Exit(1)
+        campaign_id = row["campaign_id"]
+
+    # Ensure contact is in_progress before transitioning
+    ccs = get_contact_campaign_status(conn, contact_id, campaign_id)
+    if ccs is None:
+        console.print(f"[red]ERROR: Contact is not enrolled in campaign {campaign_id}[/red]")
+        conn.close()
+        raise typer.Exit(1)
+
+    # If currently queued, auto-advance to in_progress first
+    if ccs["status"] == "queued":
+        try:
+            transition_contact(conn, contact_id, campaign_id, "in_progress")
+        except InvalidTransition as e:
+            console.print(f"[red]ERROR: {e}[/red]")
+            conn.close()
+            raise typer.Exit(1)
+
+    # Apply the transition
+    new_status = outcome_map[outcome]
+    try:
+        transition_contact(conn, contact_id, campaign_id, new_status)
+    except InvalidTransition as e:
+        console.print(f"[red]ERROR: {e}[/red]")
+        conn.close()
+        raise typer.Exit(1)
+
+    # Log extra metadata for call-booked
+    if outcome == "call-booked":
+        log_event(
+            conn,
+            contact_id,
+            "call_booked",
+            campaign_id=campaign_id,
+            metadata=json.dumps({"call_booked": True}),
+        )
+
+    contact_name = contact_row["full_name"] or contact_row["email"] or str(contact_id)
+    console.print(f"[green]Logged '{outcome}' for {contact_name} -> status: {new_status}[/green]")
+    conn.close()
+
+
+@app.command()
+def unsubscribe(
+    email: str = typer.Argument(..., help="Email to unsubscribe"),
+):
+    """Process an unsubscribe request."""
+    from src.models.database import get_connection, run_migrations
+    from src.services.compliance import process_unsubscribe
+
+    conn = get_connection(DB_PATH)
+    run_migrations(conn)
+
+    result = process_unsubscribe(conn, email)
+
+    if result:
+        console.print(f"[green]Unsubscribed: {email}[/green]")
+    else:
+        console.print(f"[yellow]No contact found with email: {email}[/yellow]")
+
     conn.close()
 
 

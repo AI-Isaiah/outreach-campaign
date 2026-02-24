@@ -1,0 +1,12 @@
+Hi {{ first_name }},
+
+Thanks for connecting! I lead a systematic crypto trading team and thought our approach might be relevant to {{ company_name }}.
+
+We focus on quantitative, rules-based strategies with strong risk controls. Happy to walk you through our methodology and track record if you are interested.
+
+Here is a link to book a quick call: {{ calendly_url }}
+
+Looking forward to it.
+
+Best,
+Helmut
