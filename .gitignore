@@ -1,13 +1,31 @@
+# Secrets
 .env
+
+# Database
 *.db
 *.db-journal
 *.db-wal
 *.db-shm
+
+# Python
 __pycache__/
 *.pyc
 .pytest_cache/
 .venv/
 dist/
 *.egg-info/
+
+# Real contact data (PII - never commit)
+data/imports/*.csv
+data/imports/*.txt
+!data/imports/.gitkeep
+
+# Exports
 data/exports/*.csv
+
+# OS / IDE
+.DS_Store
+.claude/
+
+# Tools
 .firecrawl/
