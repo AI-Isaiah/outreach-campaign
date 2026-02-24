@@ -1,0 +1,159 @@
+"""Email verification service using ZeroBounce or Hunter API.
+
+Validates email addresses before outreach to protect sender domain
+reputation by keeping bounce rates below 2%.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+import time
+from datetime import datetime
+
+import httpx
+
+# ---------------------------------------------------------------------------
+# Status mapping constants
+# ---------------------------------------------------------------------------
+
+ZEROBOUNCE_STATUS_MAP: dict[str, str] = {
+    "valid": "valid",
+    "invalid": "invalid",
+    "catch-all": "catch-all",
+    "spamtrap": "invalid",
+    "abuse": "invalid",
+    "do_not_mail": "invalid",
+}
+
+HUNTER_STATUS_MAP: dict[str, str] = {
+    "valid": "valid",
+    "invalid": "invalid",
+    "accept_all": "catch-all",
+}
+
+ZEROBOUNCE_CHUNK_SIZE = 100
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+
+def verify_email_batch(
+    emails: list[str],
+    api_key: str,
+    provider: str = "zerobounce",
+) -> dict[str, str]:
+    """Verify a list of email addresses via the chosen provider.
+
+    Returns a mapping of ``{email: status}`` where status is one of:
+    ``valid``, ``invalid``, ``risky``, ``catch-all``, ``unknown``.
+    """
+    if provider == "zerobounce":
+        return _verify_zerobounce(emails, api_key)
+    elif provider == "hunter":
+        return _verify_hunter(emails, api_key)
+    else:
+        raise ValueError(f"Unsupported provider: {provider}")
+
+
+# ---------------------------------------------------------------------------
+# ZeroBounce implementation
+# ---------------------------------------------------------------------------
+
+
+def _verify_zerobounce(emails: list[str], api_key: str) -> dict[str, str]:
+    """Verify emails via ZeroBounce batch API.
+
+    Sends emails in chunks of 100. Pauses 1 second between chunks.
+    On HTTP errors, marks affected emails as ``unknown``.
+    """
+    results: dict[str, str] = {}
+
+    for i in range(0, len(emails), ZEROBOUNCE_CHUNK_SIZE):
+        chunk = emails[i : i + ZEROBOUNCE_CHUNK_SIZE]
+
+        if i > 0:
+            time.sleep(1)
+
+        try:
+            response = httpx.post(
+                "https://bulkapi.zerobounce.net/v2/validatebatch",
+                json={
+                    "api_key": api_key,
+                    "email_batch": [{"email_address": e} for e in chunk],
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            for entry in data.get("email_batch", []):
+                address = entry["address"]
+                raw_status = entry.get("status", "").lower()
+                results[address] = ZEROBOUNCE_STATUS_MAP.get(raw_status, "risky")
+
+        except (httpx.HTTPStatusError, httpx.RequestError):
+            for email in chunk:
+                results[email] = "unknown"
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Hunter implementation
+# ---------------------------------------------------------------------------
+
+
+def _verify_hunter(emails: list[str], api_key: str) -> dict[str, str]:
+    """Verify emails via Hunter email-verifier API.
+
+    Processes one email at a time (Hunter has no batch endpoint).
+    Pauses 0.5 seconds between calls.
+    """
+    results: dict[str, str] = {}
+
+    for idx, email in enumerate(emails):
+        if idx > 0:
+            time.sleep(0.5)
+
+        try:
+            response = httpx.get(
+                "https://api.hunter.io/v2/email-verifier",
+                params={"email": email, "api_key": api_key},
+            )
+            response.raise_for_status()
+            data = response.json()
+            raw_status = data.get("data", {}).get("status", "").lower()
+            results[email] = HUNTER_STATUS_MAP.get(raw_status, "risky")
+
+        except (httpx.HTTPStatusError, httpx.RequestError):
+            results[email] = "unknown"
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Database helpers
+# ---------------------------------------------------------------------------
+
+
+def update_contact_email_status(
+    conn: sqlite3.Connection,
+    email: str,
+    status: str,
+) -> None:
+    """Update the ``email_status`` and ``updated_at`` for a contact by email."""
+    conn.execute(
+        "UPDATE contacts SET email_status = ?, updated_at = ? WHERE email_normalized = ?",
+        (status, datetime.utcnow().isoformat(), email),
+    )
+    conn.commit()
+
+
+def get_unverified_emails(conn: sqlite3.Connection) -> list[str]:
+    """Return all ``email_normalized`` values where status is 'unverified' and email is not NULL."""
+    cursor = conn.execute(
+        "SELECT email_normalized FROM contacts "
+        "WHERE email_status = 'unverified' AND email_normalized IS NOT NULL"
+    )
+    return [row[0] for row in cursor.fetchall()]
