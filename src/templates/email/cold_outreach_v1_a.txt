@@ -6,7 +6,7 @@ A few numbers on our Standard Risk config: 75.8% CAGR, 1.37 Sharpe, max drawdown
 
 The strategy runs 2,000+ sub-strategies fully automated — daily liquidity, no lock-up, SMA format.
 
-Given {{ company_name }}'s focus in the space, happy to share the full factsheet and walk through the methodology. Here is my calendar: {{ calendly_url }}
+Given the focus at {{ company_name }}, happy to share the full factsheet and walk through the methodology. Here is my calendar: {{ calendly_url }}
 
 Helmut
 Founder, Metaworld Fund
