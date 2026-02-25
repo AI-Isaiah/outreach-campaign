@@ -226,10 +226,15 @@ def export_expandi(
 
 @app.command()
 def import_expandi(
-    file_path: str = typer.Argument(..., help="Path to Expandi results CSV"),
+    file_path: str = typer.Argument(..., help="Path to LinkedIn results CSV (Expandi, Linked Helper, or generic)"),
     campaign: str = typer.Argument(..., help="Campaign name"),
 ):
-    """Import Expandi results and update contact statuses."""
+    """Import LinkedIn automation results and update contact statuses.
+
+    Auto-detects CSV format from Expandi, Linked Helper, or any tool
+    with a LinkedIn URL column. Matches contacts by profile URL and
+    advances them through the campaign sequence.
+    """
     from src.models.database import get_connection, run_migrations
     from src.commands.import_expandi import import_expandi_results
 
@@ -238,6 +243,8 @@ def import_expandi(
 
     try:
         result = import_expandi_results(conn, file_path, campaign)
+        source_label = result.get("source", "unknown")
+        console.print(f"[dim]Detected format: {source_label}[/dim]")
         console.print(f"[green]Matched: {result['matched']}[/green]")
         console.print(f"[yellow]Unmatched: {result['unmatched']}[/yellow]")
         console.print(f"[cyan]Advanced: {result['advanced']}[/cyan]")

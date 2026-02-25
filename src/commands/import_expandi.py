@@ -1,4 +1,12 @@
-"""Import Expandi results CSV and update contact statuses."""
+"""Import LinkedIn automation tool results CSV and update contact statuses.
+
+Supports CSV exports from:
+- Expandi (columns: profile_link, status)
+- Linked Helper (columns: Profile url, Connection status / various)
+- Any tool with a LinkedIn URL column
+
+The importer auto-detects the CSV format by inspecting column headers.
+"""
 
 from __future__ import annotations
 
@@ -29,16 +37,95 @@ def _normalize_linkedin_url(url: str) -> str:
     return normalized
 
 
+def _detect_csv_format(fieldnames: list[str]) -> dict:
+    """Auto-detect the CSV format by inspecting column headers.
+
+    Returns a dict with keys:
+        url_column: name of the LinkedIn URL column
+        status_column: name of the status column (or None)
+        source: detected source tool name
+
+    Supports: Expandi, Linked Helper, generic (any column containing 'url' or 'link')
+    """
+    lower_fields = {f.lower().strip(): f for f in fieldnames}
+
+    # Expandi format
+    if "profile_link" in lower_fields:
+        return {
+            "url_column": lower_fields["profile_link"],
+            "status_column": lower_fields.get("status"),
+            "source": "expandi",
+        }
+
+    # Linked Helper format
+    if "profile url" in lower_fields:
+        return {
+            "url_column": lower_fields["profile url"],
+            "status_column": lower_fields.get("connection status"),
+            "source": "linked_helper",
+        }
+
+    # Generic fallback: look for any column containing 'linkedin' or 'profile' and 'url'/'link'
+    for key, original in lower_fields.items():
+        if ("linkedin" in key or "profile" in key) and ("url" in key or "link" in key):
+            return {
+                "url_column": original,
+                "status_column": lower_fields.get("status"),
+                "source": "generic",
+            }
+
+    raise ValueError(
+        f"Could not detect CSV format. Expected columns like 'profile_link' (Expandi) "
+        f"or 'Profile url' (Linked Helper). Found: {fieldnames}"
+    )
+
+
+def _normalize_status(raw_status: str, source: str) -> str:
+    """Normalize status values from different tools to our internal format.
+
+    Internal statuses: connected, pending, message_sent, message_replied
+
+    Args:
+        raw_status: the raw status string from the CSV
+        source: the detected source tool (expandi, linked_helper, generic)
+
+    Returns:
+        Normalized status string.
+    """
+    s = raw_status.lower().strip()
+
+    if source == "linked_helper":
+        # Linked Helper uses descriptive statuses
+        if s in ("connected", "accepted", "1st"):
+            return "connected"
+        if s in ("pending", "sent", "invitation sent"):
+            return "pending"
+        if s in ("message sent", "messaged"):
+            return "message_sent"
+        if s in ("replied", "message replied"):
+            return "message_replied"
+
+    # Expandi / generic — already uses our format mostly
+    if s in ("connected", "accepted"):
+        return "connected"
+    if s in ("message_sent", "message sent"):
+        return "message_sent"
+    if s in ("replied", "message_replied"):
+        return "message_replied"
+
+    return s  # pass through unknown statuses
+
+
 def import_expandi_results(
     conn: sqlite3.Connection,
     file_path: str,
     campaign_name: str,
 ) -> dict:
-    """Import Expandi results CSV and update contact statuses.
+    """Import LinkedIn automation results CSV and update contact statuses.
 
-    Expected CSV columns from Expandi export:
-    - profile_link (LinkedIn URL)
-    - status (connected, pending, message_sent, etc.)
+    Auto-detects CSV format (Expandi, Linked Helper, or generic).
+    Matches contacts by normalized LinkedIn URL and advances them
+    through the campaign sequence.
 
     For each row:
     - Match contact by normalized LinkedIn URL
@@ -50,11 +137,11 @@ def import_expandi_results(
 
     Args:
         conn: database connection (must have row_factory = sqlite3.Row)
-        file_path: path to the Expandi results CSV
+        file_path: path to the results CSV
         campaign_name: name of the campaign to update
 
     Returns:
-        Dict with keys: matched, unmatched, advanced
+        Dict with keys: matched, unmatched, advanced, source
     """
     from src.models.campaigns import (
         get_campaign_by_name,
@@ -73,13 +160,17 @@ def import_expandi_results(
     # Build a lookup from step_order -> step row
     step_by_order = {step["step_order"]: step for step in steps}
 
-    result = {"matched": 0, "unmatched": 0, "advanced": 0}
+    result = {"matched": 0, "unmatched": 0, "advanced": 0, "source": "unknown"}
 
     with open(file_path, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
+        fmt = _detect_csv_format(reader.fieldnames or [])
+        result["source"] = fmt["source"]
+
         for row in reader:
-            profile_link = row.get("profile_link", "").strip()
-            status = row.get("status", "").strip().lower()
+            profile_link = row.get(fmt["url_column"], "").strip()
+            raw_status = row.get(fmt["status_column"], "") if fmt["status_column"] else ""
+            status = _normalize_status(raw_status.strip(), fmt["source"])
 
             if not profile_link:
                 result["unmatched"] += 1
