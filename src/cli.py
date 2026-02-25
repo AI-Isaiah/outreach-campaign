@@ -364,12 +364,15 @@ def setup_sequence(
 def enroll(
     campaign: str = typer.Argument(..., help="Campaign name"),
     limit: int = typer.Option(None, help="Max contacts to enroll"),
+    max_aum: float = typer.Option(None, "--max-aum", help="Max company AUM in $M (e.g. 1000 = $1B)"),
+    min_aum: float = typer.Option(None, "--min-aum", help="Min company AUM in $M"),
 ):
     """Enroll eligible contacts into a campaign.
 
     Eligible contacts must have either a valid email or a LinkedIn URL,
     and must not be unsubscribed. Only the rank-1 contact per company
-    is enrolled.
+    is enrolled. Contacts are enrolled in AUM descending order (highest
+    value targets first).
     """
     from datetime import date as date_mod
     from src.models.database import get_connection, run_migrations
@@ -388,8 +391,9 @@ def enroll(
 
     # Find rank-1 eligible contacts per company (not already enrolled)
     query = """
-    SELECT c.id, c.company_id
+    SELECT c.id, c.company_id, co.aum_millions
     FROM contacts c
+    LEFT JOIN companies co ON co.id = c.company_id
     WHERE c.priority_rank = 1
       AND c.unsubscribed = 0
       AND (
@@ -399,9 +403,19 @@ def enroll(
       AND c.id NOT IN (
           SELECT contact_id FROM contact_campaign_status WHERE campaign_id = ?
       )
-    ORDER BY c.id
     """
-    params = [campaign_id]
+    params: list = [campaign_id]
+
+    if max_aum is not None:
+        query += " AND (co.aum_millions IS NULL OR co.aum_millions < ?)"
+        params.append(max_aum)
+
+    if min_aum is not None:
+        query += " AND co.aum_millions IS NOT NULL AND co.aum_millions >= ?"
+        params.append(min_aum)
+
+    # Order by AUM descending (NULLs last) so highest-value targets enroll first
+    query += " ORDER BY CASE WHEN co.aum_millions IS NULL THEN 1 ELSE 0 END, co.aum_millions DESC"
 
     if limit is not None:
         query += " LIMIT ?"
@@ -416,7 +430,16 @@ def enroll(
         if result is not None:
             enrolled_count += 1
 
-    console.print(f"[green]Enrolled {enrolled_count} contacts into '{campaign}'[/green]")
+    aum_filter = ""
+    if max_aum is not None or min_aum is not None:
+        parts = []
+        if min_aum is not None:
+            parts.append(f"min ${min_aum:,.0f}M")
+        if max_aum is not None:
+            parts.append(f"max ${max_aum:,.0f}M")
+        aum_filter = f" (AUM filter: {', '.join(parts)})"
+
+    console.print(f"[green]Enrolled {enrolled_count} contacts into '{campaign}'{aum_filter}[/green]")
     conn.close()
 
 
