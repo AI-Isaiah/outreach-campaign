@@ -1,9 +1,12 @@
 Hi {{ first_name }},
 
-I have reached out a couple of times and have not heard back, so I will assume the timing is not right. No worries at all.
+I have reached out a couple of times and have not heard back — no worries, I understand the timing may not be right.
 
-If {{ company_name }} ever looks into systematic crypto strategies in the future, I would be happy to reconnect. My calendar is always open: {{ calendly_url }}
+If {{ company_name }} ever explores systematic strategies that trade across crypto, gold and FX with uncorrelated returns, I would be happy to reconnect. We will keep compounding in the meantime.
 
-Wishing you and the team all the best.
+Calendar is always open: {{ calendly_url }}
+
+All the best to you and the team.
 
 Helmut
+Founder, Metaworld Fund

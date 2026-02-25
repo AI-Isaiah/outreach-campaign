@@ -1,12 +1,14 @@
 Hi {{ first_name }},
 
-I came across {{ company_name }} while researching active allocators in the crypto space, and I wanted to reach out.
+I came across {{ company_name }} while mapping allocators in digital assets, and wanted to introduce what we are building at Metaworld Fund.
 
-Our team runs quantitative strategies in digital assets, combining systematic execution with rigorous risk management. We have been operating live for several years and have a track record we would be happy to share.
+We run a systematic momentum strategy across crypto, gold and FX — not crypto-only, which gives us diversification most quant crypto funds lack. The system trades 2,000+ sub-strategies fully automated, exploiting volatility compression-expansion cycles across liquid markets.
 
-If this is something {{ company_name }} is exploring, I would welcome the chance to walk you through our approach. Feel free to grab a time that works: {{ calendly_url }}
+We have 12 years of live performance across asset classes, every year positive. The strategy is available in three risk configurations from 10% to 40% max drawdown, all via SMA with daily liquidity and no lock-up.
+
+Would be glad to share our factsheet and discuss whether it could complement what {{ company_name }} already has in place. Feel free to pick a time: {{ calendly_url }}
 
 Either way, I appreciate your time.
 
-Best regards,
 Helmut
+Founder, Metaworld Fund

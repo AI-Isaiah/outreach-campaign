@@ -1,5 +1,6 @@
-# Secrets
+# Secrets & config (contain real credentials/addresses)
 .env
+config.yaml
 
 # Database
 *.db

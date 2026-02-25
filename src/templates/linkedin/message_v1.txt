@@ -1,12 +1,11 @@
 Hi {{ first_name }},
 
-Thanks for connecting! I lead a systematic crypto trading team and thought our approach might be relevant to {{ company_name }}.
+Thanks for connecting. Wanted to share a bit more about what we do at Metaworld Fund.
 
-We focus on quantitative, rules-based strategies with strong risk controls. Happy to walk you through our methodology and track record if you are interested.
+We run a fully automated momentum strategy across BTC, ETH, gold and FX — 2,000+ sub-strategies built from 12 years of live trading. Every single year positive across both FX (2014-2018) and crypto (2020-2025).
 
-Here is a link to book a quick call: {{ calendly_url }}
+Standard config: 75.8% CAGR, 1.37 Sharpe, sub-20% max drawdown. Also available in a capital-preservation variant (36% CAGR, sub-10% DD) for more conservative mandates. SMA format, daily liquidity, no lock-up.
 
-Looking forward to it.
+Would be great to walk through the factsheet — happy to jump on a quick call if it could be relevant for {{ company_name }}: {{ calendly_url }}
 
-Best,
 Helmut

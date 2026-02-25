@@ -1,1 +1,1 @@
-Hi {{ first_name }}, I run algo strategies in crypto and noticed {{ company_name }}'s work in digital assets. Would love to connect and share insights.
+Hi {{ first_name }}, I run Metaworld Fund — systematic momentum across crypto, gold & FX. 12 years live, every year positive. Would value connecting with {{ company_name }}.

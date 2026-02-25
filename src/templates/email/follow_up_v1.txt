@@ -1,12 +1,10 @@
 Hi {{ first_name }},
 
-I wanted to follow up on my earlier note. I understand things get busy, so I will keep this short.
+Wanted to follow up briefly. I know inboxes get busy.
 
-We have been generating consistent alpha in crypto markets through systematic, rules-based strategies. I would be glad to share specifics on our methodology and performance in a quick call.
+One thing worth highlighting: our multimarket strategy delivered positive returns in both 2022 and the 2025 drawdown — periods where most crypto-native strategies struggled. That kind of regime resilience is the core of what we do.
 
-Here is the link if you would like to find a time: {{ calendly_url }}
+Happy to send over our factsheet or hop on a 15-minute call to walk through the numbers: {{ calendly_url }}
 
-Happy to answer any questions over email as well.
-
-Best,
 Helmut
+Founder, Metaworld Fund

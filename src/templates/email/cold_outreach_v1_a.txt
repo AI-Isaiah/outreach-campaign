@@ -1,10 +1,12 @@
 Hi {{ first_name }},
 
-I lead an algorithmic trading team focused on crypto markets. We have built systematic strategies that have delivered strong risk-adjusted returns across multiple market regimes.
+I run Metaworld Fund — a quantitative momentum strategy trading BTC, ETH, gold and FX. We have been live since 2014 across FX and since 2020 in crypto, every single year positive.
 
-Given {{ company_name }}'s activity in the digital asset space, I think our approach would be worth a conversation.
+A few numbers on our Standard Risk config: 75.8% CAGR, 1.37 Sharpe, max drawdown under 20%. We also offer a capital-preservation variant at 36% CAGR with sub-10% drawdown for allocators who prioritize stability.
 
-Would you be open to a brief call this week? You can pick a time here: {{ calendly_url }}
+The strategy runs 2,000+ sub-strategies fully automated — daily liquidity, no lock-up, SMA format.
 
-Best,
+Given {{ company_name }}'s focus in the space, happy to share the full factsheet and walk through the methodology. Here is my calendar: {{ calendly_url }}
+
 Helmut
+Founder, Metaworld Fund
