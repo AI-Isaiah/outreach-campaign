@@ -1,0 +1,105 @@
+"""Campaign API routes."""
+
+from __future__ import annotations
+
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+
+from src.models.campaigns import get_campaign_by_name, list_campaigns
+from src.services.metrics import (
+    get_campaign_metrics,
+    get_company_type_breakdown,
+    get_variant_comparison,
+    get_weekly_summary,
+)
+from src.web.dependencies import get_db
+
+router = APIRouter(tags=["campaigns"])
+
+
+def _row_to_dict(row) -> dict:
+    """Convert a database row to a plain dict."""
+    return dict(row) if row else {}
+
+
+@router.get("/campaigns")
+def list_all_campaigns(
+    status: Optional[str] = None,
+    conn=Depends(get_db),
+):
+    """List all campaigns."""
+    rows = list_campaigns(conn, status=status)
+    return [_row_to_dict(r) for r in rows]
+
+
+@router.get("/campaigns/{name}")
+def get_campaign(
+    name: str,
+    conn=Depends(get_db),
+):
+    """Get campaign details by name."""
+    camp = get_campaign_by_name(conn, name)
+    if not camp:
+        raise HTTPException(404, f"Campaign '{name}' not found")
+    return _row_to_dict(camp)
+
+
+@router.get("/campaigns/{name}/metrics")
+def get_metrics(
+    name: str,
+    conn=Depends(get_db),
+):
+    """Get campaign metrics."""
+    camp = get_campaign_by_name(conn, name)
+    if not camp:
+        raise HTTPException(404, f"Campaign '{name}' not found")
+
+    campaign_id = camp["id"]
+    metrics = get_campaign_metrics(conn, campaign_id)
+    variants = get_variant_comparison(conn, campaign_id)
+    weekly = get_weekly_summary(conn, campaign_id, weeks_back=1)
+    firm_breakdown = get_company_type_breakdown(conn, campaign_id)
+
+    return {
+        "campaign": _row_to_dict(camp),
+        "metrics": metrics,
+        "variants": variants,
+        "weekly": weekly,
+        "firm_breakdown": firm_breakdown,
+    }
+
+
+@router.get("/campaigns/{name}/weekly")
+def get_campaign_weekly(
+    name: str,
+    weeks_back: int = 1,
+    conn=Depends(get_db),
+):
+    """Get weekly summary for a campaign."""
+    camp = get_campaign_by_name(conn, name)
+    if not camp:
+        raise HTTPException(404, f"Campaign '{name}' not found")
+
+    weekly = get_weekly_summary(conn, camp["id"], weeks_back=weeks_back)
+    return {"campaign": name, "weekly": weekly}
+
+
+@router.get("/campaigns/{name}/report")
+def get_campaign_report(
+    name: str,
+    conn=Depends(get_db),
+):
+    """Get full campaign report with metrics, variants, and breakdown."""
+    camp = get_campaign_by_name(conn, name)
+    if not camp:
+        raise HTTPException(404, f"Campaign '{name}' not found")
+
+    campaign_id = camp["id"]
+    return {
+        "campaign": _row_to_dict(camp),
+        "metrics": get_campaign_metrics(conn, campaign_id),
+        "variants": get_variant_comparison(conn, campaign_id),
+        "weekly": get_weekly_summary(conn, campaign_id, weeks_back=1),
+        "firm_breakdown": get_company_type_breakdown(conn, campaign_id),
+    }

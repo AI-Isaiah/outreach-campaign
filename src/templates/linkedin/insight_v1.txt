@@ -1,0 +1,9 @@
+Hi {{ first_name }},
+
+Thought you might find this relevant — we just published our latest monthly performance update for Metaworld Fund. March marked our 12th consecutive year of positive returns across our momentum strategies.
+
+Key highlights: BTC/ETH momentum captured 80%+ of the upside while cutting drawdowns by more than half vs buy-and-hold. The gold/FX overlay added another 15% uncorrelated return.
+
+Happy to share the full factsheet if {{ company_name }} is exploring systematic crypto exposure: {{ calendly_url }}
+
+Helmut

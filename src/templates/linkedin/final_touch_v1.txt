@@ -1,0 +1,10 @@
+Hi {{ first_name }},
+
+Just a final note — I know timing is everything in allocations. If systematic crypto/macro isn't on {{ company_name }}'s radar right now, completely understand.
+
+But if it ever is, we're here: 12 years live, every year positive, SMA format with daily liquidity. No lock-up, no gates.
+
+Feel free to reach out anytime: {{ calendly_url }}
+
+All the best,
+Helmut
