@@ -20,6 +20,7 @@ from src.web.routes import (  # noqa: E402
     settings,
     stats,
     templates,
+    whatsapp,
 )
 
 app = FastAPI(
@@ -46,6 +47,7 @@ app.include_router(crm.router, prefix="/api")
 app.include_router(import_routes.router, prefix="/api")
 app.include_router(settings.router, prefix="/api")
 app.include_router(insights.router, prefix="/api")
+app.include_router(whatsapp.router, prefix="/api")
 
 
 @app.get("/api/health")

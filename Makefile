@@ -1,4 +1,4 @@
-.PHONY: install test clean stats import verify queue send-dry report weekly help web dev api
+.PHONY: install test clean stats import verify queue send-dry report weekly help web dev api whatsapp-setup whatsapp-scan
 
 # Default campaign name (override with CAMPAIGN=name)
 CAMPAIGN ?= Q1_2026_initial
@@ -81,3 +81,11 @@ api:
 dev:
 	cd frontend && npm run dev &
 	python3 -m src.cli web --reload
+
+# --- WhatsApp ---
+
+whatsapp-setup:
+	python3 -c "from src.services.whatsapp_scanner import WhatsAppScanner; s = WhatsAppScanner(); s.setup(); input('Press Enter to save session and exit...'); s.close()"
+
+whatsapp-scan:
+	python3 -c "from src.services.whatsapp_scanner import WhatsAppScanner; from src.models.database import get_connection, run_migrations; from src.config import SUPABASE_DB_URL; conn = get_connection(SUPABASE_DB_URL); run_migrations(conn); s = WhatsAppScanner(); s.setup(); print(s.scan_contacts(conn)); s.close(); conn.close()"

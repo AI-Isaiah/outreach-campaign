@@ -176,11 +176,18 @@ export const api = {
   // Import
   runDedupe: () => request<any>("/import/dedupe", { method: "POST" }),
 
-  // Insights (Phase 4)
+  // Insights
   runAnalysis: (campaignId: number) =>
     request<any>("/insights/analyze", {
       method: "POST",
       body: JSON.stringify({ campaign_id: campaignId }),
     }),
   getInsightHistory: () => request<any[]>("/insights/history"),
+
+  // WhatsApp
+  whatsappSetup: () => request<any>("/whatsapp/setup", { method: "POST" }),
+  whatsappScan: () => request<any>("/whatsapp/scan", { method: "POST" }),
+  whatsappScanStatus: () => request<any>("/whatsapp/scan/status"),
+  whatsappMessages: (contactId: number) =>
+    request<any[]>(`/whatsapp/messages?contact_id=${contactId}`),
 };
