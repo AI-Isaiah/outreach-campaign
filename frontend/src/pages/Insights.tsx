@@ -1,17 +1,44 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import MetricCard from "../components/MetricCard";
 
 const DEFAULT_CAMPAIGN = "Q1_2026_initial";
 
 export default function Insights() {
+  const queryClient = useQueryClient();
+  const [selectedCampaignId, setSelectedCampaignId] = useState<number | null>(null);
+
   const metrics = useQuery({
     queryKey: ["campaign-metrics", DEFAULT_CAMPAIGN],
     queryFn: () => api.getCampaignMetrics(DEFAULT_CAMPAIGN),
   });
 
+  const campaigns = useQuery({
+    queryKey: ["campaigns"],
+    queryFn: api.listCampaigns,
+  });
+
+  const history = useQuery({
+    queryKey: ["insight-history"],
+    queryFn: api.getInsightHistory,
+  });
+
+  const analyze = useMutation({
+    mutationFn: (campaignId: number) => api.runAnalysis(campaignId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["insight-history"] });
+    },
+  });
+
   const m = metrics.data?.metrics;
   const weekly = metrics.data?.weekly;
+
+  // Find the campaign ID for the default campaign
+  const defaultCampaign = campaigns.data?.find(
+    (c: any) => c.name === DEFAULT_CAMPAIGN
+  );
+  const campaignId = selectedCampaignId || defaultCampaign?.id;
 
   return (
     <div className="space-y-8">
@@ -20,20 +47,105 @@ export default function Insights() {
         <p className="text-gray-500 mt-1">Campaign performance and AI-powered analysis</p>
       </div>
 
-      {/* AI Analysis placeholder */}
+      {/* AI Analysis */}
       <div className="bg-white rounded-lg border p-5 space-y-4">
         <h2 className="font-semibold text-gray-900">AI Analysis</h2>
         <p className="text-sm text-gray-500">
           Run an AI-powered analysis of campaign performance, template effectiveness,
           and receive actionable suggestions.
         </p>
-        <button
-          disabled
-          className="px-4 py-2 bg-gray-200 text-gray-400 rounded-md text-sm font-medium cursor-not-allowed"
-        >
-          Run Analysis (Coming in Phase 4)
-        </button>
+        <div className="flex items-center gap-3">
+          {campaigns.data && campaigns.data.length > 0 && (
+            <select
+              value={campaignId || ""}
+              onChange={(e) => setSelectedCampaignId(Number(e.target.value))}
+              className="px-3 py-2 border rounded-md text-sm"
+            >
+              {campaigns.data.map((c: any) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          )}
+          <button
+            onClick={() => campaignId && analyze.mutate(campaignId)}
+            disabled={!campaignId || analyze.isPending}
+            className="px-4 py-2 bg-gray-900 text-white rounded-md text-sm font-medium hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {analyze.isPending ? "Analyzing..." : "Run Analysis"}
+          </button>
+        </div>
+
+        {analyze.isError && (
+          <p className="text-red-500 text-sm">{(analyze.error as Error).message}</p>
+        )}
+
+        {analyze.data && (
+          <div className="mt-4 space-y-3 border-t pt-4">
+            <h3 className="text-sm font-semibold text-gray-700">Latest Analysis</h3>
+            {analyze.data.insights?.length > 0 && (
+              <div>
+                <h4 className="text-xs font-medium text-gray-500 uppercase mb-1">Insights</h4>
+                <ul className="list-disc list-inside space-y-1">
+                  {analyze.data.insights.map((insight: string, i: number) => (
+                    <li key={i} className="text-sm text-gray-700">{insight}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {analyze.data.template_suggestions?.length > 0 && (
+              <div>
+                <h4 className="text-xs font-medium text-gray-500 uppercase mb-1">Template Suggestions</h4>
+                <ul className="list-disc list-inside space-y-1">
+                  {analyze.data.template_suggestions.map((s: string, i: number) => (
+                    <li key={i} className="text-sm text-gray-700">{s}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {analyze.data.strategy_notes && (
+              <div>
+                <h4 className="text-xs font-medium text-gray-500 uppercase mb-1">Strategy Notes</h4>
+                <p className="text-sm text-gray-700">{analyze.data.strategy_notes}</p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Past Analysis Runs */}
+      {history.data && history.data.length > 0 && (
+        <div className="bg-white rounded-lg border p-5 space-y-3">
+          <h2 className="font-semibold text-gray-900">Analysis History</h2>
+          <div className="divide-y">
+            {history.data.slice(0, 10).map((run: any) => (
+              <div key={run.id} className="py-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-700">
+                    Run #{run.id} — Campaign {run.campaign_id}
+                  </span>
+                  <span className="text-xs text-gray-400">{run.created_at}</span>
+                </div>
+                {run.insights_json && (() => {
+                  try {
+                    const parsed = JSON.parse(run.insights_json);
+                    return parsed.insights ? (
+                      <ul className="mt-1 list-disc list-inside">
+                        {parsed.insights.slice(0, 3).map((i: string, idx: number) => (
+                          <li key={idx} className="text-sm text-gray-600">{i}</li>
+                        ))}
+                      </ul>
+                    ) : null;
+                  } catch {
+                    return null;
+                  }
+                })()}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Current metrics */}
       {m && (

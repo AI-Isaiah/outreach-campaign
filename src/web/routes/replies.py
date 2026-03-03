@@ -7,6 +7,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from src.services.reply_detector import scan_gmail_for_replies
 from src.services.state_machine import InvalidTransition, transition_contact
 from src.web.dependencies import get_db
 
@@ -92,8 +93,9 @@ def confirm_reply(
 def trigger_reply_scan(
     conn=Depends(get_db),
 ):
-    """Placeholder for Gmail reply scanning (implemented in Phase 4)."""
-    return {
-        "status": "not_implemented",
-        "message": "Reply scanning will be available after Phase 4 implementation.",
-    }
+    """Scan Gmail inbox for replies from enrolled contacts."""
+    try:
+        result = scan_gmail_for_replies(conn)
+        return {"status": "ok", **result}
+    except RuntimeError as e:
+        raise HTTPException(400, str(e))

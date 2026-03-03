@@ -1,10 +1,11 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import MetricCard from "../components/MetricCard";
 import PendingReplyCard from "../components/PendingReplyCard";
 
 export default function Dashboard() {
+  const queryClient = useQueryClient();
   const stats = useQuery({ queryKey: ["stats"], queryFn: api.getStats });
   const campaigns = useQuery({
     queryKey: ["campaigns"],
@@ -13,6 +14,12 @@ export default function Dashboard() {
   const pendingReplies = useQuery({
     queryKey: ["pending-replies"],
     queryFn: api.listPendingReplies,
+  });
+  const scanReplies = useMutation({
+    mutationFn: api.scanReplies,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["pending-replies"] });
+    },
   });
 
   return (
@@ -55,7 +62,24 @@ export default function Dashboard() {
             <h2 className="text-lg font-semibold text-gray-900">
               Pending Replies ({pendingReplies.data.length})
             </h2>
+            <button
+              onClick={() => scanReplies.mutate()}
+              disabled={scanReplies.isPending}
+              className="px-3 py-1.5 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+            >
+              {scanReplies.isPending ? "Scanning..." : "Scan for Replies"}
+            </button>
           </div>
+          {scanReplies.isError && (
+            <p className="text-red-500 text-sm mb-3">
+              {(scanReplies.error as Error).message}
+            </p>
+          )}
+          {scanReplies.data && (
+            <p className="text-green-600 text-sm mb-3">
+              Scanned {scanReplies.data.scanned} contacts, found {scanReplies.data.new_replies} new replies
+            </p>
+          )}
           <div className="space-y-3">
             {pendingReplies.data.slice(0, 5).map((reply: any) => (
               <PendingReplyCard key={reply.id} reply={reply} />
@@ -66,6 +90,27 @@ export default function Dashboard() {
               </p>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Scan for Replies (when no pending) */}
+      {pendingReplies.data && pendingReplies.data.length === 0 && (
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => scanReplies.mutate()}
+            disabled={scanReplies.isPending}
+            className="px-3 py-1.5 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+          >
+            {scanReplies.isPending ? "Scanning..." : "Scan for Replies"}
+          </button>
+          {scanReplies.data && (
+            <span className="text-green-600 text-sm">
+              Scanned {scanReplies.data.scanned} contacts, found {scanReplies.data.new_replies} new replies
+            </span>
+          )}
+          {scanReplies.isError && (
+            <span className="text-red-500 text-sm">{(scanReplies.error as Error).message}</span>
+          )}
         </div>
       )}
 

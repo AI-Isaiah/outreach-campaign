@@ -14,6 +14,7 @@ from src.web.routes import (  # noqa: E402
     crm,
     gmail,
     import_routes,
+    insights,
     queue,
     replies,
     settings,
@@ -44,6 +45,7 @@ app.include_router(replies.router, prefix="/api")
 app.include_router(crm.router, prefix="/api")
 app.include_router(import_routes.router, prefix="/api")
 app.include_router(settings.router, prefix="/api")
+app.include_router(insights.router, prefix="/api")
 
 
 @app.get("/api/health")
