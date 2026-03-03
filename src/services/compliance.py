@@ -152,10 +152,11 @@ def process_unsubscribe(conn, email: str) -> bool:
         False if no matching contact was found.
     """
     now = datetime.utcnow().isoformat()
+    normalized = email.lower().strip()
     cursor = conn.cursor()
     cursor.execute(
-        "UPDATE contacts SET unsubscribed = 1, unsubscribed_at = %s WHERE email = %s",
-        (now, email),
+        "UPDATE contacts SET unsubscribed = true, unsubscribed_at = %s WHERE email_normalized = %s",
+        (now, normalized),
     )
     conn.commit()
     return cursor.rowcount > 0

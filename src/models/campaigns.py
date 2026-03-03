@@ -128,7 +128,7 @@ def list_templates(
         params.append(channel)
 
     query += " AND is_active = %s"
-    params.append(1 if is_active else 0)
+    params.append(is_active)
 
     query += " ORDER BY id"
     cursor = conn.cursor()
@@ -162,8 +162,8 @@ def add_sequence_step(
             channel,
             template_id,
             delay_days,
-            1 if gdpr_only else 0,
-            1 if non_gdpr_only else 0,
+            gdpr_only,
+            non_gdpr_only,
         ),
     )
     row = cursor.fetchone()

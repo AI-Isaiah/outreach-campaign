@@ -17,7 +17,7 @@ def get_stats(conn=Depends(get_db)):
     companies = cur.fetchone()["cnt"]
     cur.execute("SELECT COUNT(*) AS cnt FROM contacts")
     contacts = cur.fetchone()["cnt"]
-    cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE is_gdpr = 1")
+    cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE is_gdpr = true")
     gdpr = cur.fetchone()["cnt"]
     cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE email_status = 'valid'")
     verified = cur.fetchone()["cnt"]

@@ -32,7 +32,7 @@ def list_pending_replies(
            FROM pending_replies pr
            JOIN contacts c ON c.id = pr.contact_id
            LEFT JOIN companies co ON co.id = c.company_id
-           WHERE pr.confirmed = 0
+           WHERE pr.confirmed = false
            ORDER BY pr.detected_at DESC"""
     )
     return [dict(r) for r in cur.fetchall()]
@@ -57,7 +57,7 @@ def confirm_reply(
     # Update the reply record
     cur.execute(
         """UPDATE pending_replies
-           SET confirmed = 1, confirmed_outcome = %s, confirmed_at = NOW()
+           SET confirmed = true, confirmed_outcome = %s, confirmed_at = NOW()
            WHERE id = %s""",
         (body.outcome, reply_id),
     )

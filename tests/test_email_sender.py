@@ -102,7 +102,7 @@ def sample_company(conn):
     cursor = conn.cursor()
     cursor.execute(
         "INSERT INTO companies (name, name_normalized, country, is_gdpr) VALUES (%s, %s, %s, %s) RETURNING id",
-        ("Acme Crypto Fund", "acme crypto fund", "United States", 0),
+        ("Acme Crypto Fund", "acme crypto fund", "United States", False),
     )
     company_id = cursor.fetchone()["id"]
     conn.commit()
@@ -115,7 +115,7 @@ def gdpr_company(conn):
     cursor = conn.cursor()
     cursor.execute(
         "INSERT INTO companies (name, name_normalized, country, is_gdpr) VALUES (%s, %s, %s, %s) RETURNING id",
-        ("Berlin Capital GmbH", "berlin capital gmbh", "Germany", 1),
+        ("Berlin Capital GmbH", "berlin capital gmbh", "Germany", True),
     )
     company_id = cursor.fetchone()["id"]
     conn.commit()
@@ -127,9 +127,9 @@ def sample_contact(conn, sample_company):
     """Insert a contact and return its id."""
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO contacts (company_id, first_name, last_name, full_name, email, source) "
-        "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
-        (sample_company, "Alice", "Smith", "Alice Smith", "alice@example.com", "csv"),
+        "INSERT INTO contacts (company_id, first_name, last_name, full_name, email, email_normalized, source) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+        (sample_company, "Alice", "Smith", "Alice Smith", "alice@example.com", "alice@example.com", "csv"),
     )
     contact_id = cursor.fetchone()["id"]
     conn.commit()
@@ -143,7 +143,7 @@ def gdpr_contact(conn, gdpr_company):
     cursor.execute(
         "INSERT INTO contacts (company_id, first_name, last_name, full_name, email, source, is_gdpr) "
         "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
-        (gdpr_company, "Hans", "Mueller", "Hans Mueller", "hans@berlin-cap.de", "csv", 1),
+        (gdpr_company, "Hans", "Mueller", "Hans Mueller", "hans@berlin-cap.de", "csv", True),
     )
     contact_id = cursor.fetchone()["id"]
     conn.commit()
@@ -343,7 +343,7 @@ class TestIsContactGdpr:
         cursor.execute(
             "INSERT INTO contacts (company_id, first_name, email, source, is_gdpr) "
             "VALUES (%s, %s, %s, %s, %s) RETURNING id",
-            (gdpr_company, "Max", "max@test.de", "csv", 0),
+            (gdpr_company, "Max", "max@test.de", "csv", False),
         )
         contact_id = cursor.fetchone()["id"]
         conn.commit()
@@ -368,7 +368,7 @@ class TestProcessUnsubscribe:
             (sample_contact,),
         )
         row = cursor.fetchone()
-        assert row["unsubscribed"] == 1
+        assert row["unsubscribed"] is True
         assert row["unsubscribed_at"] is not None
 
     def test_returns_false_for_unknown_email(self, conn):
@@ -395,7 +395,7 @@ class TestProcessUnsubscribe:
             "SELECT unsubscribed FROM contacts WHERE email = %s", ("carol@example.com",)
         )
         carol = cursor.fetchone()
-        assert carol["unsubscribed"] == 0
+        assert carol["unsubscribed"] is False
 
     def test_idempotent(self, conn, sample_contact):
         process_unsubscribe(conn, "alice@example.com")
@@ -407,7 +407,7 @@ class TestProcessUnsubscribe:
             "SELECT unsubscribed FROM contacts WHERE id = %s", (sample_contact,)
         )
         row = cursor.fetchone()
-        assert row["unsubscribed"] == 1
+        assert row["unsubscribed"] is True
 
 
 # ===========================================================================

@@ -38,7 +38,7 @@ def get_newsletter_subscribers(conn) -> list:
     cursor.execute(
         """SELECT * FROM contacts
            WHERE newsletter_status = 'subscribed'
-             AND unsubscribed = 0
+             AND unsubscribed = false
              AND email IS NOT NULL
              AND email != ''
            ORDER BY id"""
@@ -124,7 +124,7 @@ def unsubscribe_contact(conn, contact_id: int) -> bool:
     """
     cursor = conn.cursor()
     cursor.execute(
-        "UPDATE contacts SET newsletter_status = 'unsubscribed', unsubscribed = 1 WHERE id = %s",
+        "UPDATE contacts SET newsletter_status = 'unsubscribed', unsubscribed = true WHERE id = %s",
         (contact_id,),
     )
     conn.commit()

@@ -15,12 +15,12 @@ from src.services.email_verifier import (
 def _insert_contact_with_email(conn, email, status="unverified"):
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO companies (name, name_normalized, country, is_gdpr) VALUES ('X', 'x', 'US', 0) RETURNING id"
+        "INSERT INTO companies (name, name_normalized, country, is_gdpr) VALUES ('X', 'x', 'US', false) RETURNING id"
     )
     cid = cursor.fetchone()["id"]
     cursor.execute(
         """INSERT INTO contacts (company_id, full_name, email, email_normalized, email_status, priority_rank, source, is_gdpr)
-           VALUES (%s, 'Test', %s, %s, %s, 1, 'test', 0)""",
+           VALUES (%s, 'Test', %s, %s, %s, 1, 'test', false)""",
         (cid, email, email.lower() if email else None, status),
     )
     conn.commit()

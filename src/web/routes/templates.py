@@ -116,7 +116,7 @@ def deactivate_template(
         raise HTTPException(404, f"Template {template_id} not found")
 
     cur = conn.cursor()
-    cur.execute("UPDATE templates SET is_active = 0 WHERE id = %s", (template_id,))
+    cur.execute("UPDATE templates SET is_active = false WHERE id = %s", (template_id,))
     conn.commit()
 
     return {"success": True, "id": template_id, "is_active": False}

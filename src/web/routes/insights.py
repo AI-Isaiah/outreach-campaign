@@ -43,7 +43,8 @@ def insight_history(
     cur = conn.cursor()
     cur.execute(
         """SELECT id, campaign_id, run_type, prompt_summary,
-                  response_text, insights_json, created_at
+                  response_text, insights_json, template_suggestions_json,
+                  events_analyzed, created_at
            FROM advisor_runs
            ORDER BY created_at DESC
            LIMIT 50"""

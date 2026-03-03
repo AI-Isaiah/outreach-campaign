@@ -120,21 +120,21 @@ def test_import_detects_gdpr_country(tmp_db):
         "SELECT is_gdpr FROM companies WHERE name = %s", ("Aaro Capital",)
     )
     aaro = cursor.fetchone()
-    assert aaro["is_gdpr"] == 1
+    assert aaro["is_gdpr"] is True
 
     # United States -> not GDPR
     cursor.execute(
         "SELECT is_gdpr FROM companies WHERE name = %s", ("10T Fund",)
     )
     ten_t = cursor.fetchone()
-    assert ten_t["is_gdpr"] == 0
+    assert ten_t["is_gdpr"] is False
 
     # Alphachain is also UK
     cursor.execute(
         "SELECT is_gdpr FROM companies WHERE name = %s", ("Alphachain Capital",)
     )
     alpha = cursor.fetchone()
-    assert alpha["is_gdpr"] == 1
+    assert alpha["is_gdpr"] is True
 
     conn.close()
 
@@ -212,7 +212,7 @@ def test_contacts_inherit_gdpr_from_company(tmp_db):
     )
     aaro_contacts = cursor.fetchall()
     for c in aaro_contacts:
-        assert c["is_gdpr"] == 1
+        assert c["is_gdpr"] is True
 
     # All 10T contacts (US) should not be GDPR
     cursor.execute(
@@ -224,6 +224,6 @@ def test_contacts_inherit_gdpr_from_company(tmp_db):
     )
     ten_t_contacts = cursor.fetchall()
     for c in ten_t_contacts:
-        assert c["is_gdpr"] == 0
+        assert c["is_gdpr"] is False
 
     conn.close()

@@ -31,12 +31,7 @@ def scan_gmail_for_replies(conn, drafter: GmailDrafter | None = None) -> dict:
     Returns:
         dict with keys: scanned, new_replies, errors
     """
-    if drafter is None:
-        drafter = GmailDrafter()
-
-    service = drafter._get_service()
-
-    # Get enrolled contacts with email addresses
+    # Get enrolled contacts with email addresses first
     cur = conn.cursor()
     cur.execute(
         """SELECT DISTINCT c.id, c.email, ccs.campaign_id, ccs.created_at AS enrolled_at
@@ -48,6 +43,14 @@ def scan_gmail_for_replies(conn, drafter: GmailDrafter | None = None) -> dict:
     contacts = cur.fetchall()
 
     stats = {"scanned": 0, "new_replies": 0, "errors": 0}
+
+    if not contacts:
+        return stats
+
+    if drafter is None:
+        drafter = GmailDrafter()
+
+    service = drafter._get_service()
 
     for contact in contacts:
         try:
@@ -225,8 +228,11 @@ def _store_pending_reply(
     cur.execute(
         """INSERT INTO pending_replies
                (contact_id, campaign_id, gmail_thread_id, gmail_message_id,
-                subject, snippet, classification, confidence)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                subject, snippet, reply_snippet,
+                llm_classification, llm_confidence,
+                classification, confidence)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+           ON CONFLICT (gmail_message_id) DO NOTHING
            RETURNING id""",
         (
             contact_id,
@@ -235,9 +241,12 @@ def _store_pending_reply(
             gmail_message_id,
             subject,
             snippet,
+            snippet,
+            classification,
+            confidence,
             classification,
             confidence,
         ),
     )
     row = cur.fetchone()
-    return row["id"]
+    return row["id"] if row else None

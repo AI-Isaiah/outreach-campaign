@@ -30,10 +30,12 @@ def import_csv(csv_path: str = typer.Argument(..., help="Path to Crypto Fund Lis
     from src.commands.import_contacts import import_fund_csv
 
     conn = get_connection(SUPABASE_DB_URL)
-    run_migrations(conn)
-    stats = import_fund_csv(conn, csv_path)
-    console.print(f"[green]Imported {stats['companies_created']} companies, {stats['contacts_created']} contacts[/green]")
-    conn.close()
+    try:
+        run_migrations(conn)
+        stats = import_fund_csv(conn, csv_path)
+        console.print(f"[green]Imported {stats['companies_created']} companies, {stats['contacts_created']} contacts[/green]")
+    finally:
+        conn.close()
 
 
 @app.command()
@@ -43,10 +45,12 @@ def import_emails(file_path: str = typer.Argument(..., help="Path to file with p
     from src.commands.import_emails import import_pasted_emails
 
     conn = get_connection(SUPABASE_DB_URL)
-    run_migrations(conn)
-    stats = import_pasted_emails(conn, file_path)
-    console.print(f"[green]Imported {stats['contacts_created']} contacts ({stats['lines_skipped']} skipped)[/green]")
-    conn.close()
+    try:
+        run_migrations(conn)
+        stats = import_pasted_emails(conn, file_path)
+        console.print(f"[green]Imported {stats['contacts_created']} contacts ({stats['lines_skipped']} skipped)[/green]")
+    finally:
+        conn.close()
 
 
 @app.command()
@@ -56,15 +60,17 @@ def dedupe():
     from src.services.deduplication import run_dedup
 
     conn = get_connection(SUPABASE_DB_URL)
-    run_migrations(conn)
-    console.print("[bold]Running deduplication pipeline...[/bold]")
-    stats = run_dedup(conn, export_dir="data/exports")
-    console.print(f"  Email duplicates removed: {stats['email_dupes']}")
-    console.print(f"  LinkedIn duplicates removed: {stats['linkedin_dupes']}")
-    console.print(f"  Fuzzy company matches flagged: {stats['fuzzy_flagged']}")
-    if stats["fuzzy_flagged"] > 0:
-        console.print("  [yellow]Review: data/exports/dedup_review.csv[/yellow]")
-    conn.close()
+    try:
+        run_migrations(conn)
+        console.print("[bold]Running deduplication pipeline...[/bold]")
+        stats = run_dedup(conn, export_dir="data/exports")
+        console.print(f"  Email duplicates removed: {stats['email_dupes']}")
+        console.print(f"  LinkedIn duplicates removed: {stats['linkedin_dupes']}")
+        console.print(f"  Fuzzy company matches flagged: {stats['fuzzy_flagged']}")
+        if stats["fuzzy_flagged"] > 0:
+            console.print("  [yellow]Review: data/exports/dedup_review.csv[/yellow]")
+    finally:
+        conn.close()
 
 
 @app.command()
@@ -80,27 +86,28 @@ def verify():
         raise typer.Exit(1)
 
     conn = get_connection(SUPABASE_DB_URL)
-    run_migrations(conn)
-    emails = get_unverified_emails(conn)
-    console.print(f"[bold]Verifying {len(emails)} email addresses via {provider}...[/bold]")
+    try:
+        run_migrations(conn)
+        emails = get_unverified_emails(conn)
+        console.print(f"[bold]Verifying {len(emails)} email addresses via {provider}...[/bold]")
 
-    if not emails:
-        console.print("No unverified emails found.")
+        if not emails:
+            console.print("No unverified emails found.")
+            return
+
+        results = verify_email_batch(emails, api_key, provider=provider)
+        counts = {"valid": 0, "invalid": 0, "risky": 0, "catch-all": 0, "unknown": 0}
+        for email, status in results.items():
+            update_contact_email_status(conn, email, status)
+            counts[status] = counts.get(status, 0) + 1
+
+        console.print(f"  Valid: [green]{counts['valid']}[/green]")
+        console.print(f"  Invalid: [red]{counts['invalid']}[/red]")
+        console.print(f"  Risky: [yellow]{counts['risky']}[/yellow]")
+        console.print(f"  Catch-all: [yellow]{counts['catch-all']}[/yellow]")
+        console.print(f"  Unknown: {counts['unknown']}")
+    finally:
         conn.close()
-        return
-
-    results = verify_email_batch(emails, api_key, provider=provider)
-    counts = {"valid": 0, "invalid": 0, "risky": 0, "catch-all": 0, "unknown": 0}
-    for email, status in results.items():
-        update_contact_email_status(conn, email, status)
-        counts[status] = counts.get(status, 0) + 1
-
-    console.print(f"  Valid: [green]{counts['valid']}[/green]")
-    console.print(f"  Invalid: [red]{counts['invalid']}[/red]")
-    console.print(f"  Risky: [yellow]{counts['risky']}[/yellow]")
-    console.print(f"  Catch-all: [yellow]{counts['catch-all']}[/yellow]")
-    console.print(f"  Unknown: {counts['unknown']}")
-    conn.close()
 
 
 @app.command()
@@ -109,37 +116,39 @@ def stats():
     from src.models.database import get_connection, run_migrations
 
     conn = get_connection(SUPABASE_DB_URL)
-    run_migrations(conn)
+    try:
+        run_migrations(conn)
 
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) AS cnt FROM companies")
-    companies = cur.fetchone()["cnt"]
-    cur.execute("SELECT COUNT(*) AS cnt FROM contacts")
-    contacts = cur.fetchone()["cnt"]
-    cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE is_gdpr = 1")
-    gdpr = cur.fetchone()["cnt"]
-    cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE email_status = 'valid'")
-    verified = cur.fetchone()["cnt"]
-    cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE email_status = 'invalid'")
-    invalid = cur.fetchone()["cnt"]
-    cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE email_status = 'unverified'")
-    unverified = cur.fetchone()["cnt"]
-    cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE email_normalized IS NOT NULL")
-    with_email = cur.fetchone()["cnt"]
-    cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE linkedin_url IS NOT NULL AND linkedin_url != ''")
-    with_linkedin = cur.fetchone()["cnt"]
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) AS cnt FROM companies")
+        companies = cur.fetchone()["cnt"]
+        cur.execute("SELECT COUNT(*) AS cnt FROM contacts")
+        contacts = cur.fetchone()["cnt"]
+        cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE is_gdpr = true")
+        gdpr = cur.fetchone()["cnt"]
+        cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE email_status = 'valid'")
+        verified = cur.fetchone()["cnt"]
+        cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE email_status = 'invalid'")
+        invalid = cur.fetchone()["cnt"]
+        cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE email_status = 'unverified'")
+        unverified = cur.fetchone()["cnt"]
+        cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE email_normalized IS NOT NULL")
+        with_email = cur.fetchone()["cnt"]
+        cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE linkedin_url IS NOT NULL AND linkedin_url != ''")
+        with_linkedin = cur.fetchone()["cnt"]
 
-    console.print("[bold]Database Statistics[/bold]")
-    console.print(f"  Companies:      {companies}")
-    console.print(f"  Contacts:       {contacts}")
-    console.print(f"    With email:   {with_email}")
-    console.print(f"    With LinkedIn:{with_linkedin}")
-    console.print(f"    GDPR:         {gdpr}")
-    console.print(f"  Email status:")
-    console.print(f"    Verified:     [green]{verified}[/green]")
-    console.print(f"    Invalid:      [red]{invalid}[/red]")
-    console.print(f"    Unverified:   {unverified}")
-    conn.close()
+        console.print("[bold]Database Statistics[/bold]")
+        console.print(f"  Companies:      {companies}")
+        console.print(f"  Contacts:       {contacts}")
+        console.print(f"    With email:   {with_email}")
+        console.print(f"    With LinkedIn:{with_linkedin}")
+        console.print(f"    GDPR:         {gdpr}")
+        console.print(f"  Email status:")
+        console.print(f"    Verified:     [green]{verified}[/green]")
+        console.print(f"    Invalid:      [red]{invalid}[/red]")
+        console.print(f"    Unverified:   {unverified}")
+    finally:
+        conn.close()
 
 
 @app.command()
@@ -154,41 +163,42 @@ def queue(
     from src.commands.queue import queue_today
 
     conn = get_connection(SUPABASE_DB_URL)
-    run_migrations(conn)
+    try:
+        run_migrations(conn)
 
-    items = queue_today(conn, campaign, target_date=date, limit=limit)
+        items = queue_today(conn, campaign, target_date=date, limit=limit)
 
-    if not items:
-        console.print("[yellow]No actions queued for today.[/yellow]")
+        if not items:
+            console.print("[yellow]No actions queued for today.[/yellow]")
+            return
+
+        table = Table(title=f"Today's Queue: {campaign}")
+        table.add_column("#", style="dim")
+        table.add_column("Contact", style="bold")
+        table.add_column("Company")
+        table.add_column("AUM ($M)", justify="right")
+        table.add_column("Channel", style="cyan")
+        table.add_column("Step", justify="center")
+        table.add_column("GDPR", justify="center")
+
+        for i, item in enumerate(items, 1):
+            aum = f"{item['aum_millions']:,.0f}" if item["aum_millions"] else "-"
+            gdpr_flag = "[red]Yes[/red]" if item["is_gdpr"] else "No"
+            step_display = f"{item['step_order']}/{item['total_steps']}"
+            table.add_row(
+                str(i),
+                item["contact_name"],
+                item["company_name"],
+                aum,
+                item["channel"],
+                step_display,
+                gdpr_flag,
+            )
+
+        console.print(table)
+        console.print(f"[dim]Showing {len(items)} action(s)[/dim]")
+    finally:
         conn.close()
-        return
-
-    table = Table(title=f"Today's Queue: {campaign}")
-    table.add_column("#", style="dim")
-    table.add_column("Contact", style="bold")
-    table.add_column("Company")
-    table.add_column("AUM ($M)", justify="right")
-    table.add_column("Channel", style="cyan")
-    table.add_column("Step", justify="center")
-    table.add_column("GDPR", justify="center")
-
-    for i, item in enumerate(items, 1):
-        aum = f"{item['aum_millions']:,.0f}" if item["aum_millions"] else "-"
-        gdpr_flag = "[red]Yes[/red]" if item["is_gdpr"] else "No"
-        step_display = f"{item['step_order']}/{item['total_steps']}"
-        table.add_row(
-            str(i),
-            item["contact_name"],
-            item["company_name"],
-            aum,
-            item["channel"],
-            step_display,
-            gdpr_flag,
-        )
-
-    console.print(table)
-    console.print(f"[dim]Showing {len(items)} action(s)[/dim]")
-    conn.close()
 
 
 @app.command()
@@ -391,7 +401,7 @@ def enroll(
     FROM contacts c
     LEFT JOIN companies co ON co.id = c.company_id
     WHERE c.priority_rank = 1
-      AND c.unsubscribed = 0
+      AND c.unsubscribed = false
       AND (
           (c.email_normalized IS NOT NULL AND c.email_normalized != '')
           OR (c.linkedin_url IS NOT NULL AND c.linkedin_url != '')
@@ -460,78 +470,77 @@ def send(
     from src.services.email_sender import send_campaign_email
 
     conn = get_connection(SUPABASE_DB_URL)
-    run_migrations(conn)
+    try:
+        run_migrations(conn)
 
-    camp = get_campaign_by_name(conn, campaign)
-    if not camp:
-        console.print(f"[red]ERROR: Campaign '{campaign}' not found[/red]")
+        camp = get_campaign_by_name(conn, campaign)
+        if not camp:
+            console.print(f"[red]ERROR: Campaign '{campaign}' not found[/red]")
+            raise typer.Exit(1)
+
+        campaign_id = camp["id"]
+
+        # Get today's queue (all channels)
+        queue_items = get_daily_queue(conn, campaign_id, target_date=date, limit=limit)
+
+        # Filter to email-channel only
+        email_items = [item for item in queue_items if item["channel"] == "email"]
+
+        if not email_items:
+            console.print("[yellow]No email actions queued for today.[/yellow]")
+            return
+
+        # Display preview table
+        table = Table(title=f"Email Queue: {campaign}")
+        table.add_column("#", style="dim")
+        table.add_column("Contact", style="bold")
+        table.add_column("Company")
+        table.add_column("Email")
+        table.add_column("Step", justify="center")
+        table.add_column("GDPR", justify="center")
+
+        for i, item in enumerate(email_items, 1):
+            gdpr_flag = "[red]Yes[/red]" if item["is_gdpr"] else "No"
+            step_display = f"{item['step_order']}/{item['total_steps']}"
+            table.add_row(
+                str(i),
+                item["contact_name"],
+                item["company_name"],
+                item.get("email", ""),
+                step_display,
+                gdpr_flag,
+            )
+
+        console.print(table)
+
+        if dry_run:
+            console.print(f"[cyan]DRY RUN: Would send {len(email_items)} email(s). No emails sent.[/cyan]")
+            return
+
+        # Ask for confirmation
+        typer.confirm(f"Send {len(email_items)} email(s)?", abort=True)
+
+        # Load SMTP config
+        config = _load_config()
+
+        sent = 0
+        failed = 0
+        for item in email_items:
+            success = send_campaign_email(
+                conn,
+                item["contact_id"],
+                campaign_id,
+                item["template_id"],
+                config,
+            )
+            if success:
+                sent += 1
+            else:
+                failed += 1
+
+        console.print(f"[green]Sent: {sent}[/green]  [red]Failed: {failed}[/red]")
+    finally:
         conn.close()
-        raise typer.Exit(1)
-
-    campaign_id = camp["id"]
-
-    # Get today's queue (all channels)
-    queue_items = get_daily_queue(conn, campaign_id, target_date=date, limit=limit)
-
-    # Filter to email-channel only
-    email_items = [item for item in queue_items if item["channel"] == "email"]
-
-    if not email_items:
-        console.print("[yellow]No email actions queued for today.[/yellow]")
-        conn.close()
-        return
-
-    # Display preview table
-    table = Table(title=f"Email Queue: {campaign}")
-    table.add_column("#", style="dim")
-    table.add_column("Contact", style="bold")
-    table.add_column("Company")
-    table.add_column("Email")
-    table.add_column("Step", justify="center")
-    table.add_column("GDPR", justify="center")
-
-    for i, item in enumerate(email_items, 1):
-        gdpr_flag = "[red]Yes[/red]" if item["is_gdpr"] else "No"
-        step_display = f"{item['step_order']}/{item['total_steps']}"
-        table.add_row(
-            str(i),
-            item["contact_name"],
-            item["company_name"],
-            item.get("email", ""),
-            step_display,
-            gdpr_flag,
-        )
-
-    console.print(table)
-
-    if dry_run:
-        console.print(f"[cyan]DRY RUN: Would send {len(email_items)} email(s). No emails sent.[/cyan]")
-        conn.close()
-        return
-
-    # Ask for confirmation
-    typer.confirm(f"Send {len(email_items)} email(s)?", abort=True)
-
-    # Load SMTP config
-    config = _load_config()
-
-    sent = 0
-    failed = 0
-    for item in email_items:
-        success = send_campaign_email(
-            conn,
-            item["contact_id"],
-            campaign_id,
-            item["template_id"],
-            config,
-        )
-        if success:
-            sent += 1
-        else:
-            failed += 1
-
-    console.print(f"[green]Sent: {sent}[/green]  [red]Failed: {failed}[/red]")
-    conn.close()
 
 
 @app.command()
@@ -558,109 +567,103 @@ def status(
     from src.services.state_machine import transition_contact, InvalidTransition
 
     conn = get_connection(SUPABASE_DB_URL)
-    run_migrations(conn)
+    try:
+        run_migrations(conn)
 
-    if action != "reply":
-        console.print(f"[red]ERROR: Unknown action '{action}'. Supported: reply[/red]")
-        conn.close()
-        raise typer.Exit(1)
-
-    # Validate outcome
-    outcome_map = {
-        "positive": "replied_positive",
-        "negative": "replied_negative",
-        "call-booked": "replied_positive",
-        "no-response": "no_response",
-    }
-    if outcome not in outcome_map:
-        console.print(f"[red]ERROR: Unknown outcome '{outcome}'. Supported: {', '.join(outcome_map.keys())}[/red]")
-        conn.close()
-        raise typer.Exit(1)
-
-    # Find the contact
-    cur = conn.cursor()
-    if identifier.isdigit():
-        cur.execute(
-            "SELECT id, email, full_name FROM contacts WHERE id = %s",
-            (int(identifier),),
-        )
-        contact_row = cur.fetchone()
-    else:
-        cur.execute(
-            "SELECT id, email, full_name FROM contacts WHERE email = %s OR email_normalized = %s",
-            (identifier, identifier.lower().strip()),
-        )
-        contact_row = cur.fetchone()
-
-    if contact_row is None:
-        console.print(f"[red]ERROR: Contact '{identifier}' not found[/red]")
-        conn.close()
-        raise typer.Exit(1)
-
-    contact_id = contact_row["id"]
-
-    # Find the campaign
-    if campaign:
-        camp = get_campaign_by_name(conn, campaign)
-        if not camp:
-            console.print(f"[red]ERROR: Campaign '{campaign}' not found[/red]")
-            conn.close()
+        if action != "reply":
+            console.print(f"[red]ERROR: Unknown action '{action}'. Supported: reply[/red]")
             raise typer.Exit(1)
-        campaign_id = camp["id"]
-    else:
-        # Use first active campaign this contact is enrolled in
-        cur.execute(
-            """SELECT ccs.campaign_id FROM contact_campaign_status ccs
-               JOIN campaigns c ON c.id = ccs.campaign_id
-               WHERE ccs.contact_id = %s AND c.status = 'active'
-               ORDER BY ccs.id DESC LIMIT 1""",
-            (contact_id,),
-        )
-        row = cur.fetchone()
-        if row is None:
-            console.print(f"[red]ERROR: Contact is not enrolled in any active campaign[/red]")
-            conn.close()
+
+        # Validate outcome
+        outcome_map = {
+            "positive": "replied_positive",
+            "negative": "replied_negative",
+            "call-booked": "replied_positive",
+            "no-response": "no_response",
+        }
+        if outcome not in outcome_map:
+            console.print(f"[red]ERROR: Unknown outcome '{outcome}'. Supported: {', '.join(outcome_map.keys())}[/red]")
             raise typer.Exit(1)
-        campaign_id = row["campaign_id"]
 
-    # Ensure contact is in_progress before transitioning
-    ccs = get_contact_campaign_status(conn, contact_id, campaign_id)
-    if ccs is None:
-        console.print(f"[red]ERROR: Contact is not enrolled in campaign {campaign_id}[/red]")
-        conn.close()
-        raise typer.Exit(1)
+        # Find the contact
+        cur = conn.cursor()
+        if identifier.isdigit():
+            cur.execute(
+                "SELECT id, email, full_name FROM contacts WHERE id = %s",
+                (int(identifier),),
+            )
+            contact_row = cur.fetchone()
+        else:
+            cur.execute(
+                "SELECT id, email, full_name FROM contacts WHERE email = %s OR email_normalized = %s",
+                (identifier, identifier.lower().strip()),
+            )
+            contact_row = cur.fetchone()
 
-    # If currently queued, auto-advance to in_progress first
-    if ccs["status"] == "queued":
+        if contact_row is None:
+            console.print(f"[red]ERROR: Contact '{identifier}' not found[/red]")
+            raise typer.Exit(1)
+
+        contact_id = contact_row["id"]
+
+        # Find the campaign
+        if campaign:
+            camp = get_campaign_by_name(conn, campaign)
+            if not camp:
+                console.print(f"[red]ERROR: Campaign '{campaign}' not found[/red]")
+                raise typer.Exit(1)
+            campaign_id = camp["id"]
+        else:
+            # Use first active campaign this contact is enrolled in
+            cur.execute(
+                """SELECT ccs.campaign_id FROM contact_campaign_status ccs
+                   JOIN campaigns c ON c.id = ccs.campaign_id
+                   WHERE ccs.contact_id = %s AND c.status = 'active'
+                   ORDER BY ccs.id DESC LIMIT 1""",
+                (contact_id,),
+            )
+            row = cur.fetchone()
+            if row is None:
+                console.print(f"[red]ERROR: Contact is not enrolled in any active campaign[/red]")
+                raise typer.Exit(1)
+            campaign_id = row["campaign_id"]
+
+        # Ensure contact is in_progress before transitioning
+        ccs = get_contact_campaign_status(conn, contact_id, campaign_id)
+        if ccs is None:
+            console.print(f"[red]ERROR: Contact is not enrolled in campaign {campaign_id}[/red]")
+            raise typer.Exit(1)
+
+        # If currently queued, auto-advance to in_progress first
+        if ccs["status"] == "queued":
+            try:
+                transition_contact(conn, contact_id, campaign_id, "in_progress")
+            except InvalidTransition as e:
+                console.print(f"[red]ERROR: {e}[/red]")
+                raise typer.Exit(1)
+
+        # Apply the transition
+        new_status = outcome_map[outcome]
         try:
-            transition_contact(conn, contact_id, campaign_id, "in_progress")
+            transition_contact(conn, contact_id, campaign_id, new_status)
         except InvalidTransition as e:
             console.print(f"[red]ERROR: {e}[/red]")
-            conn.close()
             raise typer.Exit(1)
 
-    # Apply the transition
-    new_status = outcome_map[outcome]
-    try:
-        transition_contact(conn, contact_id, campaign_id, new_status)
-    except InvalidTransition as e:
-        console.print(f"[red]ERROR: {e}[/red]")
+        # Log extra metadata for call-booked
+        if outcome == "call-booked":
+            log_event(
+                conn,
+                contact_id,
+                "call_booked",
+                campaign_id=campaign_id,
+                metadata=json.dumps({"call_booked": True}),
+            )
+
+        contact_name = contact_row["full_name"] or contact_row["email"] or str(contact_id)
+        console.print(f"[green]Logged '{outcome}' for {contact_name} -> status: {new_status}[/green]")
+    finally:
         conn.close()
-        raise typer.Exit(1)
-
-    # Log extra metadata for call-booked
-    if outcome == "call-booked":
-        log_event(
-            conn,
-            contact_id,
-            "call_booked",
-            campaign_id=campaign_id,
-            metadata=json.dumps({"call_booked": True}),
-        )
-
-    contact_name = contact_row["full_name"] or contact_row["email"] or str(contact_id)
-    console.print(f"[green]Logged '{outcome}' for {contact_name} -> status: {new_status}[/green]")
-    conn.close()
 
 
 @app.command()
@@ -672,16 +675,16 @@ def unsubscribe(
     from src.services.compliance import process_unsubscribe
 
     conn = get_connection(SUPABASE_DB_URL)
-    run_migrations(conn)
+    try:
+        run_migrations(conn)
+        result = process_unsubscribe(conn, email)
 
-    result = process_unsubscribe(conn, email)
-
-    if result:
-        console.print(f"[green]Unsubscribed: {email}[/green]")
-    else:
-        console.print(f"[yellow]No contact found with email: {email}[/yellow]")
-
-    conn.close()
+        if result:
+            console.print(f"[green]Unsubscribed: {email}[/green]")
+        else:
+            console.print(f"[yellow]No contact found with email: {email}[/yellow]")
+    finally:
+        conn.close()
 
 
 @app.command()
@@ -696,90 +699,89 @@ def weekly_plan(
     from src.commands.weekly_plan import generate_weekly_plan
 
     conn = get_connection(SUPABASE_DB_URL)
-    run_migrations(conn)
-
     try:
-        plan = generate_weekly_plan(conn, campaign)
-    except ValueError as e:
-        console.print(f"[red]ERROR: {e}[/red]")
-        conn.close()
-        raise typer.Exit(1)
+        run_migrations(conn)
+        try:
+            plan = generate_weekly_plan(conn, campaign)
+        except ValueError as e:
+            console.print(f"[red]ERROR: {e}[/red]")
+            raise typer.Exit(1)
 
-    campaign_info = plan["campaign"]
-    console.print(
-        Panel(
-            f"[bold]{campaign_info['name']}[/bold]  (status: {campaign_info['status']})",
-            title="Weekly Check-in",
-            style="blue",
-        )
-    )
-
-    # Section 1: Last Week Summary
-    lw = plan["last_week"]
-    summary_lines = [
-        f"  Period:            {lw['period']}",
-        f"  Emails sent:       {lw['emails_sent']}",
-        f"  LinkedIn actions:  {lw['linkedin_actions']}",
-        f"  Positive replies:  [green]{lw['replies_positive']}[/green]",
-        f"  Negative replies:  [red]{lw['replies_negative']}[/red]",
-        f"  Calls booked:      [cyan]{lw['calls_booked']}[/cyan]",
-        f"  New no-response:   {lw['new_no_response']}",
-    ]
-    console.print(Panel("\n".join(summary_lines), title="Last Week Summary"))
-
-    # Section 2: A/B Variant Comparison
-    variants = plan["variant_comparison"]
-    if variants:
-        vt = Table(title="A/B Variant Comparison")
-        vt.add_column("Variant", style="bold")
-        vt.add_column("Total", justify="right")
-        vt.add_column("Positive", justify="right", style="green")
-        vt.add_column("Negative", justify="right", style="red")
-        vt.add_column("No Response", justify="right")
-        vt.add_column("Reply Rate", justify="right")
-        vt.add_column("Positive Rate", justify="right")
-
-        for v in variants:
-            vt.add_row(
-                v["variant"],
-                str(v["total"]),
-                str(v["replied_positive"]),
-                str(v["replied_negative"]),
-                str(v["no_response"]),
-                f"{v['reply_rate']:.1%}",
-                f"{v['positive_rate']:.1%}",
+        campaign_info = plan["campaign"]
+        console.print(
+            Panel(
+                f"[bold]{campaign_info['name']}[/bold]  (status: {campaign_info['status']})",
+                title="Weekly Check-in",
+                style="blue",
             )
-        console.print(vt)
-    else:
-        console.print("[dim]No A/B variant data available.[/dim]")
-
-    # Section 3: Proposed Next Week
-    nw = plan["proposed_next_week"]
-    nw_lines = [f"  Contacts ready: {nw['contacts_ready']}"]
-    if nw["channel_mix"]:
-        nw_lines.append("  Channel mix:")
-        for ch, cnt in nw["channel_mix"].items():
-            nw_lines.append(f"    {ch}: {cnt}")
-    else:
-        nw_lines.append("  No contacts ready for next week.")
-    console.print(Panel("\n".join(nw_lines), title="Proposed Next Week"))
-
-    # Section 4: Newsletter
-    nl = plan["newsletter_recommendation"]
-    rec_label = "[green]Yes[/green]" if nl["recommend"] else "[yellow]No[/yellow]"
-    console.print(
-        Panel(
-            f"  Recommend: {rec_label}\n  Reason: {nl['reason']}",
-            title="Newsletter",
         )
-    )
 
-    # Section 5: Next Actions
-    actions = plan["next_actions"]
-    action_lines = [f"  - {a}" for a in actions]
-    console.print(Panel("\n".join(action_lines), title="Next Actions"))
+        # Section 1: Last Week Summary
+        lw = plan["last_week"]
+        summary_lines = [
+            f"  Period:            {lw['period']}",
+            f"  Emails sent:       {lw['emails_sent']}",
+            f"  LinkedIn actions:  {lw['linkedin_actions']}",
+            f"  Positive replies:  [green]{lw['replies_positive']}[/green]",
+            f"  Negative replies:  [red]{lw['replies_negative']}[/red]",
+            f"  Calls booked:      [cyan]{lw['calls_booked']}[/cyan]",
+            f"  New no-response:   {lw['new_no_response']}",
+        ]
+        console.print(Panel("\n".join(summary_lines), title="Last Week Summary"))
 
-    conn.close()
+        # Section 2: A/B Variant Comparison
+        variants = plan["variant_comparison"]
+        if variants:
+            vt = Table(title="A/B Variant Comparison")
+            vt.add_column("Variant", style="bold")
+            vt.add_column("Total", justify="right")
+            vt.add_column("Positive", justify="right", style="green")
+            vt.add_column("Negative", justify="right", style="red")
+            vt.add_column("No Response", justify="right")
+            vt.add_column("Reply Rate", justify="right")
+            vt.add_column("Positive Rate", justify="right")
+
+            for v in variants:
+                vt.add_row(
+                    v["variant"],
+                    str(v["total"]),
+                    str(v["replied_positive"]),
+                    str(v["replied_negative"]),
+                    str(v["no_response"]),
+                    f"{v['reply_rate']:.1%}",
+                    f"{v['positive_rate']:.1%}",
+                )
+            console.print(vt)
+        else:
+            console.print("[dim]No A/B variant data available.[/dim]")
+
+        # Section 3: Proposed Next Week
+        nw = plan["proposed_next_week"]
+        nw_lines = [f"  Contacts ready: {nw['contacts_ready']}"]
+        if nw["channel_mix"]:
+            nw_lines.append("  Channel mix:")
+            for ch, cnt in nw["channel_mix"].items():
+                nw_lines.append(f"    {ch}: {cnt}")
+        else:
+            nw_lines.append("  No contacts ready for next week.")
+        console.print(Panel("\n".join(nw_lines), title="Proposed Next Week"))
+
+        # Section 4: Newsletter
+        nl = plan["newsletter_recommendation"]
+        rec_label = "[green]Yes[/green]" if nl["recommend"] else "[yellow]No[/yellow]"
+        console.print(
+            Panel(
+                f"  Recommend: {rec_label}\n  Reason: {nl['reason']}",
+                title="Newsletter",
+            )
+        )
+
+        # Section 5: Next Actions
+        actions = plan["next_actions"]
+        action_lines = [f"  - {a}" for a in actions]
+        console.print(Panel("\n".join(action_lines), title="Next Actions"))
+    finally:
+        conn.close()
 
 
 @app.command()
@@ -799,113 +801,113 @@ def report(
     )
 
     conn = get_connection(SUPABASE_DB_URL)
-    run_migrations(conn)
+    try:
+        run_migrations(conn)
 
-    camp = get_campaign_by_name(conn, campaign)
-    if not camp:
-        console.print(f"[red]ERROR: Campaign '{campaign}' not found[/red]")
-        conn.close()
-        raise typer.Exit(1)
+        camp = get_campaign_by_name(conn, campaign)
+        if not camp:
+            console.print(f"[red]ERROR: Campaign '{campaign}' not found[/red]")
+            raise typer.Exit(1)
 
-    campaign_id = camp["id"]
-    metrics = get_campaign_metrics(conn, campaign_id)
+        campaign_id = camp["id"]
+        metrics = get_campaign_metrics(conn, campaign_id)
 
-    # Header
-    console.print(
-        Panel(
-            f"[bold]{camp['name']}[/bold]  (status: {camp['status']})",
-            title="Campaign Report",
-            style="blue",
+        # Header
+        console.print(
+            Panel(
+                f"[bold]{camp['name']}[/bold]  (status: {camp['status']})",
+                title="Campaign Report",
+                style="blue",
+            )
         )
-    )
 
-    # Overall Metrics
-    bs = metrics["by_status"]
-    overview_lines = [
-        f"  Total enrolled:    {metrics['total_enrolled']}",
-        f"  Queued:            {bs['queued']}",
-        f"  In progress:       {bs['in_progress']}",
-        f"  Replied positive:  [green]{bs['replied_positive']}[/green]",
-        f"  Replied negative:  [red]{bs['replied_negative']}[/red]",
-        f"  No response:       {bs['no_response']}",
-        f"  Bounced:           [red]{bs['bounced']}[/red]",
-        "",
-        f"  Emails sent:       {metrics['emails_sent']}",
-        f"  LinkedIn connects: {metrics['linkedin_connects']}",
-        f"  LinkedIn messages: {metrics['linkedin_messages']}",
-        f"  Calls booked:      [cyan]{metrics['calls_booked']}[/cyan]",
-        "",
-        f"  Reply rate:        {metrics['reply_rate']:.1%}",
-        f"  Positive rate:     {metrics['positive_rate']:.1%}",
-    ]
-    console.print(Panel("\n".join(overview_lines), title="Overall Metrics"))
+        # Overall Metrics
+        bs = metrics["by_status"]
+        overview_lines = [
+            f"  Total enrolled:    {metrics['total_enrolled']}",
+            f"  Queued:            {bs['queued']}",
+            f"  In progress:       {bs['in_progress']}",
+            f"  Replied positive:  [green]{bs['replied_positive']}[/green]",
+            f"  Replied negative:  [red]{bs['replied_negative']}[/red]",
+            f"  No response:       {bs['no_response']}",
+            f"  Bounced:           [red]{bs['bounced']}[/red]",
+            "",
+            f"  Emails sent:       {metrics['emails_sent']}",
+            f"  LinkedIn connects: {metrics['linkedin_connects']}",
+            f"  LinkedIn messages: {metrics['linkedin_messages']}",
+            f"  Calls booked:      [cyan]{metrics['calls_booked']}[/cyan]",
+            "",
+            f"  Reply rate:        {metrics['reply_rate']:.1%}",
+            f"  Positive rate:     {metrics['positive_rate']:.1%}",
+        ]
+        console.print(Panel("\n".join(overview_lines), title="Overall Metrics"))
 
-    # Weekly Summary
-    weekly = get_weekly_summary(conn, campaign_id, weeks_back=1)
-    weekly_lines = [
-        f"  Period:            {weekly['period']}",
-        f"  Emails sent:       {weekly['emails_sent']}",
-        f"  LinkedIn actions:  {weekly['linkedin_actions']}",
-        f"  Positive replies:  [green]{weekly['replies_positive']}[/green]",
-        f"  Negative replies:  [red]{weekly['replies_negative']}[/red]",
-        f"  Calls booked:      [cyan]{weekly['calls_booked']}[/cyan]",
-        f"  New no-response:   {weekly['new_no_response']}",
-    ]
-    console.print(Panel("\n".join(weekly_lines), title="This Week"))
+        # Weekly Summary
+        weekly = get_weekly_summary(conn, campaign_id, weeks_back=1)
+        weekly_lines = [
+            f"  Period:            {weekly['period']}",
+            f"  Emails sent:       {weekly['emails_sent']}",
+            f"  LinkedIn actions:  {weekly['linkedin_actions']}",
+            f"  Positive replies:  [green]{weekly['replies_positive']}[/green]",
+            f"  Negative replies:  [red]{weekly['replies_negative']}[/red]",
+            f"  Calls booked:      [cyan]{weekly['calls_booked']}[/cyan]",
+            f"  New no-response:   {weekly['new_no_response']}",
+        ]
+        console.print(Panel("\n".join(weekly_lines), title="This Week"))
 
-    # Variant Comparison
-    variants = get_variant_comparison(conn, campaign_id)
-    if variants:
-        vt = Table(title="A/B Variant Comparison")
-        vt.add_column("Variant", style="bold")
-        vt.add_column("Total", justify="right")
-        vt.add_column("Positive", justify="right", style="green")
-        vt.add_column("Negative", justify="right", style="red")
-        vt.add_column("No Response", justify="right")
-        vt.add_column("Reply Rate", justify="right")
-        vt.add_column("Positive Rate", justify="right")
+        # Variant Comparison
+        variants = get_variant_comparison(conn, campaign_id)
+        if variants:
+            vt = Table(title="A/B Variant Comparison")
+            vt.add_column("Variant", style="bold")
+            vt.add_column("Total", justify="right")
+            vt.add_column("Positive", justify="right", style="green")
+            vt.add_column("Negative", justify="right", style="red")
+            vt.add_column("No Response", justify="right")
+            vt.add_column("Reply Rate", justify="right")
+            vt.add_column("Positive Rate", justify="right")
 
-        for v in variants:
-            vt.add_row(
-                v["variant"],
-                str(v["total"]),
-                str(v["replied_positive"]),
-                str(v["replied_negative"]),
-                str(v["no_response"]),
-                f"{v['reply_rate']:.1%}",
-                f"{v['positive_rate']:.1%}",
-            )
-        console.print(vt)
-    else:
-        console.print("[dim]No A/B variant data available.[/dim]")
+            for v in variants:
+                vt.add_row(
+                    v["variant"],
+                    str(v["total"]),
+                    str(v["replied_positive"]),
+                    str(v["replied_negative"]),
+                    str(v["no_response"]),
+                    f"{v['reply_rate']:.1%}",
+                    f"{v['positive_rate']:.1%}",
+                )
+            console.print(vt)
+        else:
+            console.print("[dim]No A/B variant data available.[/dim]")
 
-    # Company Type Breakdown
-    firm_breakdown = get_company_type_breakdown(conn, campaign_id)
-    if firm_breakdown:
-        ft = Table(title="Reply Rate by Firm Type")
-        ft.add_column("Firm Type", style="bold")
-        ft.add_column("Total", justify="right")
-        ft.add_column("Positive", justify="right", style="green")
-        ft.add_column("Negative", justify="right", style="red")
-        ft.add_column("No Response", justify="right")
-        ft.add_column("Reply Rate", justify="right")
-        ft.add_column("Positive Rate", justify="right")
+        # Company Type Breakdown
+        firm_breakdown = get_company_type_breakdown(conn, campaign_id)
+        if firm_breakdown:
+            ft = Table(title="Reply Rate by Firm Type")
+            ft.add_column("Firm Type", style="bold")
+            ft.add_column("Total", justify="right")
+            ft.add_column("Positive", justify="right", style="green")
+            ft.add_column("Negative", justify="right", style="red")
+            ft.add_column("No Response", justify="right")
+            ft.add_column("Reply Rate", justify="right")
+            ft.add_column("Positive Rate", justify="right")
 
-        for f in firm_breakdown:
-            ft.add_row(
-                f["firm_type"],
-                str(f["total"]),
-                str(f["replied_positive"]),
-                str(f["replied_negative"]),
-                str(f["no_response"]),
-                f"{f['reply_rate']:.1%}",
-                f"{f['positive_rate']:.1%}",
-            )
-        console.print(ft)
-    else:
-        console.print("[dim]No firm type data available.[/dim]")
-
-    conn.close()
+            for f in firm_breakdown:
+                ft.add_row(
+                    f["firm_type"],
+                    str(f["total"]),
+                    str(f["replied_positive"]),
+                    str(f["replied_negative"]),
+                    str(f["no_response"]),
+                    f"{f['reply_rate']:.1%}",
+                    f"{f['positive_rate']:.1%}",
+                )
+            console.print(ft)
+        else:
+            console.print("[dim]No firm type data available.[/dim]")
+    finally:
+        conn.close()
 
 
 @app.command()

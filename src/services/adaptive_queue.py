@@ -47,7 +47,7 @@ def get_adaptive_queue(
     # Get available templates per channel
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT * FROM templates WHERE is_active = 1 ORDER BY id"
+        "SELECT * FROM templates WHERE is_active = true ORDER BY id"
     )
     all_templates = [dict(r) for r in cursor.fetchall()]
 

@@ -36,7 +36,7 @@ def _tomorrow() -> str:
     return (date.today() + timedelta(days=1)).isoformat()
 
 
-def _insert_company(conn, name, aum_millions=None, country="US", is_gdpr=0):
+def _insert_company(conn, name, aum_millions=None, country="US", is_gdpr=False):
     """Insert a company and return its id."""
     cursor = conn.cursor()
     cursor.execute(
@@ -58,8 +58,8 @@ def _insert_contact(
     email_status="valid",
     linkedin_url="https://linkedin.com/in/test",
     priority_rank=1,
-    is_gdpr=0,
-    unsubscribed=0,
+    is_gdpr=False,
+    unsubscribed=False,
 ):
     """Insert a contact and return its id."""
     cursor = conn.cursor()
@@ -352,7 +352,7 @@ class TestGetDailyQueue:
 
         c_unsub = _insert_contact(
             conn, comp, first_name="Unsub", last_name="Contact",
-            unsubscribed=1,
+            unsubscribed=True,
         )
         enroll_contact(conn, c_unsub, campaign, next_action_date=_today())
         update_contact_campaign_status(
@@ -440,9 +440,9 @@ class TestGetDailyQueue:
 
     def test_queue_total_steps_gdpr_contact(self, conn, campaign):
         """GDPR contacts get fewer total_steps (non_gdpr_only excluded)."""
-        comp = _insert_company(conn, "EU Fund", aum_millions=500, is_gdpr=1)
+        comp = _insert_company(conn, "EU Fund", aum_millions=500, is_gdpr=True)
         cid = _insert_contact(
-            conn, comp, first_name="GDPR", last_name="Contact", is_gdpr=1,
+            conn, comp, first_name="GDPR", last_name="Contact", is_gdpr=True,
         )
         enroll_contact(conn, cid, campaign, next_action_date=_today())
         update_contact_campaign_status(
@@ -496,11 +496,11 @@ class TestGetDailyQueue:
 
         c_us = _insert_contact(
             conn, comp_us, first_name="US", last_name="Person",
-            email_status="valid", is_gdpr=0,
+            email_status="valid", is_gdpr=False,
         )
         c_eu = _insert_contact(
             conn, comp_eu, first_name="EU", last_name="Person",
-            email="eu@example.com", email_status="valid", is_gdpr=1,
+            email="eu@example.com", email_status="valid", is_gdpr=True,
         )
 
         for cid in [c_us, c_eu]:
@@ -551,8 +551,8 @@ class TestGetNextStepForContact:
 
     def test_gdpr_contact_skips_non_gdpr_only_steps(self, conn, campaign):
         """GDPR contacts skip steps marked non_gdpr_only and find the next eligible step."""
-        comp = _insert_company(conn, "EU Corp", aum_millions=500, is_gdpr=1)
-        cid = _insert_contact(conn, comp, first_name="EU", last_name="Contact", is_gdpr=1)
+        comp = _insert_company(conn, "EU Corp", aum_millions=500, is_gdpr=True)
+        cid = _insert_contact(conn, comp, first_name="EU", last_name="Contact", is_gdpr=True)
         enroll_contact(conn, cid, campaign, next_action_date=_today())
         # Step 4 is non_gdpr_only, so a GDPR contact at step 4 should not get it
         update_contact_campaign_status(
@@ -566,7 +566,7 @@ class TestGetNextStepForContact:
     def test_non_gdpr_contact_gets_non_gdpr_only_step(self, conn, campaign):
         """Non-GDPR contacts can access non_gdpr_only steps normally."""
         comp = _insert_company(conn, "US Corp", aum_millions=500)
-        cid = _insert_contact(conn, comp, first_name="US", last_name="Contact", is_gdpr=0)
+        cid = _insert_contact(conn, comp, first_name="US", last_name="Contact", is_gdpr=False)
         enroll_contact(conn, cid, campaign, next_action_date=_today())
         update_contact_campaign_status(
             conn, cid, campaign, status="in_progress", current_step=4
@@ -600,8 +600,8 @@ class TestGetNextStepForContact:
 
     def test_gdpr_skips_forward(self, conn, campaign):
         """GDPR contact at step 3 gets step 3 (which is not GDPR-restricted)."""
-        comp = _insert_company(conn, "EU Corp", aum_millions=500, is_gdpr=1)
-        cid = _insert_contact(conn, comp, first_name="EU", last_name="Contact", is_gdpr=1)
+        comp = _insert_company(conn, "EU Corp", aum_millions=500, is_gdpr=True)
+        cid = _insert_contact(conn, comp, first_name="EU", last_name="Contact", is_gdpr=True)
         enroll_contact(conn, cid, campaign, next_action_date=_today())
         update_contact_campaign_status(
             conn, cid, campaign, status="in_progress", current_step=3
@@ -623,15 +623,15 @@ class TestCountStepsForContact:
     def test_non_gdpr_gets_all_steps(self, conn, campaign):
         """Non-GDPR contacts see all 5 steps."""
         comp = _insert_company(conn, "US Corp", aum_millions=500)
-        cid = _insert_contact(conn, comp, first_name="US", last_name="Contact", is_gdpr=0)
+        cid = _insert_contact(conn, comp, first_name="US", last_name="Contact", is_gdpr=False)
 
         count = count_steps_for_contact(conn, cid, campaign)
         assert count == 5
 
     def test_gdpr_excludes_non_gdpr_only_steps(self, conn, campaign):
         """GDPR contacts see 3 steps (steps 4 and 5 are non_gdpr_only)."""
-        comp = _insert_company(conn, "EU Corp", aum_millions=500, is_gdpr=1)
-        cid = _insert_contact(conn, comp, first_name="EU", last_name="Contact", is_gdpr=1)
+        comp = _insert_company(conn, "EU Corp", aum_millions=500, is_gdpr=True)
+        cid = _insert_contact(conn, comp, first_name="EU", last_name="Contact", is_gdpr=True)
 
         count = count_steps_for_contact(conn, cid, campaign)
         assert count == 3
@@ -655,11 +655,11 @@ class TestCountStepsForContact:
         add_sequence_step(conn, campaign_id, 3, "email", t3, delay_days=5)
 
         comp = _insert_company(conn, "US Corp", aum_millions=500)
-        c_us = _insert_contact(conn, comp, first_name="US", last_name="Contact", is_gdpr=0)
-        comp_eu = _insert_company(conn, "EU Corp", aum_millions=500, is_gdpr=1)
+        c_us = _insert_contact(conn, comp, first_name="US", last_name="Contact", is_gdpr=False)
+        comp_eu = _insert_company(conn, "EU Corp", aum_millions=500, is_gdpr=True)
         c_eu = _insert_contact(
             conn, comp_eu, first_name="EU", last_name="Contact",
-            email="eu@example.com", is_gdpr=1,
+            email="eu@example.com", is_gdpr=True,
         )
 
         # Non-GDPR contact: step 2 (gdpr_only) is skipped => 2 steps

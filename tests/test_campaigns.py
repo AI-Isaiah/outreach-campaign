@@ -207,7 +207,7 @@ class TestCreateTemplate:
         assert row["subject"] == "Intro"
         assert row["variant_group"] == "welcome"
         assert row["variant_label"] == "A"
-        assert row["is_active"] == 1
+        assert row["is_active"] is True
 
     def test_linkedin_channel(self, conn):
         tid = create_template(conn, "LI Connect", "linkedin_connect", "Hi, let's connect")
@@ -235,7 +235,7 @@ class TestListTemplates:
         t2 = create_template(conn, "Inactive", "email", "body")
         # Deactivate t2
         cursor = conn.cursor()
-        cursor.execute("UPDATE templates SET is_active = 0 WHERE id = %s", (t2,))
+        cursor.execute("UPDATE templates SET is_active = false WHERE id = %s", (t2,))
         conn.commit()
 
         result = list_templates(conn)
@@ -246,7 +246,7 @@ class TestListTemplates:
         t1 = create_template(conn, "Active", "email", "body")
         t2 = create_template(conn, "Inactive", "email", "body")
         cursor = conn.cursor()
-        cursor.execute("UPDATE templates SET is_active = 0 WHERE id = %s", (t2,))
+        cursor.execute("UPDATE templates SET is_active = false WHERE id = %s", (t2,))
         conn.commit()
 
         result = list_templates(conn, is_active=False)
@@ -269,7 +269,7 @@ class TestListTemplates:
         t2 = create_template(conn, "Email Inactive", "email", "body")
         t3 = create_template(conn, "LI Active", "linkedin_connect", "body")
         cursor = conn.cursor()
-        cursor.execute("UPDATE templates SET is_active = 0 WHERE id = %s", (t2,))
+        cursor.execute("UPDATE templates SET is_active = false WHERE id = %s", (t2,))
         conn.commit()
 
         result = list_templates(conn, channel="email", is_active=True)
@@ -304,8 +304,8 @@ class TestAddSequenceStep:
         assert step["channel"] == "email"
         assert step["template_id"] == sample_template
         assert step["delay_days"] == 3
-        assert step["gdpr_only"] == 1
-        assert step["non_gdpr_only"] == 0
+        assert step["gdpr_only"] is True
+        assert step["non_gdpr_only"] is False
 
     def test_duplicate_step_order_raises(self, conn, sample_campaign):
         add_sequence_step(conn, sample_campaign, 1, "email")
@@ -371,7 +371,7 @@ class TestEnrollContact:
             next_action_date="2026-03-01",
         )
         row = get_contact_campaign_status(conn, sample_contact, sample_campaign)
-        assert row["next_action_date"] == "2026-03-01"
+        assert str(row["next_action_date"]) == "2026-03-01"
 
     def test_default_status_queued(self, conn, sample_contact, sample_campaign):
         enroll_contact(conn, sample_contact, sample_campaign)
@@ -475,7 +475,7 @@ class TestUpdateContactCampaignStatus:
             next_action_date="2026-04-01",
         )
         row = get_contact_campaign_status(conn, sample_contact, sample_campaign)
-        assert row["next_action_date"] == "2026-04-01"
+        assert str(row["next_action_date"]) == "2026-04-01"
 
     def test_update_multiple_fields(self, conn, sample_contact, sample_campaign):
         enroll_contact(conn, sample_contact, sample_campaign)
@@ -488,7 +488,7 @@ class TestUpdateContactCampaignStatus:
         row = get_contact_campaign_status(conn, sample_contact, sample_campaign)
         assert row["status"] == "replied_positive"
         assert row["current_step"] == 3
-        assert row["next_action_date"] == "2026-05-01"
+        assert str(row["next_action_date"]) == "2026-05-01"
 
     def test_updated_at_changes(self, conn, sample_contact, sample_campaign):
         enroll_contact(conn, sample_contact, sample_campaign)

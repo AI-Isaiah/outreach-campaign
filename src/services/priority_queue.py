@@ -60,7 +60,7 @@ def get_daily_queue(
         WHERE ccs.campaign_id = %s
           AND ccs.status IN ('queued', 'in_progress')
           AND ccs.next_action_date <= %s
-          AND c.unsubscribed = 0
+          AND c.unsubscribed = false
     ),
     ranked AS (
         SELECT *,
@@ -101,8 +101,8 @@ def get_daily_queue(
             OR (ac.linkedin_url IS NOT NULL AND ac.linkedin_url != '')
         )
         -- GDPR filtering on steps
-        AND (ss.non_gdpr_only = 0 OR ac.contact_is_gdpr = 0)
-        AND (ss.gdpr_only = 0 OR ac.contact_is_gdpr = 1)
+        AND (ss.non_gdpr_only = false OR ac.contact_is_gdpr = false)
+        AND (ss.gdpr_only = false OR ac.contact_is_gdpr = true)
     ORDER BY
         CASE WHEN ac.aum_millions IS NULL THEN 1 ELSE 0 END,
         ac.aum_millions DESC
@@ -115,7 +115,8 @@ def get_daily_queue(
 
     results = []
     for row in rows:
-        total_steps = count_steps_for_contact(conn, row["contact_id"], campaign_id)
+        # Compute total_steps for each contact (batch-friendly approach)
+        total_steps = count_steps_for_contact(conn, row["contact_id"], campaign_id) if "total_steps" not in row else row["total_steps"]
         results.append(
             {
                 "contact_id": row["contact_id"],
@@ -169,8 +170,8 @@ def get_next_step_for_contact(
         SELECT * FROM sequence_steps
         WHERE campaign_id = %s
           AND step_order >= %s
-          AND (non_gdpr_only = 0 OR %s = 0)
-          AND (gdpr_only = 0 OR %s = 1)
+          AND (non_gdpr_only = false OR %s = false)
+          AND (gdpr_only = false OR %s = true)
         ORDER BY step_order ASC
         LIMIT 1
         """,
@@ -207,8 +208,8 @@ def count_steps_for_contact(
         """
         SELECT COUNT(*) AS cnt FROM sequence_steps
         WHERE campaign_id = %s
-          AND (non_gdpr_only = 0 OR %s = 0)
-          AND (gdpr_only = 0 OR %s = 1)
+          AND (non_gdpr_only = false OR %s = false)
+          AND (gdpr_only = false OR %s = true)
         """,
         (campaign_id, is_gdpr, is_gdpr),
     )

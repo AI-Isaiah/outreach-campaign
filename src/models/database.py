@@ -15,11 +15,9 @@ def run_migrations(conn) -> None:
     migration_files = sorted(MIGRATIONS_DIR.glob("*.sql"))
     cursor = conn.cursor()
     for migration_file in migration_files:
-        sql = migration_file.read_text()
-        for statement in sql.split(";"):
-            statement = statement.strip()
-            if statement:
-                cursor.execute(statement)
+        sql = migration_file.read_text().strip()
+        if sql:
+            cursor.execute(sql)
     conn.commit()
 
 

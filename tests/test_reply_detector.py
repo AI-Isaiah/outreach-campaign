@@ -77,7 +77,7 @@ def test_store_pending_reply(tmp_db):
     assert row["gmail_message_id"] == "msg_123"
     assert row["classification"] == "positive"
     assert row["confidence"] == 0.9
-    assert row["confirmed"] == 0
+    assert row["confirmed"] is False
     conn.close()
 
 
@@ -190,7 +190,7 @@ def test_scan_gmail_with_replies(mock_classify, tmp_db):
     mock_messages.get.return_value.execute.return_value = {
         "id": "msg_scan_1",
         "threadId": "thread_scan_1",
-        "internalDate": "1740000000000",  # 2025-02-19 — after enrollment
+        "internalDate": "1798675200000",  # 2026-12-31 — after enrollment
         "snippet": "I'd love to learn more about your fund",
         "payload": {
             "headers": [

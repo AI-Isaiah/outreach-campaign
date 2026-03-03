@@ -55,14 +55,16 @@ def run_analysis(conn, campaign_id: int) -> dict:
     cur = conn.cursor()
     cur.execute(
         """INSERT INTO advisor_runs
-               (campaign_id, run_type, prompt_summary, response_text, insights_json)
-           VALUES (%s, 'analysis', %s, %s, %s)
+               (campaign_id, run_type, prompt_summary, response_text,
+                insights_json, template_suggestions_json)
+           VALUES (%s, 'analysis', %s, %s, %s, %s)
            RETURNING id""",
         (
             campaign_id,
             prompt[:500],
             response_text,
             json.dumps(insights),
+            json.dumps(insights.get("template_suggestions", [])),
         ),
     )
     run_id = cur.fetchone()["id"]
@@ -81,7 +83,8 @@ def get_analysis_history(conn, campaign_id: int) -> list[dict]:
     cur = conn.cursor()
     cur.execute(
         """SELECT id, campaign_id, run_type, prompt_summary,
-                  response_text, insights_json, created_at
+                  response_text, insights_json, template_suggestions_json,
+                  events_analyzed, created_at
            FROM advisor_runs
            WHERE campaign_id = %s
            ORDER BY created_at DESC""",
@@ -91,11 +94,14 @@ def get_analysis_history(conn, campaign_id: int) -> list[dict]:
     results = []
     for row in rows:
         r = dict(row)
-        if r.get("insights_json"):
+        # JSONB columns are auto-parsed by psycopg2
+        if r.get("insights_json") and isinstance(r["insights_json"], str):
             try:
                 r["insights_parsed"] = json.loads(r["insights_json"])
             except (json.JSONDecodeError, TypeError):
                 r["insights_parsed"] = None
+        elif r.get("insights_json"):
+            r["insights_parsed"] = r["insights_json"]
         results.append(r)
     return results
 

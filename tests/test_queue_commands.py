@@ -28,7 +28,7 @@ def _today() -> str:
     return date.today().isoformat()
 
 
-def _insert_company(conn, name, aum_millions=None, country="US", is_gdpr=0):
+def _insert_company(conn, name, aum_millions=None, country="US", is_gdpr=False):
     """Insert a company and return its id."""
     cursor = conn.cursor()
     cursor.execute(
@@ -50,8 +50,8 @@ def _insert_contact(
     email_status="valid",
     linkedin_url="https://linkedin.com/in/test",
     priority_rank=1,
-    is_gdpr=0,
-    unsubscribed=0,
+    is_gdpr=False,
+    unsubscribed=False,
 ):
     """Insert a contact and return its id."""
     cursor = conn.cursor()
@@ -424,7 +424,7 @@ class TestImportExpandiResults:
         assert ccs["status"] == "in_progress"
         # Next action date should be today + delay_days of step 2 (3 days)
         expected_date = (date.today() + timedelta(days=3)).isoformat()
-        assert ccs["next_action_date"] == expected_date
+        assert str(ccs["next_action_date"]) == expected_date
 
     def test_advances_on_message_sent_for_linkedin_message(self, conn, campaign, tmp_path):
         """When status is 'message_sent' and step is linkedin_message, contact is advanced."""
@@ -450,7 +450,7 @@ class TestImportExpandiResults:
         ccs = get_contact_campaign_status(conn, cid, campaign)
         assert ccs["current_step"] == 3
         expected_date = (date.today() + timedelta(days=5)).isoformat()
-        assert ccs["next_action_date"] == expected_date
+        assert str(ccs["next_action_date"]) == expected_date
 
     def test_handles_unmatched_contacts_gracefully(self, conn, campaign, tmp_path):
         """Rows with unmatched LinkedIn URLs are counted but don't cause errors."""

@@ -18,7 +18,7 @@ def _setup_db(tmp_db):
 def _insert_company(conn, name, country="United States"):
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO companies (name, name_normalized, country, is_gdpr) VALUES (%s, %s, %s, 0) RETURNING id",
+        "INSERT INTO companies (name, name_normalized, country, is_gdpr) VALUES (%s, %s, %s, false) RETURNING id",
         (name, name.lower(), country),
     )
     company_id = cursor.fetchone()["id"]
@@ -34,7 +34,7 @@ def _insert_contact(conn, company_id, email=None, linkedin=None, rank=1):
         """INSERT INTO contacts
            (company_id, full_name, email, email_normalized,
             linkedin_url, linkedin_url_normalized, priority_rank, source, is_gdpr)
-           VALUES (%s, 'Test Person', %s, %s, %s, %s, %s, 'test', 0) RETURNING id""",
+           VALUES (%s, 'Test Person', %s, %s, %s, %s, %s, 'test', false) RETURNING id""",
         (company_id, email, email_norm, linkedin, li_norm, rank),
     )
     contact_id = cursor.fetchone()["id"]

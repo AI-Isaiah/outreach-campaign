@@ -109,6 +109,8 @@ def _activate_next_contact(
     company_id = contact_row["company_id"]
     current_rank = contact_row["priority_rank"]
 
+    # Use FOR UPDATE to prevent race conditions where two concurrent
+    # transitions could both try to activate the same next contact.
     cursor.execute(
         """SELECT c.id FROM contacts c
            WHERE c.company_id = %s AND c.priority_rank > %s
@@ -116,7 +118,8 @@ def _activate_next_contact(
                SELECT contact_id FROM contact_campaign_status WHERE campaign_id = %s
            )
            ORDER BY c.priority_rank ASC
-           LIMIT 1""",
+           LIMIT 1
+           FOR UPDATE OF c""",
         (company_id, current_rank, campaign_id),
     )
     next_contact = cursor.fetchone()

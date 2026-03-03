@@ -167,7 +167,7 @@ def test_confirm_reply(client, db_conn):
     cur.execute(
         """INSERT INTO pending_replies (contact_id, campaign_id, subject, snippet,
                                         classification, confidence, confirmed)
-           VALUES (%s, %s, 'Re: Intro', 'Sounds great!', 'positive', 0.95, 0)
+           VALUES (%s, %s, 'Re: Intro', 'Sounds great!', 'positive', 0.95, false)
            RETURNING id""",
         (contact_id, campaign_id),
     )
@@ -187,10 +187,12 @@ def test_confirm_reply_not_found(client):
     assert resp.status_code == 404
 
 
-def test_reply_scan_placeholder(client):
+def test_reply_scan(client):
+    """Scan with no enrolled contacts should return ok with zero scanned."""
     resp = client.post("/api/replies/scan")
     assert resp.status_code == 200
-    assert resp.json()["status"] == "not_implemented"
+    assert resp.json()["status"] == "ok"
+    assert resp.json()["scanned"] == 0
 
 
 # ---------- CRM Contacts ----------

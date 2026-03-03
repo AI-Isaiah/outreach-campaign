@@ -185,7 +185,7 @@ def import_fund_csv(conn, csv_path: str) -> Dict[str, int]:
 
             name_normalized = _normalize_company_name(firm_name)
             country = (row.get("Country") or "").strip()
-            is_gdpr = 1 if country.lower() in gdpr_countries else 0
+            is_gdpr = True if country.lower() in gdpr_countries else False
 
             # AUM — the header has leading/trailing spaces
             aum_raw = row.get(" AUM (Millions) ") or row.get("AUM (Millions)") or ""

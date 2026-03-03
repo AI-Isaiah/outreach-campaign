@@ -45,7 +45,7 @@ def sample_company(conn):
     cursor.execute(
         "INSERT INTO companies (name, name_normalized, country, is_gdpr, aum_millions) "
         "VALUES (%s, %s, %s, %s, %s) RETURNING id",
-        ("Acme Crypto Fund", "acme crypto fund", "United States", 0, 500.0),
+        ("Acme Crypto Fund", "acme crypto fund", "United States", False, 500.0),
     )
     company_id = cursor.fetchone()["id"]
     conn.commit()
@@ -427,7 +427,7 @@ class TestUnsubscribeCommand:
             (sample_contact,),
         )
         row = cursor.fetchone()
-        assert row["unsubscribed"] == 1
+        assert row["unsubscribed"] is True
         assert row["unsubscribed_at"] is not None
 
     def test_unsubscribe_unknown_email(self, tmp_db, conn):
