@@ -7,7 +7,6 @@ Markdown-to-HTML rendering, compliance footers, and newsletter sending.
 from __future__ import annotations
 
 import json
-import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -47,47 +46,55 @@ def conn(tmp_db):
 @pytest.fixture
 def sample_company(conn):
     """Insert a non-GDPR company and return its id."""
-    cursor = conn.execute(
-        "INSERT INTO companies (name, name_normalized, country, is_gdpr) VALUES (?, ?, ?, ?)",
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO companies (name, name_normalized, country, is_gdpr) VALUES (%s, %s, %s, %s) RETURNING id",
         ("Acme Crypto Fund", "acme crypto fund", "United States", 0),
     )
+    company_id = cursor.fetchone()["id"]
     conn.commit()
-    return cursor.lastrowid
+    return company_id
 
 
 @pytest.fixture
 def gdpr_company(conn):
     """Insert a GDPR-subject company and return its id."""
-    cursor = conn.execute(
-        "INSERT INTO companies (name, name_normalized, country, is_gdpr) VALUES (?, ?, ?, ?)",
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO companies (name, name_normalized, country, is_gdpr) VALUES (%s, %s, %s, %s) RETURNING id",
         ("Berlin Capital GmbH", "berlin capital gmbh", "Germany", 1),
     )
+    company_id = cursor.fetchone()["id"]
     conn.commit()
-    return cursor.lastrowid
+    return company_id
 
 
 @pytest.fixture
 def sample_contact(conn, sample_company):
     """Insert a non-GDPR contact and return its id."""
-    cursor = conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         "INSERT INTO contacts (company_id, first_name, last_name, full_name, email, source, is_gdpr) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
         (sample_company, "Alice", "Smith", "Alice Smith", "alice@example.com", "csv", 0),
     )
+    contact_id = cursor.fetchone()["id"]
     conn.commit()
-    return cursor.lastrowid
+    return contact_id
 
 
 @pytest.fixture
 def gdpr_contact(conn, gdpr_company):
     """Insert a GDPR-subject contact and return its id."""
-    cursor = conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         "INSERT INTO contacts (company_id, first_name, last_name, full_name, email, source, is_gdpr) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
         (gdpr_company, "Hans", "Mueller", "Hans Mueller", "hans@berlin-cap.de", "csv", 1),
     )
+    contact_id = cursor.fetchone()["id"]
     conn.commit()
-    return cursor.lastrowid
+    return contact_id
 
 
 @pytest.fixture
@@ -135,13 +142,14 @@ def _make_subscribed_contacts(conn, company_id, count=3):
     """Helper: create multiple subscribed contacts, returning their ids."""
     ids = []
     for i in range(count):
-        cursor = conn.execute(
+        cursor = conn.cursor()
+        cursor.execute(
             "INSERT INTO contacts (company_id, first_name, last_name, full_name, email, source, "
-            "is_gdpr, newsletter_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "is_gdpr, newsletter_status) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
             (company_id, f"Sub{i}", f"User{i}", f"Sub{i} User{i}",
              f"sub{i}@example.com", "csv", 0, "subscribed"),
         )
-        ids.append(cursor.lastrowid)
+        ids.append(cursor.fetchone()["id"])
     conn.commit()
     return ids
 
@@ -166,9 +174,10 @@ class TestGetNewsletterSubscribers:
 
     def test_excludes_unsubscribed(self, conn, sample_company):
         """Contacts who unsubscribed should NOT be returned."""
-        cursor = conn.execute(
+        cursor = conn.cursor()
+        cursor.execute(
             "INSERT INTO contacts (company_id, first_name, email, source, "
-            "newsletter_status, unsubscribed) VALUES (?, ?, ?, ?, ?, ?)",
+            "newsletter_status, unsubscribed) VALUES (%s, %s, %s, %s, %s, %s)",
             (sample_company, "Gone", "gone@example.com", "csv", "unsubscribed", 1),
         )
         conn.commit()
@@ -177,9 +186,10 @@ class TestGetNewsletterSubscribers:
 
     def test_excludes_subscribed_but_unsubscribed_flag(self, conn, sample_company):
         """Even if status says subscribed, unsubscribed=1 should exclude."""
-        cursor = conn.execute(
+        cursor = conn.cursor()
+        cursor.execute(
             "INSERT INTO contacts (company_id, first_name, email, source, "
-            "newsletter_status, unsubscribed) VALUES (?, ?, ?, ?, ?, ?)",
+            "newsletter_status, unsubscribed) VALUES (%s, %s, %s, %s, %s, %s)",
             (sample_company, "Weird", "weird@example.com", "csv", "subscribed", 1),
         )
         conn.commit()
@@ -188,9 +198,10 @@ class TestGetNewsletterSubscribers:
 
     def test_excludes_contacts_without_email(self, conn, sample_company):
         """Contacts without email should NOT be returned even if subscribed."""
-        conn.execute(
+        cursor = conn.cursor()
+        cursor.execute(
             "INSERT INTO contacts (company_id, first_name, source, "
-            "newsletter_status) VALUES (?, ?, ?, ?)",
+            "newsletter_status) VALUES (%s, %s, %s, %s)",
             (sample_company, "NoEmail", "csv", "subscribed"),
         )
         conn.commit()
@@ -203,22 +214,23 @@ class TestGetNewsletterSubscribers:
 
     def test_mixed_statuses(self, conn, sample_company):
         """Only subscribed contacts with unsubscribed=0 are returned."""
+        cursor = conn.cursor()
         # subscribed
-        conn.execute(
+        cursor.execute(
             "INSERT INTO contacts (company_id, first_name, email, source, newsletter_status) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s)",
             (sample_company, "Sub", "sub@example.com", "csv", "subscribed"),
         )
         # none
-        conn.execute(
+        cursor.execute(
             "INSERT INTO contacts (company_id, first_name, email, source, newsletter_status) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s)",
             (sample_company, "None", "none@example.com", "csv", "none"),
         )
         # unsubscribed
-        conn.execute(
+        cursor.execute(
             "INSERT INTO contacts (company_id, first_name, email, source, newsletter_status, unsubscribed) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s)",
             (sample_company, "Unsub", "unsub@example.com", "csv", "unsubscribed", 1),
         )
         conn.commit()
@@ -248,10 +260,12 @@ class TestAutoSubscribeEligible:
         assert result["already_subscribed"] == 0
 
         # Verify database updated
-        row = conn.execute(
-            "SELECT newsletter_status FROM contacts WHERE id = ?",
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT newsletter_status FROM contacts WHERE id = %s",
             (sample_contact,),
-        ).fetchone()
+        )
+        row = cursor.fetchone()
         assert row["newsletter_status"] == "subscribed"
 
     def test_skips_gdpr_contacts(
@@ -268,21 +282,24 @@ class TestAutoSubscribeEligible:
         assert result["skipped_gdpr"] == 1
 
         # Verify database NOT updated
-        row = conn.execute(
-            "SELECT newsletter_status FROM contacts WHERE id = ?",
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT newsletter_status FROM contacts WHERE id = %s",
             (gdpr_contact,),
-        ).fetchone()
+        )
+        row = cursor.fetchone()
         assert row["newsletter_status"] == "none"
 
     def test_skips_gdpr_via_company(self, conn, gdpr_company, sample_campaign):
         """Contact is non-GDPR but company is GDPR -- should skip."""
-        cursor = conn.execute(
+        cursor = conn.cursor()
+        cursor.execute(
             "INSERT INTO contacts (company_id, first_name, email, source, is_gdpr) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s) RETURNING id",
             (gdpr_company, "Max", "max@test.de", "csv", 0),
         )
+        contact_id = cursor.fetchone()["id"]
         conn.commit()
-        contact_id = cursor.lastrowid
 
         enroll_contact(conn, contact_id, sample_campaign)
         update_contact_campaign_status(
@@ -297,13 +314,14 @@ class TestAutoSubscribeEligible:
         self, conn, sample_company, sample_campaign
     ):
         """Already subscribed contacts should be counted but not re-subscribed."""
-        cursor = conn.execute(
+        cursor = conn.cursor()
+        cursor.execute(
             "INSERT INTO contacts (company_id, first_name, email, source, "
-            "is_gdpr, newsletter_status) VALUES (?, ?, ?, ?, ?, ?)",
+            "is_gdpr, newsletter_status) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
             (sample_company, "Already", "already@example.com", "csv", 0, "subscribed"),
         )
+        contact_id = cursor.fetchone()["id"]
         conn.commit()
-        contact_id = cursor.lastrowid
 
         enroll_contact(conn, contact_id, sample_campaign)
         update_contact_campaign_status(
@@ -318,13 +336,14 @@ class TestAutoSubscribeEligible:
         self, conn, sample_company, sample_campaign
     ):
         """Previously unsubscribed contacts should NOT be re-subscribed."""
-        cursor = conn.execute(
+        cursor = conn.cursor()
+        cursor.execute(
             "INSERT INTO contacts (company_id, first_name, email, source, "
-            "is_gdpr, newsletter_status, unsubscribed) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "is_gdpr, newsletter_status, unsubscribed) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
             (sample_company, "Former", "former@example.com", "csv", 0, "unsubscribed", 1),
         )
+        contact_id = cursor.fetchone()["id"]
         conn.commit()
-        contact_id = cursor.lastrowid
 
         enroll_contact(conn, contact_id, sample_campaign)
         update_contact_campaign_status(
@@ -351,13 +370,14 @@ class TestAutoSubscribeEligible:
         self, conn, sample_company, sample_campaign
     ):
         """Contacts without email should not be subscribed."""
-        cursor = conn.execute(
+        cursor = conn.cursor()
+        cursor.execute(
             "INSERT INTO contacts (company_id, first_name, source, is_gdpr) "
-            "VALUES (?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s) RETURNING id",
             (sample_company, "NoEmail", "csv", 0),
         )
+        contact_id = cursor.fetchone()["id"]
         conn.commit()
-        contact_id = cursor.lastrowid
 
         enroll_contact(conn, contact_id, sample_campaign)
         update_contact_campaign_status(
@@ -372,32 +392,37 @@ class TestAutoSubscribeEligible:
     ):
         """Test with a mix of GDPR, non-GDPR, and already subscribed contacts."""
         # Non-GDPR, no_response -> should subscribe
-        c1 = conn.execute(
+        cursor = conn.cursor()
+        cursor.execute(
             "INSERT INTO contacts (company_id, first_name, email, source, is_gdpr) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s) RETURNING id",
             (sample_company, "NonGdpr1", "nongdpr1@example.com", "csv", 0),
-        ).lastrowid
+        )
+        c1 = cursor.fetchone()["id"]
 
         # Non-GDPR, no_response -> should subscribe
-        c2 = conn.execute(
+        cursor.execute(
             "INSERT INTO contacts (company_id, first_name, email, source, is_gdpr) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s) RETURNING id",
             (sample_company, "NonGdpr2", "nongdpr2@example.com", "csv", 0),
-        ).lastrowid
+        )
+        c2 = cursor.fetchone()["id"]
 
         # GDPR, no_response -> should skip
-        c3 = conn.execute(
+        cursor.execute(
             "INSERT INTO contacts (company_id, first_name, email, source, is_gdpr) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s) RETURNING id",
             (gdpr_company, "Gdpr1", "gdpr1@example.de", "csv", 1),
-        ).lastrowid
+        )
+        c3 = cursor.fetchone()["id"]
 
         # Non-GDPR, no_response, already subscribed -> should count as already
-        c4 = conn.execute(
+        cursor.execute(
             "INSERT INTO contacts (company_id, first_name, email, source, is_gdpr, newsletter_status) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
             (sample_company, "AlreadySub", "already@example.com", "csv", 0, "subscribed"),
-        ).lastrowid
+        )
+        c4 = cursor.fetchone()["id"]
 
         conn.commit()
 
@@ -422,10 +447,12 @@ class TestSubscribeContact:
         result = subscribe_contact(conn, sample_contact)
         assert result is True
 
-        row = conn.execute(
-            "SELECT newsletter_status FROM contacts WHERE id = ?",
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT newsletter_status FROM contacts WHERE id = %s",
             (sample_contact,),
-        ).fetchone()
+        )
+        row = cursor.fetchone()
         assert row["newsletter_status"] == "subscribed"
 
     def test_nonexistent_contact_returns_false(self, conn):
@@ -437,10 +464,12 @@ class TestSubscribeContact:
         result = subscribe_contact(conn, sample_contact)
         assert result is True
 
-        row = conn.execute(
-            "SELECT newsletter_status FROM contacts WHERE id = ?",
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT newsletter_status FROM contacts WHERE id = %s",
             (sample_contact,),
-        ).fetchone()
+        )
+        row = cursor.fetchone()
         assert row["newsletter_status"] == "subscribed"
 
 
@@ -454,10 +483,12 @@ class TestUnsubscribeContact:
         result = unsubscribe_contact(conn, sample_contact)
         assert result is True
 
-        row = conn.execute(
-            "SELECT newsletter_status, unsubscribed FROM contacts WHERE id = ?",
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT newsletter_status, unsubscribed FROM contacts WHERE id = %s",
             (sample_contact,),
-        ).fetchone()
+        )
+        row = cursor.fetchone()
         assert row["newsletter_status"] == "unsubscribed"
         assert row["unsubscribed"] == 1
 
@@ -470,10 +501,12 @@ class TestUnsubscribeContact:
         subscribe_contact(conn, sample_contact)
         unsubscribe_contact(conn, sample_contact)
 
-        row = conn.execute(
-            "SELECT newsletter_status, unsubscribed FROM contacts WHERE id = ?",
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT newsletter_status, unsubscribed FROM contacts WHERE id = %s",
             (sample_contact,),
-        ).fetchone()
+        )
+        row = cursor.fetchone()
         assert row["newsletter_status"] == "unsubscribed"
         assert row["unsubscribed"] == 1
 
@@ -635,9 +668,11 @@ class TestSendNewsletter:
 
         send_newsletter(conn, newsletter_md, sample_config)
 
-        events = conn.execute(
+        cursor = conn.cursor()
+        cursor.execute(
             "SELECT * FROM events WHERE event_type = 'newsletter_sent'"
-        ).fetchall()
+        )
+        events = cursor.fetchall()
         assert len(events) == 2
 
         # Verify event metadata
@@ -670,9 +705,11 @@ class TestSendNewsletter:
 
         send_newsletter(conn, newsletter_md, sample_config)
 
-        events = conn.execute(
+        cursor = conn.cursor()
+        cursor.execute(
             "SELECT * FROM events WHERE event_type = 'newsletter_sent'"
-        ).fetchall()
+        )
+        events = cursor.fetchall()
         assert len(events) == 0
 
     @patch("src.services.newsletter.send_email")
@@ -791,13 +828,14 @@ class TestNewsletterIntegration:
         self, conn, sample_company, sample_campaign
     ):
         """A previously unsubscribed contact should not be auto-resubscribed."""
-        cursor = conn.execute(
+        cursor = conn.cursor()
+        cursor.execute(
             "INSERT INTO contacts (company_id, first_name, email, source, "
-            "is_gdpr, newsletter_status, unsubscribed) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "is_gdpr, newsletter_status, unsubscribed) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
             (sample_company, "Former", "former@example.com", "csv", 0, "unsubscribed", 1),
         )
+        contact_id = cursor.fetchone()["id"]
         conn.commit()
-        contact_id = cursor.lastrowid
 
         enroll_contact(conn, contact_id, sample_campaign)
         update_contact_campaign_status(
@@ -826,9 +864,11 @@ class TestNewsletterIntegration:
         assert result["failed"] == 0
 
         # Verify events were logged
-        events = conn.execute(
+        cursor = conn.cursor()
+        cursor.execute(
             "SELECT * FROM events WHERE event_type = 'newsletter_sent' ORDER BY id"
-        ).fetchall()
+        )
+        events = cursor.fetchall()
         assert len(events) == 2
 
         # Verify each event has correct metadata

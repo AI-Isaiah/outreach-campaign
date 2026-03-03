@@ -8,39 +8,19 @@ from rich.console import Console
 
 load_dotenv()
 
+from src.config import load_config, SUPABASE_DB_URL  # noqa: E402
+
 app = typer.Typer(name="outreach", help="Multi-channel outreach campaign manager")
 console = Console()
 
-DB_PATH = os.getenv("DATABASE_PATH", "outreach.db")
-
 
 def _load_config() -> dict:
-    """Load config from config.yaml or config.yaml.example.
-
-    Also injects the SMTP password from the environment variable
-    ``SMTP_PASSWORD`` if it is set.
-
-    Returns:
-        The parsed YAML config as a dict.
-    """
-    import yaml
-
-    config_path = Path("config.yaml")
-    if not config_path.exists():
-        config_path = Path("config.yaml.example")
-    if not config_path.exists():
-        console.print("[red]ERROR: No config.yaml or config.yaml.example found[/red]")
+    """Load config, wrapping errors for CLI display."""
+    try:
+        return load_config()
+    except FileNotFoundError as e:
+        console.print(f"[red]ERROR: {e}[/red]")
         raise typer.Exit(1)
-
-    with open(config_path) as f:
-        config = yaml.safe_load(f)
-
-    # Inject SMTP password from environment
-    smtp_password = os.getenv("SMTP_PASSWORD", "")
-    if smtp_password:
-        config["smtp_password"] = smtp_password
-
-    return config
 
 
 @app.command()
@@ -49,7 +29,7 @@ def import_csv(csv_path: str = typer.Argument(..., help="Path to Crypto Fund Lis
     from src.models.database import get_connection, run_migrations
     from src.commands.import_contacts import import_fund_csv
 
-    conn = get_connection(DB_PATH)
+    conn = get_connection(SUPABASE_DB_URL)
     run_migrations(conn)
     stats = import_fund_csv(conn, csv_path)
     console.print(f"[green]Imported {stats['companies_created']} companies, {stats['contacts_created']} contacts[/green]")
@@ -62,7 +42,7 @@ def import_emails(file_path: str = typer.Argument(..., help="Path to file with p
     from src.models.database import get_connection, run_migrations
     from src.commands.import_emails import import_pasted_emails
 
-    conn = get_connection(DB_PATH)
+    conn = get_connection(SUPABASE_DB_URL)
     run_migrations(conn)
     stats = import_pasted_emails(conn, file_path)
     console.print(f"[green]Imported {stats['contacts_created']} contacts ({stats['lines_skipped']} skipped)[/green]")
@@ -75,7 +55,7 @@ def dedupe():
     from src.models.database import get_connection, run_migrations
     from src.services.deduplication import run_dedup
 
-    conn = get_connection(DB_PATH)
+    conn = get_connection(SUPABASE_DB_URL)
     run_migrations(conn)
     console.print("[bold]Running deduplication pipeline...[/bold]")
     stats = run_dedup(conn, export_dir="data/exports")
@@ -99,7 +79,7 @@ def verify():
         console.print("[red]ERROR: Set EMAIL_VERIFY_API_KEY in .env[/red]")
         raise typer.Exit(1)
 
-    conn = get_connection(DB_PATH)
+    conn = get_connection(SUPABASE_DB_URL)
     run_migrations(conn)
     emails = get_unverified_emails(conn)
     console.print(f"[bold]Verifying {len(emails)} email addresses via {provider}...[/bold]")
@@ -128,17 +108,26 @@ def stats():
     """Show database statistics."""
     from src.models.database import get_connection, run_migrations
 
-    conn = get_connection(DB_PATH)
+    conn = get_connection(SUPABASE_DB_URL)
     run_migrations(conn)
 
-    companies = conn.execute("SELECT COUNT(*) FROM companies").fetchone()[0]
-    contacts = conn.execute("SELECT COUNT(*) FROM contacts").fetchone()[0]
-    gdpr = conn.execute("SELECT COUNT(*) FROM contacts WHERE is_gdpr = 1").fetchone()[0]
-    verified = conn.execute("SELECT COUNT(*) FROM contacts WHERE email_status = 'valid'").fetchone()[0]
-    invalid = conn.execute("SELECT COUNT(*) FROM contacts WHERE email_status = 'invalid'").fetchone()[0]
-    unverified = conn.execute("SELECT COUNT(*) FROM contacts WHERE email_status = 'unverified'").fetchone()[0]
-    with_email = conn.execute("SELECT COUNT(*) FROM contacts WHERE email_normalized IS NOT NULL").fetchone()[0]
-    with_linkedin = conn.execute("SELECT COUNT(*) FROM contacts WHERE linkedin_url IS NOT NULL AND linkedin_url != ''").fetchone()[0]
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) AS cnt FROM companies")
+    companies = cur.fetchone()["cnt"]
+    cur.execute("SELECT COUNT(*) AS cnt FROM contacts")
+    contacts = cur.fetchone()["cnt"]
+    cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE is_gdpr = 1")
+    gdpr = cur.fetchone()["cnt"]
+    cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE email_status = 'valid'")
+    verified = cur.fetchone()["cnt"]
+    cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE email_status = 'invalid'")
+    invalid = cur.fetchone()["cnt"]
+    cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE email_status = 'unverified'")
+    unverified = cur.fetchone()["cnt"]
+    cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE email_normalized IS NOT NULL")
+    with_email = cur.fetchone()["cnt"]
+    cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE linkedin_url IS NOT NULL AND linkedin_url != ''")
+    with_linkedin = cur.fetchone()["cnt"]
 
     console.print("[bold]Database Statistics[/bold]")
     console.print(f"  Companies:      {companies}")
@@ -164,7 +153,7 @@ def queue(
     from src.models.database import get_connection, run_migrations
     from src.commands.queue import queue_today
 
-    conn = get_connection(DB_PATH)
+    conn = get_connection(SUPABASE_DB_URL)
     run_migrations(conn)
 
     items = queue_today(conn, campaign, target_date=date, limit=limit)
@@ -211,7 +200,7 @@ def export_expandi(
     from src.models.database import get_connection, run_migrations
     from src.commands.export_expandi import export_expandi_csv
 
-    conn = get_connection(DB_PATH)
+    conn = get_connection(SUPABASE_DB_URL)
     run_migrations(conn)
 
     try:
@@ -238,7 +227,7 @@ def import_expandi(
     from src.models.database import get_connection, run_migrations
     from src.commands.import_expandi import import_expandi_results
 
-    conn = get_connection(DB_PATH)
+    conn = get_connection(SUPABASE_DB_URL)
     run_migrations(conn)
 
     try:
@@ -264,7 +253,7 @@ def create_campaign_cmd(
     from src.models.database import get_connection, run_migrations
     from src.models.campaigns import create_campaign
 
-    conn = get_connection(DB_PATH)
+    conn = get_connection(SUPABASE_DB_URL)
     run_migrations(conn)
 
     try:
@@ -296,7 +285,7 @@ def setup_sequence(
         add_sequence_step,
     )
 
-    conn = get_connection(DB_PATH)
+    conn = get_connection(SUPABASE_DB_URL)
     run_migrations(conn)
 
     camp = get_campaign_by_name(conn, campaign)
@@ -385,7 +374,7 @@ def enroll(
     from src.models.database import get_connection, run_migrations
     from src.models.campaigns import get_campaign_by_name, enroll_contact
 
-    conn = get_connection(DB_PATH)
+    conn = get_connection(SUPABASE_DB_URL)
     run_migrations(conn)
 
     camp = get_campaign_by_name(conn, campaign)
@@ -408,27 +397,29 @@ def enroll(
           OR (c.linkedin_url IS NOT NULL AND c.linkedin_url != '')
       )
       AND c.id NOT IN (
-          SELECT contact_id FROM contact_campaign_status WHERE campaign_id = ?
+          SELECT contact_id FROM contact_campaign_status WHERE campaign_id = %s
       )
     """
     params: list = [campaign_id]
 
     if max_aum is not None:
-        query += " AND (co.aum_millions IS NULL OR co.aum_millions < ?)"
+        query += " AND (co.aum_millions IS NULL OR co.aum_millions < %s)"
         params.append(max_aum)
 
     if min_aum is not None:
-        query += " AND co.aum_millions IS NOT NULL AND co.aum_millions >= ?"
+        query += " AND co.aum_millions IS NOT NULL AND co.aum_millions >= %s"
         params.append(min_aum)
 
     # Order by AUM descending (NULLs last) so highest-value targets enroll first
     query += " ORDER BY CASE WHEN co.aum_millions IS NULL THEN 1 ELSE 0 END, co.aum_millions DESC"
 
     if limit is not None:
-        query += " LIMIT ?"
+        query += " LIMIT %s"
         params.append(limit)
 
-    rows = conn.execute(query, params).fetchall()
+    cur = conn.cursor()
+    cur.execute(query, params)
+    rows = cur.fetchall()
 
     enrolled_count = 0
     today = date_mod.today().isoformat()
@@ -468,7 +459,7 @@ def send(
     from src.services.priority_queue import get_daily_queue
     from src.services.email_sender import send_campaign_email
 
-    conn = get_connection(DB_PATH)
+    conn = get_connection(SUPABASE_DB_URL)
     run_migrations(conn)
 
     camp = get_campaign_by_name(conn, campaign)
@@ -566,7 +557,7 @@ def status(
     )
     from src.services.state_machine import transition_contact, InvalidTransition
 
-    conn = get_connection(DB_PATH)
+    conn = get_connection(SUPABASE_DB_URL)
     run_migrations(conn)
 
     if action != "reply":
@@ -587,16 +578,19 @@ def status(
         raise typer.Exit(1)
 
     # Find the contact
+    cur = conn.cursor()
     if identifier.isdigit():
-        contact_row = conn.execute(
-            "SELECT id, email, full_name FROM contacts WHERE id = ?",
+        cur.execute(
+            "SELECT id, email, full_name FROM contacts WHERE id = %s",
             (int(identifier),),
-        ).fetchone()
+        )
+        contact_row = cur.fetchone()
     else:
-        contact_row = conn.execute(
-            "SELECT id, email, full_name FROM contacts WHERE email = ? OR email_normalized = ?",
+        cur.execute(
+            "SELECT id, email, full_name FROM contacts WHERE email = %s OR email_normalized = %s",
             (identifier, identifier.lower().strip()),
-        ).fetchone()
+        )
+        contact_row = cur.fetchone()
 
     if contact_row is None:
         console.print(f"[red]ERROR: Contact '{identifier}' not found[/red]")
@@ -615,13 +609,14 @@ def status(
         campaign_id = camp["id"]
     else:
         # Use first active campaign this contact is enrolled in
-        row = conn.execute(
+        cur.execute(
             """SELECT ccs.campaign_id FROM contact_campaign_status ccs
                JOIN campaigns c ON c.id = ccs.campaign_id
-               WHERE ccs.contact_id = ? AND c.status = 'active'
+               WHERE ccs.contact_id = %s AND c.status = 'active'
                ORDER BY ccs.id DESC LIMIT 1""",
             (contact_id,),
-        ).fetchone()
+        )
+        row = cur.fetchone()
         if row is None:
             console.print(f"[red]ERROR: Contact is not enrolled in any active campaign[/red]")
             conn.close()
@@ -676,7 +671,7 @@ def unsubscribe(
     from src.models.database import get_connection, run_migrations
     from src.services.compliance import process_unsubscribe
 
-    conn = get_connection(DB_PATH)
+    conn = get_connection(SUPABASE_DB_URL)
     run_migrations(conn)
 
     result = process_unsubscribe(conn, email)
@@ -700,7 +695,7 @@ def weekly_plan(
     from src.models.database import get_connection, run_migrations
     from src.commands.weekly_plan import generate_weekly_plan
 
-    conn = get_connection(DB_PATH)
+    conn = get_connection(SUPABASE_DB_URL)
     run_migrations(conn)
 
     try:
@@ -803,7 +798,7 @@ def report(
         get_company_type_breakdown,
     )
 
-    conn = get_connection(DB_PATH)
+    conn = get_connection(SUPABASE_DB_URL)
     run_migrations(conn)
 
     camp = get_campaign_by_name(conn, campaign)
@@ -946,7 +941,7 @@ def newsletter_send(
     from src.models.database import get_connection, run_migrations
     from src.services.newsletter import send_newsletter, get_newsletter_subscribers
 
-    conn = get_connection(DB_PATH)
+    conn = get_connection(SUPABASE_DB_URL)
     run_migrations(conn)
     config = _load_config()
 
@@ -994,7 +989,7 @@ def newsletter_subscribers(
         unsubscribe_contact,
     )
 
-    conn = get_connection(DB_PATH)
+    conn = get_connection(SUPABASE_DB_URL)
     run_migrations(conn)
 
     try:
@@ -1039,10 +1034,12 @@ def newsletter_subscribers(
                 console.print("[red]ERROR: --email is required for subscribe[/red]")
                 raise typer.Exit(1)
 
-            contact = conn.execute(
-                "SELECT id FROM contacts WHERE email = ? OR email_normalized = ?",
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT id FROM contacts WHERE email = %s OR email_normalized = %s",
                 (email, email.lower().strip()),
-            ).fetchone()
+            )
+            contact = cur.fetchone()
 
             if not contact:
                 console.print(f"[red]ERROR: Contact not found with email: {email}[/red]")
@@ -1058,10 +1055,12 @@ def newsletter_subscribers(
                 console.print("[red]ERROR: --email is required for unsubscribe[/red]")
                 raise typer.Exit(1)
 
-            contact = conn.execute(
-                "SELECT id FROM contacts WHERE email = ? OR email_normalized = ?",
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT id FROM contacts WHERE email = %s OR email_normalized = %s",
                 (email, email.lower().strip()),
-            ).fetchone()
+            )
+            contact = cur.fetchone()
 
             if not contact:
                 console.print(f"[red]ERROR: Contact not found with email: {email}[/red]")
@@ -1078,6 +1077,24 @@ def newsletter_subscribers(
 
     finally:
         conn.close()
+
+
+@app.command()
+def web(
+    host: str = typer.Option("127.0.0.1", help="Host to bind to"),
+    port: int = typer.Option(8000, help="Port to listen on"),
+    reload: bool = typer.Option(False, help="Enable auto-reload for development"),
+):
+    """Start the web dashboard (FastAPI + uvicorn)."""
+    import uvicorn
+
+    uvicorn.run(
+        "src.web.app:app",
+        host=host,
+        port=port,
+        reload=reload,
+        reload_dirs=["src"] if reload else None,
+    )
 
 
 if __name__ == "__main__":

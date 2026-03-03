@@ -13,13 +13,14 @@ from src.services.email_verifier import (
 # ---------------------------------------------------------------------------
 
 def _insert_contact_with_email(conn, email, status="unverified"):
-    conn.execute(
-        "INSERT INTO companies (name, name_normalized, country, is_gdpr) VALUES ('X', 'x', 'US', 0)"
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO companies (name, name_normalized, country, is_gdpr) VALUES ('X', 'x', 'US', 0) RETURNING id"
     )
-    cid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    conn.execute(
+    cid = cursor.fetchone()["id"]
+    cursor.execute(
         """INSERT INTO contacts (company_id, full_name, email, email_normalized, email_status, priority_rank, source, is_gdpr)
-           VALUES (?, 'Test', ?, ?, ?, 1, 'test', 0)""",
+           VALUES (%s, 'Test', %s, %s, %s, 1, 'test', 0)""",
         (cid, email, email.lower() if email else None, status),
     )
     conn.commit()
@@ -41,10 +42,12 @@ def test_update_contact_status_valid(tmp_db):
 
     update_contact_email_status(conn, "alice@example.com", "valid")
 
-    row = conn.execute(
-        "SELECT email_status FROM contacts WHERE email_normalized = ?",
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT email_status FROM contacts WHERE email_normalized = %s",
         ("alice@example.com",),
-    ).fetchone()
+    )
+    row = cursor.fetchone()
     assert row["email_status"] == "valid"
     conn.close()
 
@@ -55,10 +58,12 @@ def test_update_contact_status_invalid(tmp_db):
 
     update_contact_email_status(conn, "bad@example.com", "invalid")
 
-    row = conn.execute(
-        "SELECT email_status FROM contacts WHERE email_normalized = ?",
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT email_status FROM contacts WHERE email_normalized = %s",
         ("bad@example.com",),
-    ).fetchone()
+    )
+    row = cursor.fetchone()
     assert row["email_status"] == "invalid"
     conn.close()
 

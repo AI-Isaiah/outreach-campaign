@@ -6,7 +6,6 @@ normalises data, detects GDPR countries, and inserts companies + contacts.
 
 import csv
 import re
-import sqlite3
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 from urllib.parse import urlparse, urlunparse
@@ -155,12 +154,12 @@ _CONTACT_SLOTS = [
 # ---------------------------------------------------------------------------
 
 
-def import_fund_csv(conn: sqlite3.Connection, csv_path: str) -> Dict[str, int]:
+def import_fund_csv(conn, csv_path: str) -> Dict[str, int]:
     """Import a crypto-fund CSV into the database.
 
     Parameters
     ----------
-    conn : sqlite3.Connection
+    conn : database connection
         An open database connection (migrations must already be applied).
     csv_path : str
         Path to the CSV file.
@@ -211,11 +210,12 @@ def import_fund_csv(conn: sqlite3.Connection, csv_path: str) -> Dict[str, int]:
             website = (row.get("URL") or "").strip() or None
             company_linkedin = (row.get("Company LinkedIn") or "").strip() or None
 
-            cursor = conn.execute(
+            cursor = conn.cursor()
+            cursor.execute(
                 """INSERT INTO companies
                    (name, name_normalized, address, city, country, aum_millions,
                     firm_type, website, linkedin_url, is_gdpr)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
                 (
                     firm_name,
                     name_normalized,
@@ -229,7 +229,7 @@ def import_fund_csv(conn: sqlite3.Connection, csv_path: str) -> Dict[str, int]:
                     is_gdpr,
                 ),
             )
-            company_id = cursor.lastrowid
+            company_id = cursor.fetchone()["id"]
             companies_created += 1
 
             # ------ Contacts -------------------------------------------------
@@ -247,13 +247,13 @@ def import_fund_csv(conn: sqlite3.Connection, csv_path: str) -> Dict[str, int]:
                 email_normalized = _normalize_email(email_raw)
                 linkedin_normalized = _normalize_linkedin(linkedin_raw)
 
-                conn.execute(
+                cursor.execute(
                     """INSERT INTO contacts
                        (company_id, first_name, last_name, full_name,
                         email, email_normalized, linkedin_url,
                         linkedin_url_normalized, title, priority_rank,
                         source, is_gdpr)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'csv', ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'csv', %s)""",
                     (
                         company_id,
                         first_name or None,

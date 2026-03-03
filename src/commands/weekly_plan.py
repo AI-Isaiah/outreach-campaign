@@ -7,7 +7,6 @@ newsletter recommendation.
 
 from __future__ import annotations
 
-import sqlite3
 from datetime import date, timedelta
 from typing import Optional
 
@@ -20,7 +19,7 @@ from src.services.metrics import (
 )
 
 
-def generate_weekly_plan(conn: sqlite3.Connection, campaign_name: str) -> dict:
+def generate_weekly_plan(conn, campaign_name: str) -> dict:
     """Generate the weekly check-in report.
 
     Returns a dict with all the data needed for the terminal display:
@@ -50,34 +49,37 @@ def generate_weekly_plan(conn: sqlite3.Connection, campaign_name: str) -> dict:
     today = date.today()
     next_week_end = today + timedelta(days=7)
 
-    ready_rows = conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         """
         SELECT COUNT(*) AS cnt
         FROM contact_campaign_status
-        WHERE campaign_id = ?
+        WHERE campaign_id = %s
           AND status IN ('queued', 'in_progress')
-          AND (next_action_date IS NULL OR next_action_date <= ?)
+          AND (next_action_date IS NULL OR next_action_date <= %s)
         """,
         (campaign_id, next_week_end.isoformat()),
-    ).fetchone()
+    )
+    ready_rows = cursor.fetchone()
     contacts_ready = ready_rows["cnt"] if ready_rows else 0
 
     # Channel mix: count by channel for ready contacts
-    channel_rows = conn.execute(
+    cursor.execute(
         """
         SELECT ss.channel, COUNT(*) AS cnt
         FROM contact_campaign_status ccs
         JOIN sequence_steps ss
           ON ss.campaign_id = ccs.campaign_id
          AND ss.step_order = ccs.current_step
-        WHERE ccs.campaign_id = ?
+        WHERE ccs.campaign_id = %s
           AND ccs.status IN ('queued', 'in_progress')
-          AND (ccs.next_action_date IS NULL OR ccs.next_action_date <= ?)
+          AND (ccs.next_action_date IS NULL OR ccs.next_action_date <= %s)
         GROUP BY ss.channel
         ORDER BY cnt DESC
         """,
         (campaign_id, next_week_end.isoformat()),
-    ).fetchall()
+    )
+    channel_rows = cursor.fetchall()
 
     channel_mix = {}
     for row in channel_rows:
@@ -111,7 +113,7 @@ def generate_weekly_plan(conn: sqlite3.Connection, campaign_name: str) -> dict:
 
 
 def _newsletter_recommendation(
-    conn: sqlite3.Connection,
+    conn,
     campaign_id: int,
     overall: dict,
 ) -> dict:

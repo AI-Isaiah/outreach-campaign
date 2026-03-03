@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import logging
 import smtplib
-import sqlite3
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Optional
@@ -132,8 +131,68 @@ def send_email(
         return False
 
 
+def render_campaign_email(
+    conn,
+    contact_id: int,
+    campaign_id: int,
+    template_id: int,
+    config: dict,
+) -> Optional[dict]:
+    """Render a campaign email without sending it.
+
+    Performs the same pre-flight checks and rendering as
+    ``send_campaign_email()`` but returns the rendered content instead
+    of sending via SMTP. Used for email preview and Gmail Draft flow.
+
+    Returns:
+        Dict with keys: subject, body_text, body_html, contact_email,
+        template_id — or None if pre-flight checks fail.
+    """
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM contacts WHERE id = %s", (contact_id,),
+    )
+    contact = cursor.fetchone()
+    if contact is None or contact["unsubscribed"]:
+        return None
+
+    if is_contact_gdpr(conn, contact_id):
+        if not check_gdpr_email_limit(conn, contact_id, campaign_id):
+            return None
+
+    template_row = get_template(conn, template_id)
+    if template_row is None:
+        return None
+
+    context = get_template_context(conn, contact_id, config)
+    body_text = (
+        render_template(template_row["body_template"], context)
+        if template_row["body_template"].endswith(".txt")
+        else _render_inline_template(template_row["body_template"], context)
+    )
+
+    subject = template_row["subject"] or "Reaching out"
+
+    smtp_config = config.get("smtp", {})
+    from_email = smtp_config.get("username", "")
+    physical_address = config.get("physical_address", "")
+    unsubscribe_url = build_unsubscribe_url(from_email)
+
+    body_text = add_compliance_footer(body_text, physical_address, unsubscribe_url)
+    body_html = _text_to_clean_html(body_text)
+    body_html = add_compliance_footer_html(body_html, physical_address, unsubscribe_url)
+
+    return {
+        "subject": subject,
+        "body_text": body_text,
+        "body_html": body_html,
+        "contact_email": contact["email"],
+        "template_id": template_id,
+    }
+
+
 def send_campaign_email(
-    conn: sqlite3.Connection,
+    conn,
     contact_id: int,
     campaign_id: int,
     template_id: int,
@@ -165,10 +224,12 @@ def send_campaign_email(
     # --- Pre-flight checks ---------------------------------------------------
 
     # Check if contact is unsubscribed
-    contact = conn.execute(
-        "SELECT * FROM contacts WHERE id = ?",
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM contacts WHERE id = %s",
         (contact_id,),
-    ).fetchone()
+    )
+    contact = cursor.fetchone()
     if contact is None:
         logger.error("Contact %d not found", contact_id)
         return False
@@ -247,10 +308,11 @@ def send_campaign_email(
     )
 
     # Advance the contact's current step
-    status_row = conn.execute(
-        "SELECT current_step FROM contact_campaign_status WHERE contact_id = ? AND campaign_id = ?",
+    cursor.execute(
+        "SELECT current_step FROM contact_campaign_status WHERE contact_id = %s AND campaign_id = %s",
         (contact_id, campaign_id),
-    ).fetchone()
+    )
+    status_row = cursor.fetchone()
     if status_row:
         update_contact_campaign_status(
             conn, contact_id, campaign_id,

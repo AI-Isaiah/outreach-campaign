@@ -6,12 +6,11 @@ weekly summaries, and firm-type breakdowns for outreach campaigns.
 
 from __future__ import annotations
 
-import sqlite3
 from datetime import date, datetime, timedelta
 from typing import Optional
 
 
-def get_campaign_metrics(conn: sqlite3.Connection, campaign_id: int) -> dict:
+def get_campaign_metrics(conn, campaign_id: int) -> dict:
     """Get comprehensive metrics for a campaign.
 
     Returns dict with:
@@ -25,16 +24,18 @@ def get_campaign_metrics(conn: sqlite3.Connection, campaign_id: int) -> dict:
     - reply_rate: float (positive + negative / total non-queued)
     - positive_rate: float (positive / total non-queued)
     """
+    cursor = conn.cursor()
     # Status counts
-    status_rows = conn.execute(
+    cursor.execute(
         """
         SELECT status, COUNT(*) AS cnt
         FROM contact_campaign_status
-        WHERE campaign_id = ?
+        WHERE campaign_id = %s
         GROUP BY status
         """,
         (campaign_id,),
-    ).fetchall()
+    )
+    status_rows = cursor.fetchall()
 
     by_status = {
         "queued": 0,
@@ -49,26 +50,41 @@ def get_campaign_metrics(conn: sqlite3.Connection, campaign_id: int) -> dict:
         by_status[row["status"]] = row["cnt"]
         total_enrolled += row["cnt"]
 
-    # Event counts
-    event_rows = conn.execute(
+    # Event counts — include both legacy expandi_* and new linkedin_* event types
+    cursor.execute(
         """
         SELECT event_type, COUNT(*) AS cnt
         FROM events
-        WHERE campaign_id = ?
-          AND event_type IN ('email_sent', 'expandi_connected',
-                             'expandi_message_sent', 'call_booked')
+        WHERE campaign_id = %s
+          AND event_type IN (
+              'email_sent', 'call_booked',
+              'expandi_connected', 'expandi_message_sent',
+              'linkedin_connect_done', 'linkedin_message_done',
+              'linkedin_engage_done', 'linkedin_insight_done',
+              'linkedin_final_done'
+          )
         GROUP BY event_type
         """,
         (campaign_id,),
-    ).fetchall()
+    )
+    event_rows = cursor.fetchall()
 
     event_counts = {}
     for row in event_rows:
         event_counts[row["event_type"]] = row["cnt"]
 
     emails_sent = event_counts.get("email_sent", 0)
-    linkedin_connects = event_counts.get("expandi_connected", 0)
-    linkedin_messages = event_counts.get("expandi_message_sent", 0)
+    linkedin_connects = (
+        event_counts.get("expandi_connected", 0)
+        + event_counts.get("linkedin_connect_done", 0)
+    )
+    linkedin_messages = (
+        event_counts.get("expandi_message_sent", 0)
+        + event_counts.get("linkedin_message_done", 0)
+        + event_counts.get("linkedin_engage_done", 0)
+        + event_counts.get("linkedin_insight_done", 0)
+        + event_counts.get("linkedin_final_done", 0)
+    )
     calls_booked = event_counts.get("call_booked", 0)
 
     # Reply rate: (positive + negative) / (total - queued)
@@ -91,14 +107,15 @@ def get_campaign_metrics(conn: sqlite3.Connection, campaign_id: int) -> dict:
     }
 
 
-def get_variant_comparison(conn: sqlite3.Connection, campaign_id: int) -> list[dict]:
+def get_variant_comparison(conn, campaign_id: int) -> list[dict]:
     """Compare A/B variants by reply rates.
 
     Returns list of dicts with: variant, total, replied_positive,
     replied_negative, no_response, reply_rate, positive_rate.
     Only includes contacts with a non-NULL assigned_variant.
     """
-    rows = conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         """
         SELECT
             assigned_variant,
@@ -110,13 +127,14 @@ def get_variant_comparison(conn: sqlite3.Connection, campaign_id: int) -> list[d
             SUM(CASE WHEN status = 'no_response' THEN 1 ELSE 0 END)
                 AS no_response
         FROM contact_campaign_status
-        WHERE campaign_id = ?
+        WHERE campaign_id = %s
           AND assigned_variant IS NOT NULL
         GROUP BY assigned_variant
         ORDER BY assigned_variant
         """,
         (campaign_id,),
-    ).fetchall()
+    )
+    rows = cursor.fetchall()
 
     results = []
     for row in rows:
@@ -124,14 +142,15 @@ def get_variant_comparison(conn: sqlite3.Connection, campaign_id: int) -> list[d
         positive = row["replied_positive"]
         negative = row["replied_negative"]
         # Exclude queued from denominator: compute non-queued for this variant
-        queued_row = conn.execute(
+        cursor.execute(
             """
             SELECT COUNT(*) AS cnt
             FROM contact_campaign_status
-            WHERE campaign_id = ? AND assigned_variant = ? AND status = 'queued'
+            WHERE campaign_id = %s AND assigned_variant = %s AND status = 'queued'
             """,
             (campaign_id, row["assigned_variant"]),
-        ).fetchone()
+        )
+        queued_row = cursor.fetchone()
         queued = queued_row["cnt"] if queued_row else 0
         non_queued = total - queued
 
@@ -152,7 +171,7 @@ def get_variant_comparison(conn: sqlite3.Connection, campaign_id: int) -> list[d
 
 
 def get_weekly_summary(
-    conn: sqlite3.Connection,
+    conn,
     campaign_id: int,
     weeks_back: int = 1,
 ) -> dict:
@@ -177,22 +196,28 @@ def get_weekly_summary(
 
     period = f"{start_str} to {today.isoformat()}"
 
-    event_rows = conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         """
         SELECT event_type, COUNT(*) AS cnt
         FROM events
-        WHERE campaign_id = ?
-          AND created_at >= ?
-          AND created_at < ?
+        WHERE campaign_id = %s
+          AND created_at >= %s
+          AND created_at < %s
           AND event_type IN (
-              'email_sent', 'expandi_connected', 'expandi_message_sent',
+              'email_sent',
+              'expandi_connected', 'expandi_message_sent',
+              'linkedin_connect_done', 'linkedin_message_done',
+              'linkedin_engage_done', 'linkedin_insight_done',
+              'linkedin_final_done',
               'status_replied_positive', 'status_replied_negative',
               'call_booked', 'status_no_response'
           )
         GROUP BY event_type
         """,
         (campaign_id, start_str, end_str),
-    ).fetchall()
+    )
+    event_rows = cursor.fetchall()
 
     counts = {}
     for row in event_rows:
@@ -204,6 +229,11 @@ def get_weekly_summary(
         "linkedin_actions": (
             counts.get("expandi_connected", 0)
             + counts.get("expandi_message_sent", 0)
+            + counts.get("linkedin_connect_done", 0)
+            + counts.get("linkedin_message_done", 0)
+            + counts.get("linkedin_engage_done", 0)
+            + counts.get("linkedin_insight_done", 0)
+            + counts.get("linkedin_final_done", 0)
         ),
         "replies_positive": counts.get("status_replied_positive", 0),
         "replies_negative": counts.get("status_replied_negative", 0),
@@ -213,7 +243,7 @@ def get_weekly_summary(
 
 
 def get_company_type_breakdown(
-    conn: sqlite3.Connection,
+    conn,
     campaign_id: int,
 ) -> list[dict]:
     """Break down reply rates by company firm_type.
@@ -224,7 +254,8 @@ def get_company_type_breakdown(
     Each dict contains: firm_type, total, replied_positive, replied_negative,
     no_response, reply_rate, positive_rate.
     """
-    rows = conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         """
         SELECT
             COALESCE(comp.firm_type, 'Unknown') AS firm_type,
@@ -240,11 +271,12 @@ def get_company_type_breakdown(
         FROM contact_campaign_status ccs
         JOIN contacts c ON c.id = ccs.contact_id
         JOIN companies comp ON comp.id = c.company_id
-        WHERE ccs.campaign_id = ?
+        WHERE ccs.campaign_id = %s
         GROUP BY COALESCE(comp.firm_type, 'Unknown')
         """,
         (campaign_id,),
-    ).fetchall()
+    )
+    rows = cursor.fetchall()
 
     results = []
     for row in rows:

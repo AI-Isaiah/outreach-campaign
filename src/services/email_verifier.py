@@ -6,7 +6,6 @@ reputation by keeping bounce rates below 2%.
 
 from __future__ import annotations
 
-import sqlite3
 import time
 from datetime import datetime
 
@@ -138,22 +137,24 @@ def _verify_hunter(emails: list[str], api_key: str) -> dict[str, str]:
 
 
 def update_contact_email_status(
-    conn: sqlite3.Connection,
+    conn,
     email: str,
     status: str,
 ) -> None:
     """Update the ``email_status`` and ``updated_at`` for a contact by email."""
-    conn.execute(
-        "UPDATE contacts SET email_status = ?, updated_at = ? WHERE email_normalized = ?",
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE contacts SET email_status = %s, updated_at = %s WHERE email_normalized = %s",
         (status, datetime.utcnow().isoformat(), email),
     )
     conn.commit()
 
 
-def get_unverified_emails(conn: sqlite3.Connection) -> list[str]:
+def get_unverified_emails(conn) -> list[str]:
     """Return all ``email_normalized`` values where status is 'unverified' and email is not NULL."""
-    cursor = conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         "SELECT email_normalized FROM contacts "
         "WHERE email_status = 'unverified' AND email_normalized IS NOT NULL"
     )
-    return [row[0] for row in cursor.fetchall()]
+    return [row["email_normalized"] for row in cursor.fetchall()]

@@ -5,7 +5,6 @@ from __future__ import annotations
 import base64
 import json
 import os
-import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -100,47 +99,55 @@ def conn(tmp_db):
 @pytest.fixture
 def sample_company(conn):
     """Insert a company and return its id."""
-    cursor = conn.execute(
-        "INSERT INTO companies (name, name_normalized, country, is_gdpr) VALUES (?, ?, ?, ?)",
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO companies (name, name_normalized, country, is_gdpr) VALUES (%s, %s, %s, %s) RETURNING id",
         ("Acme Crypto Fund", "acme crypto fund", "United States", 0),
     )
+    company_id = cursor.fetchone()["id"]
     conn.commit()
-    return cursor.lastrowid
+    return company_id
 
 
 @pytest.fixture
 def gdpr_company(conn):
     """Insert a GDPR-subject company and return its id."""
-    cursor = conn.execute(
-        "INSERT INTO companies (name, name_normalized, country, is_gdpr) VALUES (?, ?, ?, ?)",
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO companies (name, name_normalized, country, is_gdpr) VALUES (%s, %s, %s, %s) RETURNING id",
         ("Berlin Capital GmbH", "berlin capital gmbh", "Germany", 1),
     )
+    company_id = cursor.fetchone()["id"]
     conn.commit()
-    return cursor.lastrowid
+    return company_id
 
 
 @pytest.fixture
 def sample_contact(conn, sample_company):
     """Insert a contact and return its id."""
-    cursor = conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         "INSERT INTO contacts (company_id, first_name, last_name, full_name, email, source) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
         (sample_company, "Alice", "Smith", "Alice Smith", "alice@example.com", "csv"),
     )
+    contact_id = cursor.fetchone()["id"]
     conn.commit()
-    return cursor.lastrowid
+    return contact_id
 
 
 @pytest.fixture
 def gdpr_contact(conn, gdpr_company):
     """Insert a GDPR-subject contact and return its id."""
-    cursor = conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         "INSERT INTO contacts (company_id, first_name, last_name, full_name, email, source, is_gdpr) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
         (gdpr_company, "Hans", "Mueller", "Hans Mueller", "hans@berlin-cap.de", "csv", 1),
     )
+    contact_id = cursor.fetchone()["id"]
     conn.commit()
-    return cursor.lastrowid
+    return contact_id
 
 
 @pytest.fixture
@@ -332,13 +339,14 @@ class TestIsContactGdpr:
 
     def test_contact_gdpr_via_company(self, conn, gdpr_company):
         """Contact is not GDPR but company is."""
-        cursor = conn.execute(
+        cursor = conn.cursor()
+        cursor.execute(
             "INSERT INTO contacts (company_id, first_name, email, source, is_gdpr) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s) RETURNING id",
             (gdpr_company, "Max", "max@test.de", "csv", 0),
         )
+        contact_id = cursor.fetchone()["id"]
         conn.commit()
-        contact_id = cursor.lastrowid
         assert is_contact_gdpr(conn, contact_id) is True
 
     def test_nonexistent_contact(self, conn):
@@ -354,10 +362,12 @@ class TestProcessUnsubscribe:
         result = process_unsubscribe(conn, "alice@example.com")
         assert result is True
 
-        row = conn.execute(
-            "SELECT unsubscribed, unsubscribed_at FROM contacts WHERE id = ?",
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT unsubscribed, unsubscribed_at FROM contacts WHERE id = %s",
             (sample_contact,),
-        ).fetchone()
+        )
+        row = cursor.fetchone()
         assert row["unsubscribed"] == 1
         assert row["unsubscribed_at"] is not None
 
@@ -367,21 +377,24 @@ class TestProcessUnsubscribe:
 
     def test_does_not_affect_other_contacts(self, conn, sample_company):
         # Insert two contacts
-        conn.execute(
-            "INSERT INTO contacts (company_id, first_name, email, source) VALUES (?, ?, ?, ?)",
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO contacts (company_id, first_name, email, source) VALUES (%s, %s, %s, %s)",
             (sample_company, "Bob", "bob@example.com", "csv"),
         )
-        conn.execute(
-            "INSERT INTO contacts (company_id, first_name, email, source) VALUES (?, ?, ?, ?)",
+        cursor.execute(
+            "INSERT INTO contacts (company_id, first_name, email, source) VALUES (%s, %s, %s, %s)",
             (sample_company, "Carol", "carol@example.com", "csv"),
         )
         conn.commit()
 
         process_unsubscribe(conn, "bob@example.com")
 
-        carol = conn.execute(
-            "SELECT unsubscribed FROM contacts WHERE email = ?", ("carol@example.com",)
-        ).fetchone()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT unsubscribed FROM contacts WHERE email = %s", ("carol@example.com",)
+        )
+        carol = cursor.fetchone()
         assert carol["unsubscribed"] == 0
 
     def test_idempotent(self, conn, sample_contact):
@@ -389,9 +402,11 @@ class TestProcessUnsubscribe:
         result = process_unsubscribe(conn, "alice@example.com")
         assert result is True
 
-        row = conn.execute(
-            "SELECT unsubscribed FROM contacts WHERE id = ?", (sample_contact,)
-        ).fetchone()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT unsubscribed FROM contacts WHERE id = %s", (sample_contact,)
+        )
+        row = cursor.fetchone()
         assert row["unsubscribed"] == 1
 
 
@@ -507,24 +522,26 @@ class TestGetTemplateContext:
             get_template_context(conn, 99999, sample_config)
 
     def test_contact_without_company(self, conn, sample_config):
-        cursor = conn.execute(
-            "INSERT INTO contacts (first_name, last_name, email, source) VALUES (?, ?, ?, ?)",
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO contacts (first_name, last_name, email, source) VALUES (%s, %s, %s, %s) RETURNING id",
             ("Orphan", "Contact", "orphan@example.com", "csv"),
         )
+        contact_id = cursor.fetchone()["id"]
         conn.commit()
-        contact_id = cursor.lastrowid
 
         ctx = get_template_context(conn, contact_id, sample_config)
         assert ctx["first_name"] == "Orphan"
         assert ctx["company_name"] == ""
 
     def test_contact_with_missing_names(self, conn, sample_company, sample_config):
-        cursor = conn.execute(
-            "INSERT INTO contacts (company_id, email, source) VALUES (?, ?, ?)",
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO contacts (company_id, email, source) VALUES (%s, %s, %s) RETURNING id",
             (sample_company, "noname@example.com", "csv"),
         )
+        contact_id = cursor.fetchone()["id"]
         conn.commit()
-        contact_id = cursor.lastrowid
 
         ctx = get_template_context(conn, contact_id, sample_config)
         assert ctx["first_name"] == ""
@@ -761,10 +778,12 @@ class TestSendCampaignEmail:
         assert result is True
 
         # Verify event was logged
-        events = conn.execute(
-            "SELECT * FROM events WHERE contact_id = ? AND event_type = 'email_sent'",
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT * FROM events WHERE contact_id = %s AND event_type = 'email_sent'",
             (sample_contact,),
-        ).fetchall()
+        )
+        events = cursor.fetchall()
         assert len(events) == 1
         assert events[0]["campaign_id"] == sample_campaign
         assert events[0]["template_id"] == sample_template

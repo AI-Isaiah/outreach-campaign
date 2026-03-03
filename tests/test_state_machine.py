@@ -30,48 +30,56 @@ def _setup_db(db_path):
 
 def _create_company(conn, name="Acme Fund"):
     """Insert a company and return its id."""
-    cursor = conn.execute(
-        "INSERT INTO companies (name, name_normalized) VALUES (?, ?)",
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO companies (name, name_normalized) VALUES (%s, %s) RETURNING id",
         (name, name.lower()),
     )
+    company_id = cursor.fetchone()["id"]
     conn.commit()
-    return cursor.lastrowid
+    return company_id
 
 
 def _create_contact(conn, company_id, priority_rank=1, email=None):
     """Insert a contact and return its id."""
     email = email or f"contact{priority_rank}@example.com"
-    cursor = conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         "INSERT INTO contacts (company_id, priority_rank, email, first_name, last_name) "
-        "VALUES (?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s) RETURNING id",
         (company_id, priority_rank, email, f"First{priority_rank}", f"Last{priority_rank}"),
     )
+    contact_id = cursor.fetchone()["id"]
     conn.commit()
-    return cursor.lastrowid
+    return contact_id
 
 
 def _create_campaign(conn, name="Q1 Outreach"):
     """Insert a campaign and return its id."""
-    cursor = conn.execute(
-        "INSERT INTO campaigns (name) VALUES (?)",
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO campaigns (name) VALUES (%s) RETURNING id",
         (name,),
     )
+    campaign_id = cursor.fetchone()["id"]
     conn.commit()
-    return cursor.lastrowid
+    return campaign_id
 
 
 def _event_types_for_contact(conn, contact_id, campaign_id=None):
     """Return a list of event_type strings for a contact."""
+    cursor = conn.cursor()
     if campaign_id is not None:
-        rows = conn.execute(
-            "SELECT event_type FROM events WHERE contact_id = ? AND campaign_id = ? ORDER BY id",
+        cursor.execute(
+            "SELECT event_type FROM events WHERE contact_id = %s AND campaign_id = %s ORDER BY id",
             (contact_id, campaign_id),
-        ).fetchall()
+        )
     else:
-        rows = conn.execute(
-            "SELECT event_type FROM events WHERE contact_id = ? ORDER BY id",
+        cursor.execute(
+            "SELECT event_type FROM events WHERE contact_id = %s ORDER BY id",
             (contact_id,),
-        ).fetchall()
+        )
+    rows = cursor.fetchall()
     return [r["event_type"] for r in rows]
 
 
@@ -460,10 +468,12 @@ class TestNoAutoActivation:
 
         # c2 was already enrolled, and there is no c3 - transition should succeed
         # Check that no extra enrollment was created (only original two)
-        count = conn.execute(
-            "SELECT COUNT(*) FROM contact_campaign_status WHERE campaign_id = ?",
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT COUNT(*) AS cnt FROM contact_campaign_status WHERE campaign_id = %s",
             (campaign_id,),
-        ).fetchone()[0]
+        )
+        count = cursor.fetchone()["cnt"]
         assert count == 2
         conn.close()
 

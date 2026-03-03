@@ -1,7 +1,6 @@
 """Tests for campaign metrics, variant comparison, weekly summary, firm type
 breakdown, and weekly plan generation."""
 
-import sqlite3
 from datetime import date, datetime, timedelta
 from unittest.mock import patch
 
@@ -36,27 +35,31 @@ def _setup_db(db_path):
 
 def _create_company(conn, name="Acme Fund", firm_type="Hedge Fund"):
     """Insert a company and return its id."""
-    cursor = conn.execute(
-        "INSERT INTO companies (name, name_normalized, firm_type) VALUES (?, ?, ?)",
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO companies (name, name_normalized, firm_type) VALUES (%s, %s, %s) RETURNING id",
         (name, name.lower(), firm_type),
     )
+    company_id = cursor.fetchone()["id"]
     conn.commit()
-    return cursor.lastrowid
+    return company_id
 
 
 def _create_contact(conn, company_id, priority_rank=1, email=None):
     """Insert a contact and return its id."""
     email = email or f"contact{priority_rank}@example.com"
-    cursor = conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         "INSERT INTO contacts (company_id, priority_rank, email, email_normalized, "
         "first_name, last_name, full_name) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
         (company_id, priority_rank, email, email.lower(),
          f"First{priority_rank}", f"Last{priority_rank}",
          f"First{priority_rank} Last{priority_rank}"),
     )
+    contact_id = cursor.fetchone()["id"]
     conn.commit()
-    return cursor.lastrowid
+    return contact_id
 
 
 def _create_campaign(conn, name="Q1 Outreach"):
@@ -82,8 +85,9 @@ def _log_event(conn, contact_id, event_type, campaign_id, created_at=None):
     """Log an event, optionally with a specific created_at timestamp."""
     event_id = log_event(conn, contact_id, event_type, campaign_id=campaign_id)
     if created_at is not None:
-        conn.execute(
-            "UPDATE events SET created_at = ? WHERE id = ?",
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE events SET created_at = %s WHERE id = %s",
             (created_at, event_id),
         )
         conn.commit()
@@ -512,10 +516,12 @@ class TestGetCompanyTypeBreakdown:
     def test_null_firm_type_becomes_unknown(self, tmp_db):
         """Companies with NULL firm_type are grouped under 'Unknown'."""
         conn = _setup_db(tmp_db)
-        company_id = conn.execute(
-            "INSERT INTO companies (name, name_normalized) VALUES (?, ?)",
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO companies (name, name_normalized) VALUES (%s, %s) RETURNING id",
             ("No Type Inc", "no type inc"),
-        ).lastrowid
+        )
+        company_id = cursor.fetchone()["id"]
         conn.commit()
 
         c1 = _create_contact(conn, company_id, email="nt@ex.com")
@@ -715,9 +721,10 @@ class TestGenerateWeeklyPlan:
         campaign_id = _create_campaign(conn, "Action Ready")
 
         # Add a sequence step so channel_mix can be computed
-        conn.execute(
+        cursor = conn.cursor()
+        cursor.execute(
             "INSERT INTO sequence_steps (campaign_id, step_order, channel, delay_days) "
-            "VALUES (?, 1, 'email', 0)",
+            "VALUES (%s, 1, 'email', 0)",
             (campaign_id,),
         )
         conn.commit()

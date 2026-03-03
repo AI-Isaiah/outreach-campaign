@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import sqlite3
 from typing import Optional
 
 
 def queue_today(
-    conn: sqlite3.Connection,
+    conn,
     campaign_name: str,
     target_date: Optional[str] = None,
     limit: int = 10,
@@ -15,7 +14,7 @@ def queue_today(
     """Get today's queue for a campaign. Returns the queue list.
 
     Args:
-        conn: database connection (must have row_factory = sqlite3.Row)
+        conn: database connection
         campaign_name: name of the campaign to pull the queue for
         target_date: ISO date string (YYYY-MM-DD); defaults to today
         limit: maximum number of results to return

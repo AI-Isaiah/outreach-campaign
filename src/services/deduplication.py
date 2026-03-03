@@ -5,7 +5,6 @@ from __future__ import annotations
 import csv
 import logging
 import os
-import sqlite3
 from itertools import combinations
 
 from thefuzz import fuzz
@@ -15,7 +14,7 @@ logger = logging.getLogger(__name__)
 FUZZY_THRESHOLD = 85
 
 
-def run_dedup(conn: sqlite3.Connection, export_dir: str | None = None) -> dict:
+def run_dedup(conn, export_dir: str | None = None) -> dict:
     """Run the 3-pass deduplication pipeline.
 
     Pass 1: Exact email match
@@ -35,17 +34,19 @@ def run_dedup(conn: sqlite3.Connection, export_dir: str | None = None) -> dict:
     }
 
 
-def _pass_exact_email(conn: sqlite3.Connection) -> int:
+def _pass_exact_email(conn) -> int:
     """Pass 1: find contacts sharing the same email_normalized, keep lowest id."""
     dupes_removed = 0
 
-    rows = conn.execute(
-        """SELECT email_normalized, GROUP_CONCAT(id) AS ids
+    cursor = conn.cursor()
+    cursor.execute(
+        """SELECT email_normalized, string_agg(id::text, ',') AS ids
            FROM contacts
            WHERE email_normalized IS NOT NULL AND email_normalized != ''
            GROUP BY email_normalized
            HAVING COUNT(*) > 1"""
-    ).fetchall()
+    )
+    rows = cursor.fetchall()
 
     for row in rows:
         ids = sorted(int(i) for i in row["ids"].split(","))
@@ -53,12 +54,12 @@ def _pass_exact_email(conn: sqlite3.Connection) -> int:
         remove_ids = ids[1:]
 
         for rid in remove_ids:
-            conn.execute(
+            cursor.execute(
                 "INSERT INTO dedup_log (kept_contact_id, merged_contact_id, match_type, match_score) "
-                "VALUES (?, ?, 'exact_email', 1.0)",
+                "VALUES (%s, %s, 'exact_email', 1.0)",
                 (keep_id, rid),
             )
-            conn.execute("DELETE FROM contacts WHERE id = ?", (rid,))
+            cursor.execute("DELETE FROM contacts WHERE id = %s", (rid,))
             dupes_removed += 1
             logger.info("Dedup exact_email: kept %d, removed %d", keep_id, rid)
 
@@ -66,17 +67,19 @@ def _pass_exact_email(conn: sqlite3.Connection) -> int:
     return dupes_removed
 
 
-def _pass_exact_linkedin(conn: sqlite3.Connection) -> int:
+def _pass_exact_linkedin(conn) -> int:
     """Pass 2: find contacts sharing the same linkedin_url_normalized, keep lowest id."""
     dupes_removed = 0
 
-    rows = conn.execute(
-        """SELECT linkedin_url_normalized, GROUP_CONCAT(id) AS ids
+    cursor = conn.cursor()
+    cursor.execute(
+        """SELECT linkedin_url_normalized, string_agg(id::text, ',') AS ids
            FROM contacts
            WHERE linkedin_url_normalized IS NOT NULL AND linkedin_url_normalized != ''
            GROUP BY linkedin_url_normalized
            HAVING COUNT(*) > 1"""
-    ).fetchall()
+    )
+    rows = cursor.fetchall()
 
     for row in rows:
         ids = sorted(int(i) for i in row["ids"].split(","))
@@ -84,12 +87,12 @@ def _pass_exact_linkedin(conn: sqlite3.Connection) -> int:
         remove_ids = ids[1:]
 
         for rid in remove_ids:
-            conn.execute(
+            cursor.execute(
                 "INSERT INTO dedup_log (kept_contact_id, merged_contact_id, match_type, match_score) "
-                "VALUES (?, ?, 'exact_linkedin', 1.0)",
+                "VALUES (%s, %s, 'exact_linkedin', 1.0)",
                 (keep_id, rid),
             )
-            conn.execute("DELETE FROM contacts WHERE id = ?", (rid,))
+            cursor.execute("DELETE FROM contacts WHERE id = %s", (rid,))
             dupes_removed += 1
             logger.info("Dedup exact_linkedin: kept %d, removed %d", keep_id, rid)
 
@@ -97,15 +100,19 @@ def _pass_exact_linkedin(conn: sqlite3.Connection) -> int:
     return dupes_removed
 
 
-def _pass_fuzzy_company(conn: sqlite3.Connection, export_dir: str | None) -> int:
+def _pass_fuzzy_company(conn, export_dir: str | None) -> int:
     """Pass 3: fuzzy match company names, flag for manual review (no deletes)."""
-    rows = conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         "SELECT id, name, name_normalized FROM companies ORDER BY id"
-    ).fetchall()
+    )
+    rows = cursor.fetchall()
 
     flagged_pairs: list[dict] = []
 
-    for (id_a, name_a, norm_a), (id_b, name_b, norm_b) in combinations(rows, 2):
+    for (id_a, name_a, norm_a), (id_b, name_b, norm_b) in combinations(
+        [(r["id"], r["name"], r["name_normalized"]) for r in rows], 2
+    ):
         score = fuzz.token_sort_ratio(norm_a, norm_b)
         if score >= FUZZY_THRESHOLD:
             flagged_pairs.append(

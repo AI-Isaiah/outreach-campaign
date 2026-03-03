@@ -28,5 +28,13 @@ data/exports/*.csv
 .DS_Store
 .claude/
 
+# Gmail OAuth tokens
+.gmail_token.json
+credentials.json
+
+# Frontend build
+frontend/node_modules/
+frontend/dist/
+
 # Tools
 .firecrawl/

@@ -11,7 +11,6 @@ The importer auto-detects the CSV format by inspecting column headers.
 from __future__ import annotations
 
 import csv
-import sqlite3
 from datetime import date, timedelta
 from typing import Optional
 from urllib.parse import urlparse
@@ -117,7 +116,7 @@ def _normalize_status(raw_status: str, source: str) -> str:
 
 
 def import_expandi_results(
-    conn: sqlite3.Connection,
+    conn,
     file_path: str,
     campaign_name: str,
 ) -> dict:
@@ -179,10 +178,12 @@ def import_expandi_results(
             normalized_url = _normalize_linkedin_url(profile_link)
 
             # Find the contact by normalized LinkedIn URL
-            contact_row = conn.execute(
-                "SELECT id FROM contacts WHERE linkedin_url_normalized = ?",
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT id FROM contacts WHERE linkedin_url_normalized = %s",
                 (normalized_url,),
-            ).fetchone()
+            )
+            contact_row = cur.fetchone()
 
             if contact_row is None:
                 result["unmatched"] += 1

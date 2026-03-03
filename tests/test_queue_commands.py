@@ -2,7 +2,6 @@
 
 import csv
 import os
-import sqlite3
 from datetime import date, timedelta
 
 import pytest
@@ -31,13 +30,15 @@ def _today() -> str:
 
 def _insert_company(conn, name, aum_millions=None, country="US", is_gdpr=0):
     """Insert a company and return its id."""
-    cursor = conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         """INSERT INTO companies (name, name_normalized, aum_millions, country, is_gdpr)
-           VALUES (?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s) RETURNING id""",
         (name, name.lower(), aum_millions, country, is_gdpr),
     )
+    company_id = cursor.fetchone()["id"]
     conn.commit()
-    return cursor.lastrowid
+    return company_id
 
 
 def _insert_contact(
@@ -53,13 +54,14 @@ def _insert_contact(
     unsubscribed=0,
 ):
     """Insert a contact and return its id."""
-    cursor = conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         """INSERT INTO contacts
            (company_id, first_name, last_name, full_name,
             email, email_normalized, email_status,
             linkedin_url, linkedin_url_normalized,
             priority_rank, is_gdpr, unsubscribed)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
         (
             company_id,
             first_name,
@@ -75,8 +77,9 @@ def _insert_contact(
             unsubscribed,
         ),
     )
+    contact_id = cursor.fetchone()["id"]
     conn.commit()
-    return cursor.lastrowid
+    return contact_id
 
 
 def _setup_campaign_with_steps(conn, name="test_campaign"):

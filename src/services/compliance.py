@@ -6,7 +6,6 @@ and unsubscribe processing.
 
 from __future__ import annotations
 
-import sqlite3
 from datetime import datetime
 from typing import Optional
 from urllib.parse import quote
@@ -80,7 +79,7 @@ def add_compliance_footer_html(
 
 
 def check_gdpr_email_limit(
-    conn: sqlite3.Connection,
+    conn,
     contact_id: int,
     campaign_id: int,
     max_emails: int = 2,
@@ -100,16 +99,18 @@ def check_gdpr_email_limit(
         True if the contact can still receive emails (count < max),
         False if the limit has been reached.
     """
-    row = conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         """SELECT COUNT(*) as cnt FROM events
-           WHERE contact_id = ? AND campaign_id = ? AND event_type = 'email_sent'""",
+           WHERE contact_id = %s AND campaign_id = %s AND event_type = 'email_sent'""",
         (contact_id, campaign_id),
-    ).fetchone()
+    )
+    row = cursor.fetchone()
     count = row["cnt"] if row else 0
     return count < max_emails
 
 
-def is_contact_gdpr(conn: sqlite3.Connection, contact_id: int) -> bool:
+def is_contact_gdpr(conn, contact_id: int) -> bool:
     """Check if a contact is subject to GDPR restrictions.
 
     A contact is GDPR-subject if their ``is_gdpr`` flag is set, or if their
@@ -122,19 +123,21 @@ def is_contact_gdpr(conn: sqlite3.Connection, contact_id: int) -> bool:
     Returns:
         True if the contact is under GDPR, False otherwise.
     """
-    row = conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         """SELECT c.is_gdpr as contact_gdpr, co.is_gdpr as company_gdpr
            FROM contacts c
            LEFT JOIN companies co ON co.id = c.company_id
-           WHERE c.id = ?""",
+           WHERE c.id = %s""",
         (contact_id,),
-    ).fetchone()
+    )
+    row = cursor.fetchone()
     if row is None:
         return False
     return bool(row["contact_gdpr"]) or bool(row["company_gdpr"] or 0)
 
 
-def process_unsubscribe(conn: sqlite3.Connection, email: str) -> bool:
+def process_unsubscribe(conn, email: str) -> bool:
     """Process an unsubscribe request for a contact by email address.
 
     Sets ``unsubscribed=1`` and ``unsubscribed_at`` to the current timestamp
@@ -149,8 +152,9 @@ def process_unsubscribe(conn: sqlite3.Connection, email: str) -> bool:
         False if no matching contact was found.
     """
     now = datetime.utcnow().isoformat()
-    cursor = conn.execute(
-        "UPDATE contacts SET unsubscribed = 1, unsubscribed_at = ? WHERE email = ?",
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE contacts SET unsubscribed = 1, unsubscribed_at = %s WHERE email = %s",
         (now, email),
     )
     conn.commit()

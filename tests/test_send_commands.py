@@ -41,28 +41,32 @@ def conn(tmp_db):
 @pytest.fixture
 def sample_company(conn):
     """Insert a company and return its id."""
-    cursor = conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         "INSERT INTO companies (name, name_normalized, country, is_gdpr, aum_millions) "
-        "VALUES (?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s) RETURNING id",
         ("Acme Crypto Fund", "acme crypto fund", "United States", 0, 500.0),
     )
+    company_id = cursor.fetchone()["id"]
     conn.commit()
-    return cursor.lastrowid
+    return company_id
 
 
 @pytest.fixture
 def sample_contact(conn, sample_company):
     """Insert a contact with valid email and return its id."""
-    cursor = conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         "INSERT INTO contacts "
         "(company_id, first_name, last_name, full_name, email, email_normalized, "
         "email_status, priority_rank, source) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
         (sample_company, "Alice", "Smith", "Alice Smith",
          "alice@example.com", "alice@example.com", "valid", 1, "csv"),
     )
+    contact_id = cursor.fetchone()["id"]
     conn.commit()
-    return cursor.lastrowid
+    return contact_id
 
 
 @pytest.fixture
@@ -112,7 +116,7 @@ class TestSendCommandDryRun:
         """dry_run should display the queue table and not send any emails."""
         contact_id, campaign_id = enrolled_contact
 
-        with patch("src.cli.DB_PATH", tmp_db):
+        with patch("src.cli.SUPABASE_DB_URL", tmp_db):
             result = runner.invoke(app, ["send", "Q1 Outreach", "--dry-run"])
 
         assert result.exit_code == 0
@@ -123,7 +127,7 @@ class TestSendCommandDryRun:
         """dry_run should never call send_campaign_email."""
         contact_id, campaign_id = enrolled_contact
 
-        with patch("src.cli.DB_PATH", tmp_db), \
+        with patch("src.cli.SUPABASE_DB_URL", tmp_db), \
              patch("src.services.email_sender.send_email") as mock_send:
             result = runner.invoke(app, ["send", "Q1 Outreach", "--dry-run"])
 
@@ -132,7 +136,7 @@ class TestSendCommandDryRun:
 
     def test_dry_run_no_email_queue(self, tmp_db, conn, sample_campaign):
         """If no email items are queued, show appropriate message."""
-        with patch("src.cli.DB_PATH", tmp_db):
+        with patch("src.cli.SUPABASE_DB_URL", tmp_db):
             result = runner.invoke(app, ["send", "Q1 Outreach", "--dry-run"])
 
         assert result.exit_code == 0
@@ -140,7 +144,7 @@ class TestSendCommandDryRun:
 
     def test_send_unknown_campaign(self, tmp_db, conn):
         """Send with a nonexistent campaign should fail."""
-        with patch("src.cli.DB_PATH", tmp_db):
+        with patch("src.cli.SUPABASE_DB_URL", tmp_db):
             result = runner.invoke(app, ["send", "Nonexistent", "--dry-run"])
 
         assert result.exit_code != 0
@@ -157,7 +161,7 @@ class TestStatusCommand:
     def test_reply_positive(self, tmp_db, conn, enrolled_contact):
         contact_id, campaign_id = enrolled_contact
 
-        with patch("src.cli.DB_PATH", tmp_db):
+        with patch("src.cli.SUPABASE_DB_URL", tmp_db):
             result = runner.invoke(app, [
                 "status", "reply", "alice@example.com", "positive",
                 "--campaign", "Q1 Outreach",
@@ -172,7 +176,7 @@ class TestStatusCommand:
     def test_reply_negative(self, tmp_db, conn, enrolled_contact):
         contact_id, campaign_id = enrolled_contact
 
-        with patch("src.cli.DB_PATH", tmp_db):
+        with patch("src.cli.SUPABASE_DB_URL", tmp_db):
             result = runner.invoke(app, [
                 "status", "reply", "alice@example.com", "negative",
                 "--campaign", "Q1 Outreach",
@@ -187,7 +191,7 @@ class TestStatusCommand:
     def test_reply_call_booked(self, tmp_db, conn, enrolled_contact):
         contact_id, campaign_id = enrolled_contact
 
-        with patch("src.cli.DB_PATH", tmp_db):
+        with patch("src.cli.SUPABASE_DB_URL", tmp_db):
             result = runner.invoke(app, [
                 "status", "reply", "alice@example.com", "call-booked",
                 "--campaign", "Q1 Outreach",
@@ -201,10 +205,12 @@ class TestStatusCommand:
         assert ccs["status"] == "replied_positive"
 
         # Should have a call_booked event with metadata
-        event = conn.execute(
-            "SELECT * FROM events WHERE contact_id = ? AND event_type = 'call_booked'",
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT * FROM events WHERE contact_id = %s AND event_type = 'call_booked'",
             (contact_id,),
-        ).fetchone()
+        )
+        event = cursor.fetchone()
         assert event is not None
         metadata = json.loads(event["metadata"])
         assert metadata["call_booked"] is True
@@ -212,7 +218,7 @@ class TestStatusCommand:
     def test_reply_no_response(self, tmp_db, conn, enrolled_contact):
         contact_id, campaign_id = enrolled_contact
 
-        with patch("src.cli.DB_PATH", tmp_db):
+        with patch("src.cli.SUPABASE_DB_URL", tmp_db):
             result = runner.invoke(app, [
                 "status", "reply", "alice@example.com", "no-response",
                 "--campaign", "Q1 Outreach",
@@ -228,7 +234,7 @@ class TestStatusCommand:
         """Status command should work when identifier is a numeric contact ID."""
         contact_id, campaign_id = enrolled_contact
 
-        with patch("src.cli.DB_PATH", tmp_db):
+        with patch("src.cli.SUPABASE_DB_URL", tmp_db):
             result = runner.invoke(app, [
                 "status", "reply", str(contact_id), "positive",
                 "--campaign", "Q1 Outreach",
@@ -241,7 +247,7 @@ class TestStatusCommand:
 
     def test_reply_unknown_contact(self, tmp_db, conn, sample_campaign):
         """Status with unknown email should fail gracefully."""
-        with patch("src.cli.DB_PATH", tmp_db):
+        with patch("src.cli.SUPABASE_DB_URL", tmp_db):
             result = runner.invoke(app, [
                 "status", "reply", "nobody@nowhere.com", "positive",
                 "--campaign", "Q1 Outreach",
@@ -252,7 +258,7 @@ class TestStatusCommand:
 
     def test_reply_invalid_outcome(self, tmp_db, conn, enrolled_contact):
         """Invalid outcome should produce an error."""
-        with patch("src.cli.DB_PATH", tmp_db):
+        with patch("src.cli.SUPABASE_DB_URL", tmp_db):
             result = runner.invoke(app, [
                 "status", "reply", "alice@example.com", "maybe",
                 "--campaign", "Q1 Outreach",
@@ -263,7 +269,7 @@ class TestStatusCommand:
 
     def test_reply_invalid_action(self, tmp_db, conn, enrolled_contact):
         """Unknown action (not 'reply') should produce an error."""
-        with patch("src.cli.DB_PATH", tmp_db):
+        with patch("src.cli.SUPABASE_DB_URL", tmp_db):
             result = runner.invoke(app, [
                 "status", "bounce", "alice@example.com", "positive",
                 "--campaign", "Q1 Outreach",
@@ -333,19 +339,21 @@ class TestGetVariantStats:
             ("B", "replied_positive"),
             ("B", "no_response"),
         ]):
-            cursor = conn.execute(
+            cursor = conn.cursor()
+            cursor.execute(
                 "INSERT INTO contacts "
                 "(company_id, first_name, email, email_normalized, priority_rank, source) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
                 (sample_company, f"Contact{i}", f"c{i}@test.com", f"c{i}@test.com", i + 1, "csv"),
             )
+            cid = cursor.fetchone()["id"]
             conn.commit()
-            cid = cursor.lastrowid
 
-            conn.execute(
+            cursor = conn.cursor()
+            cursor.execute(
                 """INSERT INTO contact_campaign_status
                    (contact_id, campaign_id, current_step, status, assigned_variant)
-                   VALUES (?, ?, 1, ?, ?)""",
+                   VALUES (%s, %s, 1, %s, %s)""",
                 (cid, campaign_id, status, variant),
             )
             conn.commit()
@@ -374,18 +382,20 @@ class TestGetVariantStats:
 
     def test_null_variant_grouped(self, conn, sample_campaign, sample_company):
         """Contacts with no assigned variant should group under None."""
-        cursor = conn.execute(
+        cursor = conn.cursor()
+        cursor.execute(
             "INSERT INTO contacts "
-            "(company_id, first_name, email, priority_rank, source) VALUES (?, ?, ?, ?, ?)",
+            "(company_id, first_name, email, priority_rank, source) VALUES (%s, %s, %s, %s, %s) RETURNING id",
             (sample_company, "NoVariant", "nv@test.com", 1, "csv"),
         )
+        cid = cursor.fetchone()["id"]
         conn.commit()
-        cid = cursor.lastrowid
 
-        conn.execute(
+        cursor = conn.cursor()
+        cursor.execute(
             """INSERT INTO contact_campaign_status
                (contact_id, campaign_id, current_step, status, assigned_variant)
-               VALUES (?, ?, 1, 'queued', NULL)""",
+               VALUES (%s, %s, 1, 'queued', NULL)""",
             (cid, sample_campaign),
         )
         conn.commit()
@@ -405,22 +415,24 @@ class TestUnsubscribeCommand:
 
     def test_unsubscribe_marks_contact(self, tmp_db, conn, sample_contact):
         """Unsubscribe should mark the contact as unsubscribed."""
-        with patch("src.cli.DB_PATH", tmp_db):
+        with patch("src.cli.SUPABASE_DB_URL", tmp_db):
             result = runner.invoke(app, ["unsubscribe", "alice@example.com"])
 
         assert result.exit_code == 0
         assert "Unsubscribed" in result.output
 
-        row = conn.execute(
-            "SELECT unsubscribed, unsubscribed_at FROM contacts WHERE id = ?",
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT unsubscribed, unsubscribed_at FROM contacts WHERE id = %s",
             (sample_contact,),
-        ).fetchone()
+        )
+        row = cursor.fetchone()
         assert row["unsubscribed"] == 1
         assert row["unsubscribed_at"] is not None
 
     def test_unsubscribe_unknown_email(self, tmp_db, conn):
         """Unsubscribe with unknown email should warn but not crash."""
-        with patch("src.cli.DB_PATH", tmp_db):
+        with patch("src.cli.SUPABASE_DB_URL", tmp_db):
             result = runner.invoke(app, ["unsubscribe", "nobody@nowhere.com"])
 
         assert result.exit_code == 0
@@ -428,7 +440,7 @@ class TestUnsubscribeCommand:
 
     def test_unsubscribe_idempotent(self, tmp_db, conn, sample_contact):
         """Unsubscribing the same email twice should be safe."""
-        with patch("src.cli.DB_PATH", tmp_db):
+        with patch("src.cli.SUPABASE_DB_URL", tmp_db):
             runner.invoke(app, ["unsubscribe", "alice@example.com"])
             result = runner.invoke(app, ["unsubscribe", "alice@example.com"])
 

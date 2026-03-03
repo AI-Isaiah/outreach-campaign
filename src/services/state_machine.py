@@ -6,7 +6,6 @@ the next priority contact at a company when the current one is exhausted.
 
 from __future__ import annotations
 
-import sqlite3
 from datetime import date
 from typing import Optional
 
@@ -33,7 +32,7 @@ _TERMINAL_STATUSES = {"no_response", "bounced"}
 
 
 def transition_contact(
-    conn: sqlite3.Connection,
+    conn,
     contact_id: int,
     campaign_id: int,
     new_status: str,
@@ -83,7 +82,7 @@ def transition_contact(
 
 
 def _activate_next_contact(
-    conn: sqlite3.Connection,
+    conn,
     contact_id: int,
     campaign_id: int,
 ) -> Optional[int]:
@@ -97,11 +96,12 @@ def _activate_next_contact(
     Returns:
         The newly activated contact_id, or None if no more contacts remain.
     """
-    # Get the current contact's company and priority rank
-    contact_row = conn.execute(
-        "SELECT company_id, priority_rank FROM contacts WHERE id = ?",
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT company_id, priority_rank FROM contacts WHERE id = %s",
         (contact_id,),
-    ).fetchone()
+    )
+    contact_row = cursor.fetchone()
 
     if contact_row is None:
         return None
@@ -109,24 +109,23 @@ def _activate_next_contact(
     company_id = contact_row["company_id"]
     current_rank = contact_row["priority_rank"]
 
-    # Find the next-ranked contact not already enrolled in this campaign
-    next_contact = conn.execute(
+    cursor.execute(
         """SELECT c.id FROM contacts c
-           WHERE c.company_id = ? AND c.priority_rank > ?
+           WHERE c.company_id = %s AND c.priority_rank > %s
            AND c.id NOT IN (
-               SELECT contact_id FROM contact_campaign_status WHERE campaign_id = ?
+               SELECT contact_id FROM contact_campaign_status WHERE campaign_id = %s
            )
            ORDER BY c.priority_rank ASC
            LIMIT 1""",
         (company_id, current_rank, campaign_id),
-    ).fetchone()
+    )
+    next_contact = cursor.fetchone()
 
     if next_contact is None:
         return None
 
     next_contact_id = next_contact["id"]
 
-    # Enroll the next contact
     enroll_contact(
         conn,
         next_contact_id,
@@ -134,34 +133,35 @@ def _activate_next_contact(
         next_action_date=date.today().isoformat(),
     )
 
-    # Log the auto-activation event
     log_event(conn, next_contact_id, "auto_activated", campaign_id=campaign_id)
 
     return next_contact_id
 
 
 def get_active_contact_for_company(
-    conn: sqlite3.Connection,
+    conn,
     company_id: int,
     campaign_id: int,
-) -> Optional[sqlite3.Row]:
+):
     """Return the contact that is actively being worked for a company.
 
     A contact is considered active if its campaign status is ``queued`` or
     ``in_progress``.
 
     Returns:
-        The contact Row, or None if no active contact exists for the company
+        The contact row, or None if no active contact exists for the company
         in this campaign.
     """
-    row = conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         """SELECT c.* FROM contacts c
            JOIN contact_campaign_status ccs
-             ON ccs.contact_id = c.id AND ccs.campaign_id = ?
-           WHERE c.company_id = ?
+             ON ccs.contact_id = c.id AND ccs.campaign_id = %s
+           WHERE c.company_id = %s
              AND ccs.status IN ('queued', 'in_progress')
            ORDER BY c.priority_rank ASC
            LIMIT 1""",
         (campaign_id, company_id),
-    ).fetchone()
+    )
+    row = cursor.fetchone()
     return row

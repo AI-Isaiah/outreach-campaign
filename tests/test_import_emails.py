@@ -61,8 +61,9 @@ def test_import_pasted_emails(tmp_db):
 
     assert stats["contacts_created"] >= 7
 
-    cursor = conn.execute("SELECT COUNT(*) FROM contacts")
-    count = cursor.fetchone()[0]
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) AS cnt FROM contacts")
+    count = cursor.fetchone()["cnt"]
     assert count >= 7
 
     conn.close()
@@ -76,15 +77,17 @@ def test_import_extracts_company_from_domain(tmp_db):
     fixture_path = str(FIXTURES_DIR / "sample_pasted_emails.txt")
     import_pasted_emails(conn, fixture_path)
 
-    row = conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         "SELECT c.name_normalized FROM companies c "
         "JOIN contacts ct ON ct.company_id = c.id "
-        "WHERE ct.email_normalized = ?",
+        "WHERE ct.email_normalized = %s",
         ("bo@firinnecapital.com",),
-    ).fetchone()
+    )
+    row = cursor.fetchone()
 
     assert row is not None
-    assert "firinnecapital" in row[0]
+    assert "firinnecapital" in row["name_normalized"]
 
     conn.close()
 
@@ -101,8 +104,9 @@ def test_import_skips_duplicate_emails(tmp_db):
     assert stats_first["contacts_created"] >= 7
     assert stats_second["contacts_created"] == 0
 
-    cursor = conn.execute("SELECT COUNT(*) FROM contacts")
-    count = cursor.fetchone()[0]
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) AS cnt FROM contacts")
+    count = cursor.fetchone()["cnt"]
     # Should be exactly the same as the first run
     assert count == stats_first["contacts_created"]
 
@@ -117,11 +121,11 @@ def test_import_sets_source(tmp_db):
     fixture_path = str(FIXTURES_DIR / "sample_pasted_emails.txt")
     import_pasted_emails(conn, fixture_path)
 
-    rows = conn.execute(
-        "SELECT DISTINCT source FROM contacts"
-    ).fetchall()
+    cursor = conn.cursor()
+    cursor.execute("SELECT DISTINCT source FROM contacts")
+    rows = cursor.fetchall()
 
-    sources = [r[0] for r in rows]
+    sources = [r["source"] for r in rows]
     assert sources == ["pasted_emails"]
 
     conn.close()

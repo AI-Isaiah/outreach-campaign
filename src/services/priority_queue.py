@@ -12,13 +12,12 @@ Core rules:
 
 from __future__ import annotations
 
-import sqlite3
 from datetime import date
 from typing import Optional
 
 
 def get_daily_queue(
-    conn: sqlite3.Connection,
+    conn,
     campaign_id: int,
     target_date: Optional[str] = None,
     limit: int = 10,
@@ -26,7 +25,7 @@ def get_daily_queue(
     """Return the prioritized list of contacts to action today.
 
     Args:
-        conn: database connection (must have row_factory = sqlite3.Row)
+        conn: database connection
         campaign_id: which campaign to pull the queue for
         target_date: ISO date string (YYYY-MM-DD); defaults to today
         limit: maximum number of results to return
@@ -37,18 +36,6 @@ def get_daily_queue(
     """
     if target_date is None:
         target_date = date.today().isoformat()
-
-    # Step 1: Find the active contact per company (lowest priority_rank among
-    # enrolled contacts with status in ('queued','in_progress') and
-    # next_action_date <= target_date, excluding unsubscribed).
-    #
-    # Step 2: Join with the contact's current sequence step to get channel info.
-    #
-    # Step 3: Filter out contacts who can't execute their current step:
-    #   - email steps require email_status = 'valid'
-    #   - linkedin steps require non-empty linkedin_url_normalized
-    #
-    # Step 4: Order by AUM DESC NULLS LAST, limit.
 
     query = """
     WITH eligible AS (
@@ -70,9 +57,9 @@ def get_daily_queue(
         FROM contact_campaign_status ccs
         JOIN contacts c ON c.id = ccs.contact_id
         JOIN companies comp ON comp.id = c.company_id
-        WHERE ccs.campaign_id = ?
+        WHERE ccs.campaign_id = %s
           AND ccs.status IN ('queued', 'in_progress')
-          AND ccs.next_action_date <= ?
+          AND ccs.next_action_date <= %s
           AND c.unsubscribed = 0
     ),
     ranked AS (
@@ -103,14 +90,14 @@ def get_daily_queue(
         ac.email_status
     FROM active_contacts ac
     JOIN sequence_steps ss
-      ON ss.campaign_id = ?
+      ON ss.campaign_id = %s
      AND ss.step_order = ac.current_step
     WHERE
         -- Email steps: must have valid email
         (ss.channel != 'email' OR ac.email_status = 'valid')
         -- LinkedIn steps: must have a LinkedIn URL
         AND (
-            (ss.channel NOT LIKE 'linkedin%')
+            (ss.channel NOT LIKE 'linkedin%%')
             OR (ac.linkedin_url IS NOT NULL AND ac.linkedin_url != '')
         )
         -- GDPR filtering on steps
@@ -119,14 +106,13 @@ def get_daily_queue(
     ORDER BY
         CASE WHEN ac.aum_millions IS NULL THEN 1 ELSE 0 END,
         ac.aum_millions DESC
-    LIMIT ?
+    LIMIT %s
     """
 
-    cursor = conn.execute(query, (campaign_id, target_date, campaign_id, limit))
+    cursor = conn.cursor()
+    cursor.execute(query, (campaign_id, target_date, campaign_id, limit))
     rows = cursor.fetchall()
 
-    # Count total steps per contact (accounting for GDPR)
-    # We'll compute this per contact in the result set.
     results = []
     for row in rows:
         total_steps = count_steps_for_contact(conn, row["contact_id"], campaign_id)
@@ -151,31 +137,26 @@ def get_daily_queue(
 
 
 def get_next_step_for_contact(
-    conn: sqlite3.Connection,
+    conn,
     contact_id: int,
     campaign_id: int,
-) -> Optional[sqlite3.Row]:
-    """Return the sequence_step Row for the contact's next action, or None.
+):
+    """Return the sequence_step row for the contact's next action, or None.
 
     Looks at the contact's current_step in contact_campaign_status, then finds
-    the matching sequence_step. Respects GDPR filtering:
-    - Skips steps where non_gdpr_only = 1 if contact is_gdpr = 1
-    - Skips steps where gdpr_only = 1 if contact is_gdpr = 0
-
-    If the contact's current_step doesn't match any eligible step (e.g. GDPR
-    filtered), this scans forward to find the next eligible step. Returns None
-    if all steps are completed or no eligible step remains.
+    the matching sequence_step. Respects GDPR filtering.
     """
-    # Get contact's GDPR status and current step
-    row = conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         """
         SELECT c.is_gdpr, ccs.current_step
         FROM contact_campaign_status ccs
         JOIN contacts c ON c.id = ccs.contact_id
-        WHERE ccs.contact_id = ? AND ccs.campaign_id = ?
+        WHERE ccs.contact_id = %s AND ccs.campaign_id = %s
         """,
         (contact_id, campaign_id),
-    ).fetchone()
+    )
+    row = cursor.fetchone()
 
     if row is None:
         return None
@@ -183,25 +164,25 @@ def get_next_step_for_contact(
     is_gdpr = row["is_gdpr"]
     current_step = row["current_step"]
 
-    # Find the matching step, respecting GDPR
-    step = conn.execute(
+    cursor.execute(
         """
         SELECT * FROM sequence_steps
-        WHERE campaign_id = ?
-          AND step_order >= ?
-          AND (non_gdpr_only = 0 OR ? = 0)
-          AND (gdpr_only = 0 OR ? = 1)
+        WHERE campaign_id = %s
+          AND step_order >= %s
+          AND (non_gdpr_only = 0 OR %s = 0)
+          AND (gdpr_only = 0 OR %s = 1)
         ORDER BY step_order ASC
         LIMIT 1
         """,
         (campaign_id, current_step, is_gdpr, is_gdpr),
-    ).fetchone()
+    )
+    step = cursor.fetchone()
 
     return step
 
 
 def count_steps_for_contact(
-    conn: sqlite3.Connection,
+    conn,
     contact_id: int,
     campaign_id: int,
 ) -> int:
@@ -210,25 +191,27 @@ def count_steps_for_contact(
     Accounts for GDPR filtering: if the contact is GDPR, steps marked
     non_gdpr_only are excluded (and vice versa for gdpr_only).
     """
-    # Get contact's GDPR status
-    row = conn.execute(
-        "SELECT is_gdpr FROM contacts WHERE id = ?",
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT is_gdpr FROM contacts WHERE id = %s",
         (contact_id,),
-    ).fetchone()
+    )
+    row = cursor.fetchone()
 
     if row is None:
         return 0
 
     is_gdpr = row["is_gdpr"]
 
-    result = conn.execute(
+    cursor.execute(
         """
         SELECT COUNT(*) AS cnt FROM sequence_steps
-        WHERE campaign_id = ?
-          AND (non_gdpr_only = 0 OR ? = 0)
-          AND (gdpr_only = 0 OR ? = 1)
+        WHERE campaign_id = %s
+          AND (non_gdpr_only = 0 OR %s = 0)
+          AND (gdpr_only = 0 OR %s = 1)
         """,
         (campaign_id, is_gdpr, is_gdpr),
-    ).fetchone()
+    )
+    result = cursor.fetchone()
 
     return result["cnt"] if result else 0

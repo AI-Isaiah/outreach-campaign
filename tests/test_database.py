@@ -16,17 +16,19 @@ def test_run_migrations_creates_tables(tmp_db):
     conn.close()
 
 
-def test_wal_mode_enabled(tmp_db):
+def test_foreign_keys_enforced(tmp_db):
+    """PostgreSQL enforces foreign keys by default."""
+    import psycopg2
     conn = get_connection(tmp_db)
-    result = conn.execute("PRAGMA journal_mode").fetchone()
-    assert result[0] == "wal"
-    conn.close()
-
-
-def test_foreign_keys_enabled(tmp_db):
-    conn = get_connection(tmp_db)
-    result = conn.execute("PRAGMA foreign_keys").fetchone()
-    assert result[0] == 1
+    run_migrations(conn)
+    cursor = conn.cursor()
+    # Try to insert a contact referencing a non-existent company
+    with pytest.raises(psycopg2.IntegrityError):
+        cursor.execute(
+            "INSERT INTO contacts (company_id, first_name, source) VALUES (%s, %s, %s)",
+            (99999, "Test", "csv"),
+        )
+    conn.rollback()
     conn.close()
 
 
@@ -37,3 +39,6 @@ def test_migrations_are_idempotent(tmp_db):
     tables = get_table_names(conn)
     assert "companies" in tables
     conn.close()
+
+
+import pytest

@@ -21,8 +21,9 @@ def test_import_creates_companies(tmp_db):
     conn = _setup_db(tmp_db)
     stats = import_fund_csv(conn, SAMPLE_CSV)
     assert stats["companies_created"] == 3
-    row = conn.execute("SELECT COUNT(*) FROM companies").fetchone()
-    assert row[0] == 3
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) AS cnt FROM companies")
+    assert cursor.fetchone()["cnt"] == 3
     conn.close()
 
 
@@ -31,40 +32,49 @@ def test_import_creates_contacts(tmp_db):
     conn = _setup_db(tmp_db)
     import_fund_csv(conn, SAMPLE_CSV)
 
+    cursor = conn.cursor()
+
     # Aaro Capital: 4 contacts (all have names + emails + LinkedIn)
-    aaro = conn.execute(
-        "SELECT id FROM companies WHERE name = 'Aaro Capital'"
-    ).fetchone()
-    aaro_contacts = conn.execute(
-        "SELECT COUNT(*) FROM contacts WHERE company_id = ?", (aaro["id"],)
-    ).fetchone()
-    assert aaro_contacts[0] == 4
+    cursor.execute(
+        "SELECT id FROM companies WHERE name = %s", ("Aaro Capital",)
+    )
+    aaro = cursor.fetchone()
+    cursor.execute(
+        "SELECT COUNT(*) AS cnt FROM contacts WHERE company_id = %s", (aaro["id"],)
+    )
+    aaro_contacts = cursor.fetchone()
+    assert aaro_contacts["cnt"] == 4
 
     # 10T Fund: Dan Tapiero (primary, has LinkedIn but no email),
     # Michael Dubilier (contact 2, no LinkedIn and no email -- but has name so should be created),
     # Stan Miroshnik (contact 3, has LinkedIn + email),
     # Polina Bermisheva (contact 4, has LinkedIn but no email)
-    ten_t = conn.execute(
-        "SELECT id FROM companies WHERE name = '10T Fund'"
-    ).fetchone()
-    ten_t_contacts = conn.execute(
-        "SELECT COUNT(*) FROM contacts WHERE company_id = ?", (ten_t["id"],)
-    ).fetchone()
+    cursor.execute(
+        "SELECT id FROM companies WHERE name = %s", ("10T Fund",)
+    )
+    ten_t = cursor.fetchone()
+    cursor.execute(
+        "SELECT COUNT(*) AS cnt FROM contacts WHERE company_id = %s", (ten_t["id"],)
+    )
+    ten_t_contacts = cursor.fetchone()
     # Dan has name+LinkedIn, Michael has name only, Stan has all 3, Polina has name+LinkedIn
     # All 4 should be created since they all have names
-    assert ten_t_contacts[0] == 4
+    assert ten_t_contacts["cnt"] == 4
 
     # Alphachain Capital: only 1 contact (primary), contacts 2-4 are empty
-    alpha = conn.execute(
-        "SELECT id FROM companies WHERE name = 'Alphachain Capital'"
-    ).fetchone()
-    alpha_contacts = conn.execute(
-        "SELECT COUNT(*) FROM contacts WHERE company_id = ?", (alpha["id"],)
-    ).fetchone()
-    assert alpha_contacts[0] == 1
+    cursor.execute(
+        "SELECT id FROM companies WHERE name = %s", ("Alphachain Capital",)
+    )
+    alpha = cursor.fetchone()
+    cursor.execute(
+        "SELECT COUNT(*) AS cnt FROM contacts WHERE company_id = %s", (alpha["id"],)
+    )
+    alpha_contacts = cursor.fetchone()
+    assert alpha_contacts["cnt"] == 1
 
-    total = conn.execute("SELECT COUNT(*) FROM contacts").fetchone()
-    assert total[0] == 9  # 4 + 4 + 1
+    cursor.execute("SELECT COUNT(*) AS cnt FROM contacts")
+    total = cursor.fetchone()
+    assert total["cnt"] == 9  # 4 + 4 + 1
 
     conn.close()
 
@@ -74,20 +84,25 @@ def test_import_parses_aum(tmp_db):
     conn = _setup_db(tmp_db)
     import_fund_csv(conn, SAMPLE_CSV)
 
-    aaro_aum = conn.execute(
-        "SELECT aum_millions FROM companies WHERE name = 'Aaro Capital'"
-    ).fetchone()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT aum_millions FROM companies WHERE name = %s", ("Aaro Capital",)
+    )
+    aaro_aum = cursor.fetchone()
     assert aaro_aum["aum_millions"] == 15.0
 
-    ten_t_aum = conn.execute(
-        "SELECT aum_millions FROM companies WHERE name = '10T Fund'"
-    ).fetchone()
+    cursor.execute(
+        "SELECT aum_millions FROM companies WHERE name = %s", ("10T Fund",)
+    )
+    ten_t_aum = cursor.fetchone()
     assert ten_t_aum["aum_millions"] == 1219.5
 
     # Alphachain has whitespace-only AUM => None
-    alpha_aum = conn.execute(
-        "SELECT aum_millions FROM companies WHERE name = 'Alphachain Capital'"
-    ).fetchone()
+    cursor.execute(
+        "SELECT aum_millions FROM companies WHERE name = %s", ("Alphachain Capital",)
+    )
+    alpha_aum = cursor.fetchone()
     assert alpha_aum["aum_millions"] is None
 
     conn.close()
@@ -98,22 +113,27 @@ def test_import_detects_gdpr_country(tmp_db):
     conn = _setup_db(tmp_db)
     import_fund_csv(conn, SAMPLE_CSV)
 
+    cursor = conn.cursor()
+
     # United Kingdom -> GDPR
-    aaro = conn.execute(
-        "SELECT is_gdpr FROM companies WHERE name = 'Aaro Capital'"
-    ).fetchone()
+    cursor.execute(
+        "SELECT is_gdpr FROM companies WHERE name = %s", ("Aaro Capital",)
+    )
+    aaro = cursor.fetchone()
     assert aaro["is_gdpr"] == 1
 
     # United States -> not GDPR
-    ten_t = conn.execute(
-        "SELECT is_gdpr FROM companies WHERE name = '10T Fund'"
-    ).fetchone()
+    cursor.execute(
+        "SELECT is_gdpr FROM companies WHERE name = %s", ("10T Fund",)
+    )
+    ten_t = cursor.fetchone()
     assert ten_t["is_gdpr"] == 0
 
     # Alphachain is also UK
-    alpha = conn.execute(
-        "SELECT is_gdpr FROM companies WHERE name = 'Alphachain Capital'"
-    ).fetchone()
+    cursor.execute(
+        "SELECT is_gdpr FROM companies WHERE name = %s", ("Alphachain Capital",)
+    )
+    alpha = cursor.fetchone()
     assert alpha["is_gdpr"] == 1
 
     conn.close()
@@ -124,15 +144,21 @@ def test_import_normalizes_emails(tmp_db):
     conn = _setup_db(tmp_db)
     import_fund_csv(conn, SAMPLE_CSV)
 
-    contact = conn.execute(
-        "SELECT email_normalized FROM contacts WHERE full_name = 'Peter Habermacher'"
-    ).fetchone()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT email_normalized FROM contacts WHERE full_name = %s",
+        ("Peter Habermacher",),
+    )
+    contact = cursor.fetchone()
     assert contact["email_normalized"] == "peter.habermacher@aaro.capital"
 
     # Dan Tapiero has no email => email_normalized should be None
-    dan = conn.execute(
-        "SELECT email_normalized FROM contacts WHERE full_name = 'Dan Tapiero'"
-    ).fetchone()
+    cursor.execute(
+        "SELECT email_normalized FROM contacts WHERE full_name = %s",
+        ("Dan Tapiero",),
+    )
+    dan = cursor.fetchone()
     assert dan["email_normalized"] is None
 
     conn.close()
@@ -143,15 +169,19 @@ def test_import_sets_priority_ranks(tmp_db):
     conn = _setup_db(tmp_db)
     import_fund_csv(conn, SAMPLE_CSV)
 
-    aaro_id = conn.execute(
-        "SELECT id FROM companies WHERE name = 'Aaro Capital'"
-    ).fetchone()["id"]
+    cursor = conn.cursor()
 
-    contacts = conn.execute(
+    cursor.execute(
+        "SELECT id FROM companies WHERE name = %s", ("Aaro Capital",)
+    )
+    aaro_id = cursor.fetchone()["id"]
+
+    cursor.execute(
         "SELECT full_name, priority_rank FROM contacts "
-        "WHERE company_id = ? ORDER BY priority_rank",
+        "WHERE company_id = %s ORDER BY priority_rank",
         (aaro_id,),
-    ).fetchall()
+    )
+    contacts = cursor.fetchall()
 
     assert contacts[0]["full_name"] == "Peter Habermacher"
     assert contacts[0]["priority_rank"] == 1
@@ -170,23 +200,29 @@ def test_contacts_inherit_gdpr_from_company(tmp_db):
     conn = _setup_db(tmp_db)
     import_fund_csv(conn, SAMPLE_CSV)
 
+    cursor = conn.cursor()
+
     # All Aaro contacts (UK) should be GDPR
-    aaro_id = conn.execute(
-        "SELECT id FROM companies WHERE name = 'Aaro Capital'"
-    ).fetchone()["id"]
-    aaro_contacts = conn.execute(
-        "SELECT is_gdpr FROM contacts WHERE company_id = ?", (aaro_id,)
-    ).fetchall()
+    cursor.execute(
+        "SELECT id FROM companies WHERE name = %s", ("Aaro Capital",)
+    )
+    aaro_id = cursor.fetchone()["id"]
+    cursor.execute(
+        "SELECT is_gdpr FROM contacts WHERE company_id = %s", (aaro_id,)
+    )
+    aaro_contacts = cursor.fetchall()
     for c in aaro_contacts:
         assert c["is_gdpr"] == 1
 
     # All 10T contacts (US) should not be GDPR
-    ten_t_id = conn.execute(
-        "SELECT id FROM companies WHERE name = '10T Fund'"
-    ).fetchone()["id"]
-    ten_t_contacts = conn.execute(
-        "SELECT is_gdpr FROM contacts WHERE company_id = ?", (ten_t_id,)
-    ).fetchall()
+    cursor.execute(
+        "SELECT id FROM companies WHERE name = %s", ("10T Fund",)
+    )
+    ten_t_id = cursor.fetchone()["id"]
+    cursor.execute(
+        "SELECT is_gdpr FROM contacts WHERE company_id = %s", (ten_t_id,)
+    )
+    ten_t_contacts = cursor.fetchall()
     for c in ten_t_contacts:
         assert c["is_gdpr"] == 0
 

@@ -11,7 +11,6 @@ Supported line formats:
 from __future__ import annotations
 
 import re
-import sqlite3
 
 
 # ---------------------------------------------------------------------------
@@ -112,31 +111,36 @@ def _company_name_from_domain(domain: str) -> str:
 # ---------------------------------------------------------------------------
 
 def _find_or_create_company(
-    conn: sqlite3.Connection, company_name: str
+    conn, company_name: str
 ) -> int:
     """Return the company id, creating the row if necessary."""
     name_norm = _normalize_company_name(company_name)
-    row = conn.execute(
-        "SELECT id FROM companies WHERE name_normalized = ?", (name_norm,)
-    ).fetchone()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id FROM companies WHERE name_normalized = %s", (name_norm,)
+    )
+    row = cursor.fetchone()
     if row:
-        return row[0]
+        return row["id"]
 
-    cursor = conn.execute(
-        "INSERT INTO companies (name, name_normalized) VALUES (?, ?)",
+    cursor.execute(
+        "INSERT INTO companies (name, name_normalized) VALUES (%s, %s) RETURNING id",
         (company_name, name_norm),
     )
+    result = cursor.fetchone()
     conn.commit()
-    return cursor.lastrowid
+    return result["id"]
 
 
-def _next_priority_rank(conn: sqlite3.Connection, company_id: int) -> int:
+def _next_priority_rank(conn, company_id: int) -> int:
     """Return max(priority_rank) + 1 for the given company, or 1."""
-    row = conn.execute(
-        "SELECT MAX(priority_rank) FROM contacts WHERE company_id = ?",
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT MAX(priority_rank) AS max_rank FROM contacts WHERE company_id = %s",
         (company_id,),
-    ).fetchone()
-    current_max = row[0] if row and row[0] is not None else 0
+    )
+    row = cursor.fetchone()
+    current_max = row["max_rank"] if row and row["max_rank"] is not None else 0
     return current_max + 1
 
 
@@ -145,13 +149,13 @@ def _next_priority_rank(conn: sqlite3.Connection, company_id: int) -> int:
 # ---------------------------------------------------------------------------
 
 def import_pasted_emails(
-    conn: sqlite3.Connection, file_path: str
+    conn, file_path: str
 ) -> dict:
     """Read a file of pasted email lines and import them as contacts.
 
     Parameters
     ----------
-    conn : sqlite3.Connection
+    conn : database connection
         An open database connection (migrations must already be applied).
     file_path : str
         Path to a text file containing pasted emails.
@@ -189,10 +193,12 @@ def import_pasted_emails(
             continue
 
         # Skip duplicates
-        existing = conn.execute(
-            "SELECT id FROM contacts WHERE email_normalized = ?",
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id FROM contacts WHERE email_normalized = %s",
             (email_norm,),
-        ).fetchone()
+        )
+        existing = cur.fetchone()
         if existing:
             lines_skipped += 1
             continue
@@ -212,12 +218,12 @@ def import_pasted_emails(
 
         priority_rank = _next_priority_rank(conn, company_id)
 
-        conn.execute(
+        cur.execute(
             """
             INSERT INTO contacts
                 (company_id, first_name, last_name, full_name,
                  email, email_normalized, priority_rank, source)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 company_id,

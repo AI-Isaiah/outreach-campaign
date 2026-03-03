@@ -1,7 +1,7 @@
 """Comprehensive tests for src/models/campaigns.py CRUD operations."""
 
 import json
-import sqlite3
+import psycopg2
 import pytest
 
 from src.models.database import get_connection, run_migrations
@@ -54,24 +54,27 @@ def sample_template(conn):
 @pytest.fixture
 def sample_contact(conn):
     """Insert a minimal contact row and return its id."""
-    cursor = conn.execute(
-        "INSERT INTO contacts (first_name, last_name, email, source) VALUES (?, ?, ?, ?)",
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO contacts (first_name, last_name, email, source) VALUES (%s, %s, %s, %s) RETURNING id",
         ("Alice", "Smith", "alice@example.com", "csv"),
     )
+    contact_id = cursor.fetchone()["id"]
     conn.commit()
-    return cursor.lastrowid
+    return contact_id
 
 
 @pytest.fixture
 def multiple_contacts(conn):
     """Insert several contacts and return their ids."""
     ids = []
+    cursor = conn.cursor()
     for i in range(5):
-        cursor = conn.execute(
-            "INSERT INTO contacts (first_name, last_name, email, source) VALUES (?, ?, ?, ?)",
+        cursor.execute(
+            "INSERT INTO contacts (first_name, last_name, email, source) VALUES (%s, %s, %s, %s) RETURNING id",
             (f"User{i}", f"Last{i}", f"user{i}@example.com", "csv"),
         )
-        ids.append(cursor.lastrowid)
+        ids.append(cursor.fetchone()["id"])
     conn.commit()
     return ids
 
@@ -108,8 +111,9 @@ class TestCreateCampaign:
 
     def test_duplicate_name_raises(self, conn):
         create_campaign(conn, "Unique Name")
-        with pytest.raises(sqlite3.IntegrityError):
+        with pytest.raises(psycopg2.IntegrityError):
             create_campaign(conn, "Unique Name")
+        conn.rollback()  # PG requires rollback after error in transaction
 
 
 class TestGetCampaign:
@@ -230,7 +234,8 @@ class TestListTemplates:
         t1 = create_template(conn, "Active", "email", "body")
         t2 = create_template(conn, "Inactive", "email", "body")
         # Deactivate t2
-        conn.execute("UPDATE templates SET is_active = 0 WHERE id = ?", (t2,))
+        cursor = conn.cursor()
+        cursor.execute("UPDATE templates SET is_active = 0 WHERE id = %s", (t2,))
         conn.commit()
 
         result = list_templates(conn)
@@ -240,7 +245,8 @@ class TestListTemplates:
     def test_list_inactive(self, conn):
         t1 = create_template(conn, "Active", "email", "body")
         t2 = create_template(conn, "Inactive", "email", "body")
-        conn.execute("UPDATE templates SET is_active = 0 WHERE id = ?", (t2,))
+        cursor = conn.cursor()
+        cursor.execute("UPDATE templates SET is_active = 0 WHERE id = %s", (t2,))
         conn.commit()
 
         result = list_templates(conn, is_active=False)
@@ -262,7 +268,8 @@ class TestListTemplates:
         t1 = create_template(conn, "Email Active", "email", "body")
         t2 = create_template(conn, "Email Inactive", "email", "body")
         t3 = create_template(conn, "LI Active", "linkedin_connect", "body")
-        conn.execute("UPDATE templates SET is_active = 0 WHERE id = ?", (t2,))
+        cursor = conn.cursor()
+        cursor.execute("UPDATE templates SET is_active = 0 WHERE id = %s", (t2,))
         conn.commit()
 
         result = list_templates(conn, channel="email", is_active=True)
@@ -302,8 +309,9 @@ class TestAddSequenceStep:
 
     def test_duplicate_step_order_raises(self, conn, sample_campaign):
         add_sequence_step(conn, sample_campaign, 1, "email")
-        with pytest.raises(sqlite3.IntegrityError):
+        with pytest.raises(psycopg2.IntegrityError):
             add_sequence_step(conn, sample_campaign, 1, "linkedin_connect")
+        conn.rollback()  # PG requires rollback after error in transaction
 
     def test_same_step_order_different_campaign(self, conn):
         c1 = create_campaign(conn, "Campaign A")
@@ -522,7 +530,9 @@ class TestLogEvent:
             campaign_id=sample_campaign,
             template_id=sample_template,
         )
-        row = conn.execute("SELECT * FROM events WHERE id = ?", (eid,)).fetchone()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM events WHERE id = %s", (eid,))
+        row = cursor.fetchone()
         assert row["contact_id"] == sample_contact
         assert row["campaign_id"] == sample_campaign
         assert row["template_id"] == sample_template
@@ -531,21 +541,27 @@ class TestLogEvent:
     def test_with_metadata(self, conn, sample_contact):
         meta = json.dumps({"subject": "Hello", "opened": True})
         eid = log_event(conn, sample_contact, "email_opened", metadata=meta)
-        row = conn.execute("SELECT * FROM events WHERE id = ?", (eid,)).fetchone()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM events WHERE id = %s", (eid,))
+        row = cursor.fetchone()
         assert row["metadata"] == meta
         parsed = json.loads(row["metadata"])
         assert parsed["opened"] is True
 
     def test_without_optional_fields(self, conn, sample_contact):
         eid = log_event(conn, sample_contact, "page_visit")
-        row = conn.execute("SELECT * FROM events WHERE id = ?", (eid,)).fetchone()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM events WHERE id = %s", (eid,))
+        row = cursor.fetchone()
         assert row["campaign_id"] is None
         assert row["template_id"] is None
         assert row["metadata"] is None
 
     def test_created_at_populated(self, conn, sample_contact):
         eid = log_event(conn, sample_contact, "email_sent")
-        row = conn.execute("SELECT * FROM events WHERE id = ?", (eid,)).fetchone()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM events WHERE id = %s", (eid,))
+        row = cursor.fetchone()
         assert row["created_at"] is not None
 
 
@@ -603,13 +619,3 @@ class TestIntegration:
         update_campaign_status(conn, cid, "paused")
         camp = get_campaign(conn, cid)
         assert camp["status"] == "paused"
-
-    def test_row_access_by_key(self, conn):
-        """Verify that returned rows support dict-like key access (sqlite3.Row)."""
-        cid = create_campaign(conn, "Key Access Test")
-        row = get_campaign(conn, cid)
-        # Access by key
-        assert row["name"] == "Key Access Test"
-        assert row["status"] == "active"
-        # Access by index
-        assert row[0] == cid

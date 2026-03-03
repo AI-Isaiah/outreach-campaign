@@ -7,7 +7,6 @@ reply-rate statistics broken down by variant.
 from __future__ import annotations
 
 import random
-import sqlite3
 from typing import Optional
 
 
@@ -31,7 +30,7 @@ def assign_variant(contact_id: int, variants: list[str] = None) -> str:
     return rng.choice(variants)
 
 
-def get_variant_stats(conn: sqlite3.Connection, campaign_id: int) -> list[dict]:
+def get_variant_stats(conn, campaign_id: int) -> list[dict]:
     """Get reply stats broken down by assigned variant.
 
     Queries ``contact_campaign_status`` for each distinct variant in the
@@ -39,14 +38,15 @@ def get_variant_stats(conn: sqlite3.Connection, campaign_id: int) -> list[dict]:
     negative replies, non-responses, and the overall reply rate.
 
     Args:
-        conn: database connection (with row_factory = sqlite3.Row)
+        conn: database connection
         campaign_id: the campaign to pull stats for
 
     Returns:
         List of dicts with keys: variant, total, replied_positive,
         replied_negative, no_response, reply_rate.
     """
-    rows = conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         """
         SELECT
             assigned_variant,
@@ -55,12 +55,13 @@ def get_variant_stats(conn: sqlite3.Connection, campaign_id: int) -> list[dict]:
             SUM(CASE WHEN status = 'replied_negative' THEN 1 ELSE 0 END) AS replied_negative,
             SUM(CASE WHEN status = 'no_response' THEN 1 ELSE 0 END) AS no_response
         FROM contact_campaign_status
-        WHERE campaign_id = ?
+        WHERE campaign_id = %s
         GROUP BY assigned_variant
         ORDER BY assigned_variant
         """,
         (campaign_id,),
-    ).fetchall()
+    )
+    rows = cursor.fetchall()
 
     results = []
     for row in rows:

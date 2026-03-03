@@ -6,7 +6,6 @@ and campaign-specific context variables.
 
 from __future__ import annotations
 
-import sqlite3
 from pathlib import Path
 from typing import Optional
 
@@ -59,7 +58,7 @@ def render_template(
 
 
 def get_template_context(
-    conn: sqlite3.Connection,
+    conn,
     contact_id: int,
     config: dict,
 ) -> dict:
@@ -81,13 +80,15 @@ def get_template_context(
     Raises:
         ValueError: if the contact is not found.
     """
-    row = conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         """SELECT c.first_name, c.last_name, c.full_name, co.name as company_name
            FROM contacts c
            LEFT JOIN companies co ON co.id = c.company_id
-           WHERE c.id = ?""",
+           WHERE c.id = %s""",
         (contact_id,),
-    ).fetchone()
+    )
+    row = cursor.fetchone()
 
     if row is None:
         raise ValueError(f"Contact {contact_id} not found")

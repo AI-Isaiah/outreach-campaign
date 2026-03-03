@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import csv
 import os
-import sqlite3
 from datetime import date
 from typing import Optional
 
 
 def export_expandi_csv(
-    conn: sqlite3.Connection,
+    conn,
     campaign_name: str,
     target_date: Optional[str] = None,
     output_dir: str = "data/exports",
@@ -67,10 +66,12 @@ def export_expandi_csv(
 
         for item in linkedin_items:
             contact_id = item["contact_id"]
-            row = conn.execute(
-                "SELECT first_name, last_name, email FROM contacts WHERE id = ?",
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT first_name, last_name, email FROM contacts WHERE id = %s",
                 (contact_id,),
-            ).fetchone()
+            )
+            row = cursor.fetchone()
 
             if row is None:
                 continue

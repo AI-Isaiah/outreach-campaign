@@ -16,26 +16,30 @@ def _setup_db(tmp_db):
 
 
 def _insert_company(conn, name, country="United States"):
-    cursor = conn.execute(
-        "INSERT INTO companies (name, name_normalized, country, is_gdpr) VALUES (?, ?, ?, 0)",
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO companies (name, name_normalized, country, is_gdpr) VALUES (%s, %s, %s, 0) RETURNING id",
         (name, name.lower(), country),
     )
+    company_id = cursor.fetchone()["id"]
     conn.commit()
-    return cursor.lastrowid
+    return company_id
 
 
 def _insert_contact(conn, company_id, email=None, linkedin=None, rank=1):
     email_norm = email.lower().strip() if email else None
     li_norm = linkedin.lower().rstrip("/").split("?")[0] if linkedin else None
-    cursor = conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         """INSERT INTO contacts
            (company_id, full_name, email, email_normalized,
             linkedin_url, linkedin_url_normalized, priority_rank, source, is_gdpr)
-           VALUES (?, 'Test Person', ?, ?, ?, ?, ?, 'test', 0)""",
+           VALUES (%s, 'Test Person', %s, %s, %s, %s, %s, 'test', 0) RETURNING id""",
         (company_id, email, email_norm, linkedin, li_norm, rank),
     )
+    contact_id = cursor.fetchone()["id"]
     conn.commit()
-    return cursor.lastrowid
+    return contact_id
 
 
 # ---------------------------------------------------------------------------
@@ -53,7 +57,9 @@ def test_dedup_exact_email(tmp_db):
 
     assert stats["email_dupes"] == 1
 
-    remaining = conn.execute("SELECT id FROM contacts ORDER BY id").fetchall()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM contacts ORDER BY id")
+    remaining = cursor.fetchall()
     remaining_ids = [r["id"] for r in remaining]
     assert c1 in remaining_ids
     assert c2 not in remaining_ids
@@ -72,7 +78,9 @@ def test_dedup_exact_linkedin(tmp_db):
 
     assert stats["linkedin_dupes"] == 1
 
-    remaining = conn.execute("SELECT id FROM contacts ORDER BY id").fetchall()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM contacts ORDER BY id")
+    remaining = cursor.fetchall()
     remaining_ids = [r["id"] for r in remaining]
     assert c1 in remaining_ids
     assert c2 not in remaining_ids
@@ -115,10 +123,12 @@ def test_dedup_logs_actions(tmp_db):
 
     run_dedup(conn)
 
-    logs = conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         "SELECT kept_contact_id, merged_contact_id, match_type, match_score "
         "FROM dedup_log ORDER BY id"
-    ).fetchall()
+    )
+    logs = cursor.fetchall()
 
     assert len(logs) >= 2
 
@@ -146,7 +156,9 @@ def test_dedup_keeps_first_contact(tmp_db):
 
     run_dedup(conn)
 
-    remaining = conn.execute("SELECT id FROM contacts ORDER BY id").fetchall()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM contacts ORDER BY id")
+    remaining = cursor.fetchall()
     remaining_ids = [r["id"] for r in remaining]
     assert c1 in remaining_ids  # lower id kept even though rank is higher
     assert c2 not in remaining_ids
@@ -166,7 +178,9 @@ def test_dedup_no_false_positives(tmp_db):
     assert stats["email_dupes"] == 0
     assert stats["linkedin_dupes"] == 0
 
-    remaining = conn.execute("SELECT COUNT(*) FROM contacts").fetchone()
-    assert remaining[0] == 2
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) AS cnt FROM contacts")
+    remaining = cursor.fetchone()
+    assert remaining["cnt"] == 2
 
     conn.close()

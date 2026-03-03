@@ -1,4 +1,4 @@
-.PHONY: install test clean stats import verify queue send-dry report weekly help
+.PHONY: install test clean stats import verify queue send-dry report weekly help web dev api
 
 # Default campaign name (override with CAMPAIGN=name)
 CAMPAIGN ?= Q1_2026_initial
@@ -32,7 +32,7 @@ install:
 	pip3 install -e ".[dev]"
 
 test:
-	python3 -m pytest tests/ -v
+	PATH="/opt/homebrew/opt/postgresql@16/bin:$$PATH" python3 -m pytest tests/ -v
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} +
@@ -69,3 +69,15 @@ weekly:
 
 report:
 	python3 -m src.cli report "$(CAMPAIGN)"
+
+# --- Web Dashboard ---
+
+web:
+	python3 -m src.cli web
+
+api:
+	uvicorn src.web.app:app --host 0.0.0.0 --port 8000 --reload
+
+dev:
+	cd frontend && npm run dev &
+	python3 -m src.cli web --reload

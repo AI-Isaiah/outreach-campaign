@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-import sqlite3
+import psycopg2
 from datetime import datetime
 from typing import Callable, Optional
 
@@ -13,60 +13,66 @@ from typing import Callable, Optional
 # ---------------------------------------------------------------------------
 
 def create_campaign(
-    conn: sqlite3.Connection,
+    conn,
     name: str,
     description: Optional[str] = None,
 ) -> int:
     """Create a new campaign and return its id."""
-    cursor = conn.execute(
-        "INSERT INTO campaigns (name, description) VALUES (?, ?)",
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO campaigns (name, description) VALUES (%s, %s) RETURNING id",
         (name, description),
     )
+    row = cursor.fetchone()
     conn.commit()
-    return cursor.lastrowid
+    return row["id"]
 
 
-def get_campaign(conn: sqlite3.Connection, campaign_id: int) -> Optional[sqlite3.Row]:
+def get_campaign(conn, campaign_id: int):
     """Return a single campaign by id, or None."""
-    cursor = conn.execute(
-        "SELECT * FROM campaigns WHERE id = ?",
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM campaigns WHERE id = %s",
         (campaign_id,),
     )
     return cursor.fetchone()
 
 
-def get_campaign_by_name(conn: sqlite3.Connection, name: str) -> Optional[sqlite3.Row]:
+def get_campaign_by_name(conn, name: str):
     """Return a single campaign by name, or None."""
-    cursor = conn.execute(
-        "SELECT * FROM campaigns WHERE name = ?",
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM campaigns WHERE name = %s",
         (name,),
     )
     return cursor.fetchone()
 
 
 def list_campaigns(
-    conn: sqlite3.Connection,
+    conn,
     status: Optional[str] = None,
 ) -> list:
     """Return all campaigns, optionally filtered by status."""
+    cursor = conn.cursor()
     if status is not None:
-        cursor = conn.execute(
-            "SELECT * FROM campaigns WHERE status = ? ORDER BY id",
+        cursor.execute(
+            "SELECT * FROM campaigns WHERE status = %s ORDER BY id",
             (status,),
         )
     else:
-        cursor = conn.execute("SELECT * FROM campaigns ORDER BY id")
+        cursor.execute("SELECT * FROM campaigns ORDER BY id")
     return cursor.fetchall()
 
 
 def update_campaign_status(
-    conn: sqlite3.Connection,
+    conn,
     campaign_id: int,
     status: str,
 ) -> None:
     """Update the status of a campaign."""
-    conn.execute(
-        "UPDATE campaigns SET status = ? WHERE id = ?",
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE campaigns SET status = %s WHERE id = %s",
         (status, campaign_id),
     )
     conn.commit()
@@ -77,7 +83,7 @@ def update_campaign_status(
 # ---------------------------------------------------------------------------
 
 def create_template(
-    conn: sqlite3.Connection,
+    conn,
     name: str,
     channel: str,
     body_template: str,
@@ -86,27 +92,30 @@ def create_template(
     variant_label: Optional[str] = None,
 ) -> int:
     """Create a new template and return its id."""
-    cursor = conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         """INSERT INTO templates
            (name, channel, body_template, subject, variant_group, variant_label)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
         (name, channel, body_template, subject, variant_group, variant_label),
     )
+    row = cursor.fetchone()
     conn.commit()
-    return cursor.lastrowid
+    return row["id"]
 
 
-def get_template(conn: sqlite3.Connection, template_id: int) -> Optional[sqlite3.Row]:
+def get_template(conn, template_id: int):
     """Return a single template by id, or None."""
-    cursor = conn.execute(
-        "SELECT * FROM templates WHERE id = ?",
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM templates WHERE id = %s",
         (template_id,),
     )
     return cursor.fetchone()
 
 
 def list_templates(
-    conn: sqlite3.Connection,
+    conn,
     channel: Optional[str] = None,
     is_active: bool = True,
 ) -> list:
@@ -115,14 +124,15 @@ def list_templates(
     params: list = []
 
     if channel is not None:
-        query += " AND channel = ?"
+        query += " AND channel = %s"
         params.append(channel)
 
-    query += " AND is_active = ?"
+    query += " AND is_active = %s"
     params.append(1 if is_active else 0)
 
     query += " ORDER BY id"
-    cursor = conn.execute(query, params)
+    cursor = conn.cursor()
+    cursor.execute(query, params)
     return cursor.fetchall()
 
 
@@ -131,7 +141,7 @@ def list_templates(
 # ---------------------------------------------------------------------------
 
 def add_sequence_step(
-    conn: sqlite3.Connection,
+    conn,
     campaign_id: int,
     step_order: int,
     channel: str,
@@ -141,10 +151,11 @@ def add_sequence_step(
     non_gdpr_only: bool = False,
 ) -> int:
     """Add a sequence step to a campaign and return its id."""
-    cursor = conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         """INSERT INTO sequence_steps
            (campaign_id, step_order, channel, template_id, delay_days, gdpr_only, non_gdpr_only)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
         (
             campaign_id,
             step_order,
@@ -155,14 +166,20 @@ def add_sequence_step(
             1 if non_gdpr_only else 0,
         ),
     )
+    row = cursor.fetchone()
     conn.commit()
-    return cursor.lastrowid
+    return row["id"]
 
 
-def get_sequence_steps(conn: sqlite3.Connection, campaign_id: int) -> list:
+# ---------------------------------------------------------------------------
+# Sequence Steps (query)
+# ---------------------------------------------------------------------------
+
+def get_sequence_steps(conn, campaign_id: int) -> list:
     """Return all steps for a campaign, ordered by step_order."""
-    cursor = conn.execute(
-        "SELECT * FROM sequence_steps WHERE campaign_id = ? ORDER BY step_order",
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM sequence_steps WHERE campaign_id = %s ORDER BY step_order",
         (campaign_id,),
     )
     return cursor.fetchall()
@@ -173,7 +190,7 @@ def get_sequence_steps(conn: sqlite3.Connection, campaign_id: int) -> list:
 # ---------------------------------------------------------------------------
 
 def enroll_contact(
-    conn: sqlite3.Connection,
+    conn,
     contact_id: int,
     campaign_id: int,
     variant: Optional[str] = None,
@@ -181,21 +198,23 @@ def enroll_contact(
 ) -> Optional[int]:
     """Enroll a contact in a campaign. Returns enrollment id, or None if already enrolled."""
     try:
-        cursor = conn.execute(
+        cursor = conn.cursor()
+        cursor.execute(
             """INSERT INTO contact_campaign_status
                (contact_id, campaign_id, current_step, assigned_variant, next_action_date)
-               VALUES (?, ?, 1, ?, ?)""",
+               VALUES (%s, %s, 1, %s, %s) RETURNING id""",
             (contact_id, campaign_id, variant, next_action_date),
         )
+        row = cursor.fetchone()
         conn.commit()
-        return cursor.lastrowid
-    except sqlite3.IntegrityError:
-        # Already enrolled (UNIQUE constraint on contact_id, campaign_id)
+        return row["id"]
+    except psycopg2.IntegrityError:
+        conn.rollback()
         return None
 
 
 def bulk_enroll_contacts(
-    conn: sqlite3.Connection,
+    conn,
     campaign_id: int,
     contact_ids: list,
     variant_assigner: Optional[Callable] = None,
@@ -211,11 +230,13 @@ def bulk_enroll_contacts(
     Returns:
         count of newly enrolled contacts (skips already enrolled)
     """
-    # Find contacts already enrolled in this campaign
-    placeholders = ",".join("?" for _ in contact_ids)
-    cursor = conn.execute(
+    if not contact_ids:
+        return 0
+    placeholders = ",".join("%s" for _ in contact_ids)
+    cursor = conn.cursor()
+    cursor.execute(
         f"SELECT contact_id FROM contact_campaign_status "
-        f"WHERE campaign_id = ? AND contact_id IN ({placeholders})",
+        f"WHERE campaign_id = %s AND contact_id IN ({placeholders})",
         [campaign_id] + list(contact_ids),
     )
     already_enrolled = {row["contact_id"] for row in cursor.fetchall()}
@@ -225,10 +246,10 @@ def bulk_enroll_contacts(
         if contact_id in already_enrolled:
             continue
         variant = variant_assigner(contact_id) if variant_assigner else None
-        conn.execute(
+        cursor.execute(
             """INSERT INTO contact_campaign_status
                (contact_id, campaign_id, current_step, assigned_variant)
-               VALUES (?, ?, 1, ?)""",
+               VALUES (%s, %s, 1, %s)""",
             (contact_id, campaign_id, variant),
         )
         enrolled_count += 1
@@ -238,20 +259,21 @@ def bulk_enroll_contacts(
 
 
 def get_contact_campaign_status(
-    conn: sqlite3.Connection,
+    conn,
     contact_id: int,
     campaign_id: int,
-) -> Optional[sqlite3.Row]:
+):
     """Return the enrollment/status row for a contact in a campaign, or None."""
-    cursor = conn.execute(
-        "SELECT * FROM contact_campaign_status WHERE contact_id = ? AND campaign_id = ?",
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM contact_campaign_status WHERE contact_id = %s AND campaign_id = %s",
         (contact_id, campaign_id),
     )
     return cursor.fetchone()
 
 
 def update_contact_campaign_status(
-    conn: sqlite3.Connection,
+    conn,
     contact_id: int,
     campaign_id: int,
     status: Optional[str] = None,
@@ -266,26 +288,27 @@ def update_contact_campaign_status(
     params: list = []
 
     if status is not None:
-        fields.append("status = ?")
+        fields.append("status = %s")
         params.append(status)
     if current_step is not None:
-        fields.append("current_step = ?")
+        fields.append("current_step = %s")
         params.append(current_step)
     if next_action_date is not None:
-        fields.append("next_action_date = ?")
+        fields.append("next_action_date = %s")
         params.append(next_action_date)
 
     if not fields:
         return
 
-    fields.append("updated_at = datetime('now')")
+    fields.append("updated_at = NOW()")
 
     query = (
         f"UPDATE contact_campaign_status SET {', '.join(fields)} "
-        f"WHERE contact_id = ? AND campaign_id = ?"
+        f"WHERE contact_id = %s AND campaign_id = %s"
     )
     params.extend([contact_id, campaign_id])
-    conn.execute(query, params)
+    cursor = conn.cursor()
+    cursor.execute(query, params)
     conn.commit()
 
 
@@ -294,7 +317,7 @@ def update_contact_campaign_status(
 # ---------------------------------------------------------------------------
 
 def log_event(
-    conn: sqlite3.Connection,
+    conn,
     contact_id: int,
     event_type: str,
     campaign_id: Optional[int] = None,
@@ -305,11 +328,13 @@ def log_event(
 
     The metadata argument should be a JSON string (or None).
     """
-    cursor = conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         """INSERT INTO events
            (contact_id, event_type, campaign_id, template_id, metadata)
-           VALUES (?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s) RETURNING id""",
         (contact_id, event_type, campaign_id, template_id, metadata),
     )
+    row = cursor.fetchone()
     conn.commit()
-    return cursor.lastrowid
+    return row["id"]

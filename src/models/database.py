@@ -1,27 +1,32 @@
-import sqlite3
+import psycopg2
+import psycopg2.extras
 from pathlib import Path
 
-MIGRATIONS_DIR = Path(__file__).parent.parent.parent / "migrations"
+MIGRATIONS_DIR = Path(__file__).parent.parent.parent / "migrations" / "pg"
 
 
-def get_connection(db_path: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    conn.row_factory = sqlite3.Row
+def get_connection(db_url: str):
+    conn = psycopg2.connect(db_url, cursor_factory=psycopg2.extras.RealDictCursor)
+    conn.autocommit = False
     return conn
 
 
-def run_migrations(conn: sqlite3.Connection) -> None:
+def run_migrations(conn) -> None:
     migration_files = sorted(MIGRATIONS_DIR.glob("*.sql"))
+    cursor = conn.cursor()
     for migration_file in migration_files:
         sql = migration_file.read_text()
-        conn.executescript(sql)
+        for statement in sql.split(";"):
+            statement = statement.strip()
+            if statement:
+                cursor.execute(statement)
     conn.commit()
 
 
-def get_table_names(conn: sqlite3.Connection) -> list[str]:
-    cursor = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+def get_table_names(conn) -> list[str]:
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT table_name FROM information_schema.tables "
+        "WHERE table_schema = 'public'"
     )
-    return [row[0] for row in cursor.fetchall()]
+    return [row["table_name"] for row in cursor.fetchall()]

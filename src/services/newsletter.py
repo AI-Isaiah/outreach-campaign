@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 import logging
-import sqlite3
 from pathlib import Path
 from typing import Optional
 
@@ -30,12 +29,13 @@ from src.services.email_sender import send_email
 logger = logging.getLogger(__name__)
 
 
-def get_newsletter_subscribers(conn: sqlite3.Connection) -> list:
+def get_newsletter_subscribers(conn) -> list:
     """Get all contacts with newsletter_status = 'subscribed' and unsubscribed = 0.
 
-    Returns list of sqlite3.Row with contact info.
+    Returns list of dicts with contact info.
     """
-    cursor = conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         """SELECT * FROM contacts
            WHERE newsletter_status = 'subscribed'
              AND unsubscribed = 0
@@ -46,7 +46,7 @@ def get_newsletter_subscribers(conn: sqlite3.Connection) -> list:
     return cursor.fetchall()
 
 
-def auto_subscribe_eligible(conn: sqlite3.Connection, campaign_id: int) -> dict:
+def auto_subscribe_eligible(conn, campaign_id: int) -> dict:
     """Auto-subscribe non-GDPR contacts who finished the campaign without replying.
 
     Rules:
@@ -60,17 +60,19 @@ def auto_subscribe_eligible(conn: sqlite3.Connection, campaign_id: int) -> dict:
     """
     result = {"subscribed": 0, "skipped_gdpr": 0, "already_subscribed": 0}
 
+    cursor = conn.cursor()
     # Get all contacts with no_response in this campaign
-    rows = conn.execute(
+    cursor.execute(
         """SELECT c.id, c.is_gdpr, c.newsletter_status, c.email,
                   co.is_gdpr as company_gdpr
            FROM contacts c
            JOIN contact_campaign_status ccs ON ccs.contact_id = c.id
            LEFT JOIN companies co ON co.id = c.company_id
-           WHERE ccs.campaign_id = ?
+           WHERE ccs.campaign_id = %s
              AND ccs.status = 'no_response'""",
         (campaign_id,),
-    ).fetchall()
+    )
+    rows = cursor.fetchall()
 
     for row in rows:
         # Skip contacts without email
@@ -89,8 +91,8 @@ def auto_subscribe_eligible(conn: sqlite3.Connection, campaign_id: int) -> dict:
             continue
 
         # Subscribe
-        conn.execute(
-            "UPDATE contacts SET newsletter_status = 'subscribed' WHERE id = ?",
+        cursor.execute(
+            "UPDATE contacts SET newsletter_status = 'subscribed' WHERE id = %s",
             (row["id"],),
         )
         result["subscribed"] += 1
@@ -99,28 +101,30 @@ def auto_subscribe_eligible(conn: sqlite3.Connection, campaign_id: int) -> dict:
     return result
 
 
-def subscribe_contact(conn: sqlite3.Connection, contact_id: int) -> bool:
+def subscribe_contact(conn, contact_id: int) -> bool:
     """Manually subscribe a contact to the newsletter.
 
     Sets newsletter_status = 'subscribed'.
     Returns True if updated, False if not found.
     """
-    cursor = conn.execute(
-        "UPDATE contacts SET newsletter_status = 'subscribed' WHERE id = ?",
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE contacts SET newsletter_status = 'subscribed' WHERE id = %s",
         (contact_id,),
     )
     conn.commit()
     return cursor.rowcount > 0
 
 
-def unsubscribe_contact(conn: sqlite3.Connection, contact_id: int) -> bool:
+def unsubscribe_contact(conn, contact_id: int) -> bool:
     """Unsubscribe a contact from the newsletter.
 
     Sets newsletter_status = 'unsubscribed' and unsubscribed = 1.
     Returns True if updated, False if not found.
     """
-    cursor = conn.execute(
-        "UPDATE contacts SET newsletter_status = 'unsubscribed', unsubscribed = 1 WHERE id = ?",
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE contacts SET newsletter_status = 'unsubscribed', unsubscribed = 1 WHERE id = %s",
         (contact_id,),
     )
     conn.commit()
@@ -202,7 +206,7 @@ def render_newsletter(markdown_path: str, config: dict) -> tuple:
 
 
 def send_newsletter(
-    conn: sqlite3.Connection,
+    conn,
     markdown_path: str,
     config: dict,
     dry_run: bool = False,
