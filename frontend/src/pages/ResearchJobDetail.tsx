@@ -105,6 +105,8 @@ function BatchImportModal({
       api.batchImport(qualifiedIds, createDeals, campaignName || undefined),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["research-job", jobId] });
+      // Auto-close after brief success display
+      setTimeout(onClose, 2000);
     },
   });
 
@@ -396,6 +398,12 @@ export default function ResearchJobDetail() {
     .filter((r) => r.discovered_contacts_json && r.discovered_contacts_json.length > 0)
     .map((r) => r.id) || [];
 
+  // Filter selected IDs to only those with discovered contacts
+  const qualifiedSelectedIds = resultsData?.results
+    .filter((r) => selectedIds.has(r.id))
+    .filter((r) => r.discovered_contacts_json && r.discovered_contacts_json.length > 0)
+    .map((r) => r.id) || [];
+
   const expandedResult = resultsData?.results.find((r) => r.id === expandedId);
 
   // Pie chart data
@@ -648,7 +656,7 @@ export default function ResearchJobDetail() {
                       if (checked) next.add(r.id); else next.delete(r.id);
                       setSelectedIds(next);
                     }}
-                    onExpand={() => setExpandedId(expandedId === r.id ? null : r.id)}
+                    onExpand={() => setExpandedId((prev) => prev === r.id ? null : r.id)}
                   />
                 ))}
               </tbody>
@@ -679,7 +687,7 @@ export default function ResearchJobDetail() {
       {showBatchImport && (
         <BatchImportModal
           jobId={jobId}
-          qualifiedIds={selectedIds.size > 0 ? Array.from(selectedIds) : qualifiedIds}
+          qualifiedIds={qualifiedSelectedIds.length > 0 ? qualifiedSelectedIds : qualifiedIds}
           onClose={() => setShowBatchImport(false)}
         />
       )}

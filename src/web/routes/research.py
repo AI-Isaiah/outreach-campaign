@@ -62,7 +62,11 @@ def preview_csv(
     file: UploadFile = File(...),
 ):
     """Preview a CSV file: parse rows, show mapping, stats. No DB required."""
-    content = file.file.read().decode("utf-8-sig")
+    MAX_UPLOAD_BYTES = 5 * 1024 * 1024
+    raw = file.file.read(MAX_UPLOAD_BYTES + 1)
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "CSV exceeds 5 MB limit")
+    content = raw.decode("utf-8-sig")
     preview = preview_research_csv(content)
 
     if preview["total_rows"] == 0:
@@ -112,7 +116,11 @@ def create_research_job(
     finally:
         cur.close()
 
-    content = file.file.read().decode("utf-8-sig")
+    MAX_UPLOAD_BYTES = 5 * 1024 * 1024
+    raw = file.file.read(MAX_UPLOAD_BYTES + 1)
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "CSV exceeds 5 MB limit")
+    content = raw.decode("utf-8-sig")
     companies = parse_research_csv(content)
 
     if not companies:
@@ -346,31 +354,34 @@ def get_research_results(
 
     where_clause = " AND ".join(where_parts)
 
-    allowed_sorts = {"crypto_score", "company_name", "category", "created_at"}
-    if sort_by not in allowed_sorts:
-        sort_by = "crypto_score"
-    direction = "DESC" if sort_dir.lower() == "desc" else "ASC"
+    # Allowlist sort column to prevent SQL injection — validated before interpolation
+    allowed_sorts = {
+        "crypto_score": "crypto_score",
+        "company_name": "company_name",
+        "category": "category",
+        "created_at": "created_at",
+    }
+    safe_sort = allowed_sorts.get(sort_by, "crypto_score")
+    safe_dir = "DESC" if sort_dir.lower() == "desc" else "ASC"
 
-    cur = conn.cursor()
-    try:
-        cur.execute(
-            f"SELECT COUNT(*) AS cnt FROM research_results WHERE {where_clause}",
-            params,
-        )
-        total = cur.fetchone()["cnt"]
-
-        offset = (page - 1) * per_page
-        cur.execute(
-            f"""SELECT id, job_id, company_id, company_name, company_website,
+    # Build the full query with safe column name (from allowlist, not user input)
+    count_sql = f"SELECT COUNT(*) AS cnt FROM research_results WHERE {where_clause}"
+    select_sql = f"""SELECT id, job_id, company_id, company_name, company_website,
                        crypto_score, category, evidence_summary,
                        warm_intro_contact_ids, warm_intro_notes, status,
                        discovered_contacts_json, created_at
                 FROM research_results
                 WHERE {where_clause}
-                ORDER BY {sort_by} {direction} NULLS LAST
-                LIMIT %s OFFSET %s""",
-            [*params, per_page, offset],
-        )
+                ORDER BY {safe_sort} {safe_dir} NULLS LAST
+                LIMIT %s OFFSET %s"""
+
+    cur = conn.cursor()
+    try:
+        cur.execute(count_sql, params)
+        total = cur.fetchone()["cnt"]
+
+        offset = (page - 1) * per_page
+        cur.execute(select_sql, [*params, per_page, offset])
         results = [dict(row) for row in cur.fetchall()]
     finally:
         cur.close()
@@ -506,22 +517,7 @@ def import_discovered_contacts(
             linkedin = contact.get("linkedin")
             linkedin_norm = linkedin.rstrip("/").lower() if linkedin else None
 
-            if email_norm:
-                cur.execute(
-                    "SELECT id FROM contacts WHERE email_normalized = %s",
-                    (email_norm,),
-                )
-                if cur.fetchone():
-                    continue
-
-            if linkedin_norm:
-                cur.execute(
-                    "SELECT id FROM contacts WHERE linkedin_url_normalized = %s",
-                    (linkedin_norm,),
-                )
-                if cur.fetchone():
-                    continue
-
+            # Use ON CONFLICT DO NOTHING to avoid TOCTOU race with unique indexes
             cur.execute(
                 """INSERT INTO contacts
                        (company_id, first_name, last_name, full_name,
@@ -529,6 +525,7 @@ def import_discovered_contacts(
                         linkedin_url, linkedin_url_normalized,
                         title, source)
                    VALUES (%s, %s, %s, %s, %s, %s, 'unverified', %s, %s, %s, 'research')
+                   ON CONFLICT DO NOTHING
                    RETURNING id""",
                 (
                     company_id, first_name, last_name, name,
@@ -537,7 +534,8 @@ def import_discovered_contacts(
                     contact.get("title"),
                 ),
             )
-            imported += 1
+            if cur.fetchone():
+                imported += 1
 
         conn.commit()
     except HTTPException:

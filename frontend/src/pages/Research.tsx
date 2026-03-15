@@ -44,7 +44,7 @@ function NewJobModal({ onClose }: { onClose: () => void }) {
 
   const createMutation = useMutation({
     mutationFn: () => api.createResearchJob(file!, name, method),
-    onSuccess: (data) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["research-jobs"] });
       onClose();
     },

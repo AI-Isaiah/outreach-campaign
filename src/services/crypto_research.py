@@ -559,7 +559,7 @@ def batch_import_and_enroll(
                 )
                 deals_created += 1
 
-            # Import contacts
+            # Import contacts — use ON CONFLICT DO NOTHING to avoid TOCTOU race
             for contact in discovered:
                 name = (contact.get("name") or "").strip()
                 if not name:
@@ -574,25 +574,6 @@ def batch_import_and_enroll(
                 linkedin = contact.get("linkedin")
                 linkedin_norm = linkedin.rstrip("/").lower() if linkedin else None
 
-                # Dedup by email or linkedin
-                if email_norm:
-                    cur.execute(
-                        "SELECT id FROM contacts WHERE email_normalized = %s",
-                        (email_norm,),
-                    )
-                    if cur.fetchone():
-                        skipped += 1
-                        continue
-
-                if linkedin_norm:
-                    cur.execute(
-                        "SELECT id FROM contacts WHERE linkedin_url_normalized = %s",
-                        (linkedin_norm,),
-                    )
-                    if cur.fetchone():
-                        skipped += 1
-                        continue
-
                 cur.execute(
                     """INSERT INTO contacts
                            (company_id, first_name, last_name, full_name,
@@ -600,6 +581,7 @@ def batch_import_and_enroll(
                             linkedin_url, linkedin_url_normalized,
                             title, source)
                        VALUES (%s, %s, %s, %s, %s, %s, 'unverified', %s, %s, %s, 'research')
+                       ON CONFLICT DO NOTHING
                        RETURNING id""",
                     (
                         company_id, first_name, last_name, name,
@@ -608,7 +590,12 @@ def batch_import_and_enroll(
                         contact.get("title"),
                     ),
                 )
-                contact_id = cur.fetchone()["id"]
+                row = cur.fetchone()
+                if row is None:
+                    skipped += 1
+                    continue
+
+                contact_id = row["id"]
                 imported_contacts += 1
 
                 # Enroll in campaign if specified

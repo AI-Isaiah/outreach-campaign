@@ -351,12 +351,6 @@ export interface StatsResponse extends DbStats {}
 
 export interface CampaignResponse extends Campaign {}
 
-export interface ContactDetailResponse {
-  contact: Contact;
-  enrollments: Enrollment[];
-  notes: ResponseNote[];
-}
-
 export interface DealResponse {
   deal: Deal;
   stage_history: Array<{
@@ -394,14 +388,6 @@ export interface ImportResponse {
 
 export interface CampaignListResponse {
   campaigns: Campaign[];
-}
-
-export interface ContactListResponse {
-  contacts: Contact[];
-  total: number;
-  page: number;
-  per_page: number;
-  pages: number;
 }
 
 export interface CompanyListResponse {
