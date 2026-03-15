@@ -1,34 +1,85 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import ErrorBoundary from "./components/ErrorBoundary";
 import Layout from "./components/Layout";
+import { SkeletonCard } from "./components/Skeleton";
+
+// Eager-load the dashboard (most common landing page)
 import Dashboard from "./pages/Dashboard";
-import Queue from "./pages/Queue";
-import CampaignList from "./pages/CampaignList";
-import CampaignDetail from "./pages/CampaignDetail";
-import ContactList from "./pages/ContactList";
-import ContactDetail from "./pages/ContactDetail";
-import Templates from "./pages/Templates";
-import CompanyDetail from "./pages/CompanyDetail";
-import Settings from "./pages/Settings";
-import Insights from "./pages/Insights";
+
+// Lazy-load all other pages for code splitting
+const Queue = lazy(() => import("./pages/Queue"));
+const CampaignList = lazy(() => import("./pages/CampaignList"));
+const CampaignDetail = lazy(() => import("./pages/CampaignDetail"));
+const CampaignBuilder = lazy(() => import("./pages/CampaignBuilder"));
+const ContactList = lazy(() => import("./pages/ContactList"));
+const ContactDetail = lazy(() => import("./pages/ContactDetail"));
+const Templates = lazy(() => import("./pages/Templates"));
+const CompanyDetail = lazy(() => import("./pages/CompanyDetail"));
+const Settings = lazy(() => import("./pages/Settings"));
+const Insights = lazy(() => import("./pages/Insights"));
+const Pipeline = lazy(() => import("./pages/Pipeline"));
+const Inbox = lazy(() => import("./pages/Inbox"));
+const NewsletterList = lazy(() => import("./pages/NewsletterList"));
+const NewsletterComposer = lazy(() => import("./pages/NewsletterComposer"));
+const ImportWizard = lazy(() => import("./pages/ImportWizard"));
+const Research = lazy(() => import("./pages/Research"));
+const ResearchJobDetail = lazy(() => import("./pages/ResearchJobDetail"));
+const ResearchResultDetail = lazy(() => import("./pages/ResearchResultDetail"));
+
+function PageFallback() {
+  return (
+    <div className="py-8 space-y-6">
+      <div className="h-7 w-48 bg-gray-200 rounded animate-pulse" />
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        <SkeletonCard />
+        <SkeletonCard />
+        <SkeletonCard />
+      </div>
+    </div>
+  );
+}
+
+function Page({ children }: { children: React.ReactNode }) {
+  return (
+    <ErrorBoundary>
+      <Suspense fallback={<PageFallback />}>{children}</Suspense>
+    </ErrorBoundary>
+  );
+}
 
 export default function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route element={<Layout />}>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/queue" element={<Queue />} />
-          <Route path="/campaigns" element={<CampaignList />} />
-          <Route path="/campaigns/:name" element={<CampaignDetail />} />
-          <Route path="/contacts" element={<ContactList />} />
-          <Route path="/contacts/:id" element={<ContactDetail />} />
-          <Route path="/templates" element={<Templates />} />
-          <Route path="/companies/:id" element={<CompanyDetail />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="/insights" element={<Insights />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Route>
-      </Routes>
+      <ErrorBoundary>
+        <Suspense fallback={<PageFallback />}>
+          <Routes>
+            <Route element={<Layout />}>
+              <Route path="/" element={<Page><Dashboard /></Page>} />
+              <Route path="/queue" element={<Page><Queue /></Page>} />
+              <Route path="/campaigns" element={<Page><CampaignList /></Page>} />
+              <Route path="/campaigns/new" element={<Page><CampaignBuilder /></Page>} />
+              <Route path="/campaigns/:name" element={<Page><CampaignDetail /></Page>} />
+              <Route path="/contacts" element={<Page><ContactList /></Page>} />
+              <Route path="/contacts/:id" element={<Page><ContactDetail /></Page>} />
+              <Route path="/templates" element={<Page><Templates /></Page>} />
+              <Route path="/companies/:id" element={<Page><CompanyDetail /></Page>} />
+              <Route path="/settings" element={<Page><Settings /></Page>} />
+              <Route path="/insights" element={<Page><Insights /></Page>} />
+              <Route path="/pipeline" element={<Page><Pipeline /></Page>} />
+              <Route path="/inbox" element={<Page><Inbox /></Page>} />
+              <Route path="/newsletters" element={<Page><NewsletterList /></Page>} />
+              <Route path="/newsletters/new" element={<Page><NewsletterComposer /></Page>} />
+              <Route path="/newsletters/:id" element={<Page><NewsletterComposer /></Page>} />
+              <Route path="/research" element={<Page><Research /></Page>} />
+              <Route path="/research/:id" element={<Page><ResearchJobDetail /></Page>} />
+              <Route path="/research/results/:id" element={<Page><ResearchResultDetail /></Page>} />
+              <Route path="/import" element={<Page><ImportWizard /></Page>} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Route>
+          </Routes>
+        </Suspense>
+      </ErrorBoundary>
     </BrowserRouter>
   );
 }

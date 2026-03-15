@@ -4,6 +4,8 @@ export interface QueueItem {
   company_name: string;
   company_id: number;
   aum_millions: number | null;
+  firm_type: string | null;
+  aum_tier: string;
   channel: string;
   step_order: number;
   total_steps: number;
@@ -35,6 +37,7 @@ export interface QueueResponse {
   date: string | null;
   items: QueueItem[];
   total: number;
+  firm_type_counts: Record<string, number>;
 }
 
 export interface Campaign {
@@ -96,7 +99,7 @@ export interface CampaignMetricsResponse {
 
 export interface Contact {
   id: number;
-  company_id: number;
+  company_id: number | null;
   first_name: string | null;
   last_name: string | null;
   full_name: string | null;
@@ -110,6 +113,8 @@ export interface Contact {
   source: string;
   is_gdpr: number;
   unsubscribed: number;
+  lifecycle_stage: string;
+  newsletter_status?: string | null;
   phone_number?: string | null;
   phone_normalized?: string | null;
   company_name?: string;
@@ -286,4 +291,353 @@ export interface EngineSettings {
   engine_config: Record<string, string>;
   gmail_authorized: boolean;
   whatsapp_status: string;
+}
+
+// --- Round 3: CRM Pipeline, Tags, Inbox ---
+
+export interface Deal {
+  id: number;
+  company_id: number;
+  contact_id: number | null;
+  campaign_id: number | null;
+  title: string;
+  stage: string;
+  amount_millions: number | null;
+  expected_close_date: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  company_name?: string;
+  aum_millions?: number | null;
+  contact_name?: string | null;
+  contact_email?: string | null;
+}
+
+export interface DealPipeline {
+  pipeline: Record<string, Deal[]>;
+}
+
+export interface Tag {
+  id: number;
+  name: string;
+  color: string;
+  created_at: string;
+}
+
+export interface InboxItem {
+  item_id: number;
+  channel: "email" | "whatsapp" | "note";
+  contact_name: string | null;
+  company_name: string | null;
+  contact_id: number;
+  company_id: number | null;
+  subject: string | null;
+  body: string | null;
+  classification: string | null;
+  occurred_at: string;
+}
+
+export interface InboxResponse {
+  items: InboxItem[];
+  total: number;
+  page: number;
+  per_page: number;
+  pages: number;
+}
+
+// --- API Response Types ---
+
+export interface StatsResponse extends DbStats {}
+
+export interface CampaignResponse extends Campaign {}
+
+export interface ContactDetailResponse {
+  contact: Contact;
+  enrollments: Enrollment[];
+  notes: ResponseNote[];
+}
+
+export interface DealResponse {
+  deal: Deal;
+  stage_history: Array<{
+    id: number;
+    deal_id: number;
+    from_stage: string | null;
+    to_stage: string;
+    changed_at: string;
+  }>;
+}
+
+export interface LinkedInScanResponse {
+  scanned: number;
+  matched: number;
+  advanced: number;
+  already_processed: number;
+  details: Array<{
+    contact_id: number;
+    contact_name: string;
+    match_method: "linkedin_url" | "name";
+    advanced: boolean;
+  }>;
+}
+
+export interface ReplyScanResponse {
+  scanned: number;
+  new_replies: number;
+}
+
+export interface ImportResponse {
+  message: string;
+  deduped: number;
+  remaining: number;
+}
+
+export interface CampaignListResponse {
+  campaigns: Campaign[];
+}
+
+export interface ContactListResponse {
+  contacts: Contact[];
+  total: number;
+  page: number;
+  per_page: number;
+  pages: number;
+}
+
+export interface CompanyListResponse {
+  companies: Company[];
+  total: number;
+  page: number;
+  per_page: number;
+  pages: number;
+}
+
+export interface DealListResponse {
+  deals: Deal[];
+  total: number;
+  page: number;
+  per_page: number;
+  pages: number;
+}
+
+export interface AnalysisResponse {
+  id: number;
+  campaign_id: number;
+  insights: string[];
+  template_suggestions: string[];
+  strategy_notes: string;
+  created_at: string;
+}
+
+export interface DeferStatsResponse {
+  today_count: number;
+  total_count: number;
+  by_reason: Array<{ reason: string; count: number }>;
+  repeat_deferrals: Array<{
+    contact_id: number;
+    contact_name: string;
+    defer_count: number;
+  }>;
+}
+
+// --- CRM Extensions ---
+
+export interface Product {
+  id: number;
+  name: string;
+  description: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface ContactProduct {
+  id: number;
+  contact_id: number;
+  product_id: number;
+  stage: string;
+  notes: string | null;
+  product_name: string;
+  product_description: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Conversation {
+  id: number;
+  contact_id: number;
+  channel: string;
+  title: string;
+  notes: string | null;
+  outcome: string | null;
+  occurred_at: string;
+  created_at: string;
+}
+
+export interface Newsletter {
+  id: number;
+  subject: string;
+  body_html: string;
+  body_text: string | null;
+  status: string;
+  sent_at: string | null;
+  recipient_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NewsletterAttachment {
+  id: number;
+  newsletter_id: number;
+  filename: string;
+  content_type: string;
+  file_path: string;
+  file_size_bytes: number | null;
+  created_at: string;
+}
+
+export interface NewsletterDetail {
+  newsletter: Newsletter;
+  attachments: NewsletterAttachment[];
+  send_stats: Record<string, number>;
+}
+
+export interface NewsletterListResponse {
+  newsletters: Newsletter[];
+  total: number;
+  page: number;
+  per_page: number;
+  pages: number;
+}
+
+export interface RecipientPreview {
+  recipients: Array<{
+    id: number;
+    full_name: string | null;
+    email: string;
+    first_name: string | null;
+    last_name: string | null;
+    lifecycle_stage: string;
+    company_name: string | null;
+  }>;
+  count: number;
+}
+
+// --- Crypto Research Pipeline ---
+
+export interface ResearchJob {
+  id: number;
+  name: string;
+  status: "pending" | "researching" | "classifying" | "completed" | "failed" | "cancelling" | "cancelled";
+  method: "web_search" | "website_crawl" | "hybrid";
+  total_companies: number;
+  processed_companies: number;
+  classified_companies: number;
+  contacts_discovered: number;
+  error_message: string | null;
+  cost_estimate_usd: number | null;
+  actual_cost_usd: number;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ResearchResult {
+  id: number;
+  job_id: number;
+  company_id: number | null;
+  company_name: string;
+  company_website: string | null;
+  web_search_raw: string | null;
+  website_crawl_raw: string | null;
+  crypto_score: number | null;
+  category: "confirmed_investor" | "likely_interested" | "possible" | "no_signal" | "unlikely" | null;
+  evidence_summary: string | null;
+  evidence_json: Array<{ source: string; quote: string; relevance: string }> | null;
+  classification_reasoning: string | null;
+  discovered_contacts_json: Array<{
+    name: string;
+    title: string;
+    email: string | null;
+    linkedin: string | null;
+    source: string;
+  }> | null;
+  warm_intro_contact_ids: number[] | null;
+  warm_intro_notes: string | null;
+  status: "pending" | "researching" | "classified" | "completed" | "error";
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface ResearchJobDetail {
+  job: ResearchJob;
+  by_category: Record<string, number>;
+  score_distribution: Array<{ range: string; count: number }>;
+  avg_score: number;
+  max_score: number;
+  min_score: number;
+  warm_intro_count: number;
+  with_contacts: number;
+  total_contacts_discovered: number;
+  error_count: number;
+}
+
+export interface CsvPreview {
+  total_rows: number;
+  preview: Array<{
+    company_name: string;
+    website?: string;
+    country?: string;
+    aum?: string;
+    firm_type?: string;
+  }>;
+  raw_headers: string[];
+  mapped_headers: Record<string, string>;
+  stats: {
+    with_website: number;
+    with_country: number;
+    with_aum: number;
+  };
+}
+
+export interface BatchImportResponse {
+  success: boolean;
+  imported_contacts: number;
+  deals_created: number;
+  enrolled: number;
+  skipped_duplicates: number;
+  results_processed: number;
+}
+
+export interface ResearchJobsResponse {
+  jobs: ResearchJob[];
+  total: number;
+  page: number;
+  per_page: number;
+  pages: number;
+}
+
+export interface ResearchResultsResponse {
+  results: ResearchResult[];
+  total: number;
+  page: number;
+  per_page: number;
+  pages: number;
+}
+
+export interface ResearchCostEstimate {
+  web_search_cost: number;
+  crawl_cost: number;
+  llm_cost: number;
+  contact_discovery_cost: number;
+  total: number;
+}
+
+export interface CreateResearchJobResponse {
+  job_id: number;
+  total_companies: number;
+  cost_estimate: ResearchCostEstimate;
+  status: string;
+  warnings: string[];
+  duplicates_skipped: number;
 }
