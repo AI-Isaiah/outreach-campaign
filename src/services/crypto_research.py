@@ -40,9 +40,6 @@ COST_CRAWL = 0.0
 COST_LLM = 0.001
 COST_CONTACT_DISCOVERY = 0.005
 
-# Re-export for backward compat (routes import this)
-_normalize_company_name = normalize_company_name
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -179,17 +176,17 @@ def check_duplicate_companies(conn, company_names: list[str]) -> dict:
     if not company_names:
         return {"already_researched": [], "new": company_names}
 
-    normalized = [_normalize_company_name(n) for n in company_names]
+    normalized = [normalize_company_name(n) for n in company_names]
     norm_to_orig = dict(zip(normalized, company_names))
 
     cur = conn.cursor()
     try:
         cur.execute(
-            """SELECT DISTINCT lower(trim(rr.company_name)) AS name_norm
+            """SELECT DISTINCT regexp_replace(lower(trim(rr.company_name)), '\\s+', ' ', 'g') AS name_norm
                FROM research_results rr
                JOIN research_jobs rj ON rj.id = rr.job_id
                WHERE rj.status IN ('completed', 'researching', 'classifying')
-                 AND lower(trim(rr.company_name)) = ANY(%s)""",
+                 AND regexp_replace(lower(trim(rr.company_name)), '\\s+', ' ', 'g') = ANY(%s)""",
             (normalized,),
         )
         existing = {row["name_norm"] for row in cur.fetchall()}
@@ -419,7 +416,7 @@ def find_warm_intros(conn, company_name: str, company_id: int | None) -> dict:
                     f"Direct contact: {row['full_name']} ({row.get('title') or 'no title'})"
                 )
 
-        name_norm = _normalize_company_name(company_name)
+        name_norm = normalize_company_name(company_name)
         cur.execute(
             """SELECT c.id, c.full_name, c.title, co.name AS company_name
                FROM contacts c
@@ -467,6 +464,8 @@ def find_warm_intros(conn, company_name: str, company_id: int | None) -> dict:
 
 def resolve_or_create_company(cur, company_name: str) -> int:
     """Find existing company by normalized name or create a new one. Returns company_id."""
+    if not company_name or not company_name.strip():
+        raise ValueError("company_name must be a non-empty string")
     name_norm = normalize_company_name(company_name)
     cur.execute(
         "SELECT id FROM companies WHERE name_normalized = %s",
@@ -513,7 +512,20 @@ def import_single_contact(cur, contact: dict, company_id: int) -> int | None:
         ),
     )
     row = cur.fetchone()
-    return row["id"] if row else None
+    if row:
+        return row["id"]
+    # Conflict — look up the existing contact so we can still enroll them
+    if email_norm:
+        cur.execute("SELECT id FROM contacts WHERE email_normalized = %s", (email_norm,))
+        existing = cur.fetchone()
+        if existing:
+            return existing["id"]
+    if linkedin_norm:
+        cur.execute("SELECT id FROM contacts WHERE linkedin_url_normalized = %s", (linkedin_norm,))
+        existing = cur.fetchone()
+        if existing:
+            return existing["id"]
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -628,7 +640,7 @@ def batch_import_and_enroll(
         "deals_created": deals_created,
         "enrolled": enrolled,
         "skipped_duplicates": skipped,
-        "results_processed": len(result_ids),
+        "results_processed": len(results),
     }
 
 

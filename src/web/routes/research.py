@@ -274,8 +274,11 @@ def get_research_job(job_id: int, conn=Depends(get_db)):
                        AS warm_intro_count,
                    COUNT(*) FILTER (WHERE discovered_contacts_json IS NOT NULL)
                        AS with_contacts,
-                   COALESCE(SUM(jsonb_array_length(discovered_contacts_json)), 0)
-                       AS total_contacts_discovered,
+                   COALESCE(SUM(
+                       CASE WHEN jsonb_typeof(discovered_contacts_json) = 'array'
+                            THEN jsonb_array_length(discovered_contacts_json)
+                            ELSE 0 END
+                   ), 0) AS total_contacts_discovered,
                    COUNT(*) FILTER (WHERE status = 'error') AS error_count,
                    COUNT(*) FILTER (WHERE crypto_score >= 80) AS bucket_80_100,
                    COUNT(*) FILTER (WHERE crypto_score >= 60 AND crypto_score < 80) AS bucket_60_79,

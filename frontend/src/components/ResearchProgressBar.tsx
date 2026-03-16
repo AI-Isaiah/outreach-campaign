@@ -1,5 +1,5 @@
 import type { ResearchJob } from "../types";
-import { TERMINAL_STATUSES } from "../types";
+import { isTerminalStatus } from "../types";
 
 interface ResearchProgressBarProps {
   job: ResearchJob;
@@ -42,7 +42,7 @@ export default function ResearchProgressBar({ job }: ResearchProgressBarProps) {
   else if (job.status === "researching") overallProgress = (job.processed_companies / total) * 50;
   else if (isFailed || isCancelled) overallProgress = (job.processed_companies / total) * 100;
 
-  const isActive = !(TERMINAL_STATUSES as readonly string[]).includes(job.status);
+  const isActive = !isTerminalStatus(job.status);
   const barColor = isFailed ? "bg-red-500" : isCancelled ? "bg-gray-400" : "bg-blue-500";
 
   return (

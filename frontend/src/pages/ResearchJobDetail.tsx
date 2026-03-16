@@ -5,7 +5,7 @@ import { ArrowLeft, Download, Users, RefreshCw, XCircle, CheckCircle, Zap, Trend
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from "recharts";
 import { api } from "../api/client";
 import type { ResearchResult, Campaign } from "../types";
-import { TERMINAL_STATUSES } from "../types";
+import { isTerminalStatus } from "../types";
 import CryptoScoreBadge from "../components/CryptoScoreBadge";
 import ResearchProgressBar from "../components/ResearchProgressBar";
 import MetricCard from "../components/MetricCard";
@@ -368,7 +368,7 @@ export default function ResearchJobDetail() {
     queryFn: () => api.getResearchJob(jobId),
     refetchInterval: (query) => {
       const status = query.state.data?.job.status;
-      return status && !(TERMINAL_STATUSES as readonly string[]).includes(status) ? 3000 : false;
+      return status && !isTerminalStatus(status) ? 3000 : false;
     },
   });
 
@@ -435,7 +435,7 @@ export default function ResearchJobDetail() {
   if (!jobData) return <p className="text-gray-500">Job not found</p>;
 
   const { job } = jobData;
-  const isActive = !(TERMINAL_STATUSES as readonly string[]).includes(job.status);
+  const isActive = !isTerminalStatus(job.status);
 
   return (
     <div className="space-y-6">

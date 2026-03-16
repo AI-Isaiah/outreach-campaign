@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { Search, Upload, Trash2, Download, X, AlertTriangle, CheckCircle, XCircle, Globe } from "lucide-react";
 import { api } from "../api/client";
 import type { ResearchJob, CsvPreview } from "../types";
-import { TERMINAL_STATUSES } from "../types";
+import { isTerminalStatus } from "../types";
 import ResearchProgressBar from "../components/ResearchProgressBar";
 import EmptyState from "../components/EmptyState";
 
@@ -383,7 +383,7 @@ function JobRow({ job }: { job: ResearchJob }) {
   });
 
   const status = STATUS_CONFIG[job.status] || STATUS_CONFIG.pending;
-  const isTerminal = (TERMINAL_STATUSES as readonly string[]).includes(job.status);
+  const isTerminal = isTerminalStatus(job.status);
 
   return (
     <tr className="hover:bg-gray-50 transition-colors group">
@@ -462,17 +462,17 @@ export default function Research() {
     refetchInterval: (query) => {
       const jobs = query.state.data?.jobs;
       const hasActive = jobs?.some(
-        (j) => !(TERMINAL_STATUSES as readonly string[]).includes(j.status)
+        (j) => !isTerminalStatus(j.status)
       );
       return hasActive ? 3000 : false;
     },
   });
 
   const activeJob = data?.jobs.find(
-    (j) => !(TERMINAL_STATUSES as readonly string[]).includes(j.status)
+    (j) => !isTerminalStatus(j.status)
   );
   const completedJobs = data?.jobs.filter(
-    (j) => (TERMINAL_STATUSES as readonly string[]).includes(j.status)
+    (j) => isTerminalStatus(j.status)
   ) || [];
 
   return (
