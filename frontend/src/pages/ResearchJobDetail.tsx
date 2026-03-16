@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Download, Users, RefreshCw, XCircle, CheckCircle, Zap, TrendingUp } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from "recharts";
 import { api } from "../api/client";
 import type { ResearchResult, Campaign } from "../types";
+import { TERMINAL_STATUSES } from "../types";
 import CryptoScoreBadge from "../components/CryptoScoreBadge";
 import ResearchProgressBar from "../components/ResearchProgressBar";
 import MetricCard from "../components/MetricCard";
@@ -367,7 +368,7 @@ export default function ResearchJobDetail() {
     queryFn: () => api.getResearchJob(jobId),
     refetchInterval: (query) => {
       const status = query.state.data?.job.status;
-      return status && !["completed", "failed", "cancelled"].includes(status) ? 3000 : false;
+      return status && !(TERMINAL_STATUSES as readonly string[]).includes(status) ? 3000 : false;
     },
   });
 
@@ -392,26 +393,33 @@ export default function ResearchJobDetail() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["research-job", jobId] }),
   });
 
-  // Build qualified result IDs for batch import
-  const qualifiedIds = resultsData?.results
-    .filter((r) => r.category === "confirmed_investor" || r.category === "likely_interested")
-    .filter((r) => r.discovered_contacts_json && r.discovered_contacts_json.length > 0)
-    .map((r) => r.id) || [];
+  // Memoize derived arrays to avoid re-creating on every render
+  const qualifiedIds = useMemo(() =>
+    resultsData?.results
+      .filter((r) => r.category === "confirmed_investor" || r.category === "likely_interested")
+      .filter((r) => r.discovered_contacts_json && r.discovered_contacts_json.length > 0)
+      .map((r) => r.id) || [],
+    [resultsData],
+  );
 
-  // Filter selected IDs to only those with discovered contacts
-  const qualifiedSelectedIds = resultsData?.results
-    .filter((r) => selectedIds.has(r.id))
-    .filter((r) => r.discovered_contacts_json && r.discovered_contacts_json.length > 0)
-    .map((r) => r.id) || [];
+  const qualifiedSelectedIds = useMemo(() =>
+    resultsData?.results
+      .filter((r) => selectedIds.has(r.id))
+      .filter((r) => r.discovered_contacts_json && r.discovered_contacts_json.length > 0)
+      .map((r) => r.id) || [],
+    [resultsData, selectedIds],
+  );
 
   const expandedResult = resultsData?.results.find((r) => r.id === expandedId);
 
-  // Pie chart data
-  const pieData = jobData ? Object.entries(jobData.by_category).map(([key, value]) => ({
-    name: CATEGORY_CONFIG[key]?.label || key,
-    value,
-    color: CATEGORY_CONFIG[key]?.color || "#6B7280",
-  })) : [];
+  const pieData = useMemo(() =>
+    jobData ? Object.entries(jobData.by_category).map(([key, value]) => ({
+      name: CATEGORY_CONFIG[key]?.label || key,
+      value,
+      color: CATEGORY_CONFIG[key]?.color || "#6B7280",
+    })) : [],
+    [jobData],
+  );
 
   if (jobLoading) {
     return (
@@ -427,7 +435,7 @@ export default function ResearchJobDetail() {
   if (!jobData) return <p className="text-gray-500">Job not found</p>;
 
   const { job } = jobData;
-  const isActive = !["completed", "failed", "cancelled"].includes(job.status);
+  const isActive = !(TERMINAL_STATUSES as readonly string[]).includes(job.status);
 
   return (
     <div className="space-y-6">

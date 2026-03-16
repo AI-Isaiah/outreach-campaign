@@ -26,6 +26,8 @@ import threading
 
 import httpx
 
+from src.services.normalization_utils import normalize_company_name, split_name
+
 logger = logging.getLogger(__name__)
 
 PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY", "")
@@ -38,14 +40,13 @@ COST_CRAWL = 0.0
 COST_LLM = 0.001
 COST_CONTACT_DISCOVERY = 0.005
 
+# Re-export for backward compat (routes import this)
+_normalize_company_name = normalize_company_name
+
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-def _normalize_company_name(name: str) -> str:
-    """Lowercase and collapse multiple whitespace characters."""
-    return re.sub(r"\s+", " ", name.strip().lower())
 
 
 def _is_cancelled(conn, job_id: int) -> bool:
@@ -461,6 +462,61 @@ def find_warm_intros(conn, company_name: str, company_id: int | None) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Shared Contact Import Helper
+# ---------------------------------------------------------------------------
+
+def resolve_or_create_company(cur, company_name: str) -> int:
+    """Find existing company by normalized name or create a new one. Returns company_id."""
+    name_norm = normalize_company_name(company_name)
+    cur.execute(
+        "SELECT id FROM companies WHERE name_normalized = %s",
+        (name_norm,),
+    )
+    match = cur.fetchone()
+    if match:
+        return match["id"]
+    cur.execute(
+        """INSERT INTO companies (name, name_normalized)
+           VALUES (%s, %s) RETURNING id""",
+        (company_name, name_norm),
+    )
+    return cur.fetchone()["id"]
+
+
+def import_single_contact(cur, contact: dict, company_id: int) -> int | None:
+    """Import a single discovered contact. Returns contact_id or None if skipped."""
+    name = (contact.get("name") or "").strip()
+    if not name:
+        return None
+
+    first_name, last_name = split_name(name)
+
+    email = contact.get("email")
+    email_norm = email.strip().lower() if email else None
+    linkedin = contact.get("linkedin")
+    linkedin_norm = linkedin.rstrip("/").lower() if linkedin else None
+
+    cur.execute(
+        """INSERT INTO contacts
+               (company_id, first_name, last_name, full_name,
+                email, email_normalized, email_status,
+                linkedin_url, linkedin_url_normalized,
+                title, source)
+           VALUES (%s, %s, %s, %s, %s, %s, 'unverified', %s, %s, %s, 'research')
+           ON CONFLICT DO NOTHING
+           RETURNING id""",
+        (
+            company_id, first_name, last_name, name,
+            email, email_norm,
+            linkedin, linkedin_norm,
+            contact.get("title"),
+        ),
+    )
+    row = cur.fetchone()
+    return row["id"] if row else None
+
+
+# ---------------------------------------------------------------------------
 # Batch Import + Deal Creation + Campaign Enrollment
 # ---------------------------------------------------------------------------
 
@@ -473,13 +529,8 @@ def batch_import_and_enroll(
     """Import discovered contacts, optionally create deals and enroll in campaign.
 
     This completes the Research → CRM loop in one operation.
-    Returns summary of actions taken.
     """
-    from src.models.campaigns import (
-        create_campaign,
-        enroll_contact,
-        get_campaign_by_name,
-    )
+    from src.models.campaigns import enroll_contact, get_campaign_by_name
     from datetime import date
 
     imported_contacts = 0
@@ -487,7 +538,6 @@ def batch_import_and_enroll(
     enrolled = 0
     skipped = 0
 
-    # Resolve campaign if enrolling
     campaign_id = None
     if campaign_name:
         camp = get_campaign_by_name(conn, campaign_name)
@@ -496,15 +546,20 @@ def batch_import_and_enroll(
 
     cur = conn.cursor()
     try:
-        for result_id in result_ids:
-            cur.execute(
-                "SELECT * FROM research_results WHERE id = %s",
-                (result_id,),
-            )
-            result = cur.fetchone()
-            if not result:
-                continue
+        # Batch fetch all results in one query (avoid N+1)
+        if not result_ids:
+            return {"imported_contacts": 0, "deals_created": 0, "enrolled": 0,
+                    "skipped_duplicates": 0, "results_processed": 0}
 
+        cur.execute(
+            """SELECT id, company_id, company_name, crypto_score,
+                      evidence_summary, discovered_contacts_json
+               FROM research_results WHERE id = ANY(%s)""",
+            (result_ids,),
+        )
+        results = [dict(row) for row in cur.fetchall()]
+
+        for result in results:
             contacts_json = result.get("discovered_contacts_json")
             if not contacts_json:
                 continue
@@ -517,26 +572,10 @@ def batch_import_and_enroll(
             # Resolve company
             company_id = result["company_id"]
             if not company_id:
-                name_norm = _normalize_company_name(result["company_name"])
-                cur.execute(
-                    "SELECT id FROM companies WHERE name_normalized = %s",
-                    (name_norm,),
-                )
-                match = cur.fetchone()
-                if match:
-                    company_id = match["id"]
-                else:
-                    cur.execute(
-                        """INSERT INTO companies (name, name_normalized)
-                           VALUES (%s, %s) RETURNING id""",
-                        (result["company_name"], name_norm),
-                    )
-                    company_id = cur.fetchone()["id"]
-
-                # Link result to company
+                company_id = resolve_or_create_company(cur, result["company_name"])
                 cur.execute(
                     "UPDATE research_results SET company_id = %s WHERE id = %s",
-                    (company_id, result_id),
+                    (company_id, result["id"]),
                 )
 
             # Create deal if requested
@@ -553,52 +592,20 @@ def batch_import_and_enroll(
                 )
                 deal_id = cur.fetchone()["id"]
                 cur.execute(
-                    """INSERT INTO deal_stage_log (deal_id, to_stage)
-                       VALUES (%s, 'cold')""",
+                    "INSERT INTO deal_stage_log (deal_id, to_stage) VALUES (%s, 'cold')",
                     (deal_id,),
                 )
                 deals_created += 1
 
-            # Import contacts — use ON CONFLICT DO NOTHING to avoid TOCTOU race
+            # Import contacts
             for contact in discovered:
-                name = (contact.get("name") or "").strip()
-                if not name:
-                    continue
-
-                parts = name.split(None, 1)
-                first_name = parts[0] if parts else name
-                last_name = parts[1] if len(parts) > 1 else ""
-
-                email = contact.get("email")
-                email_norm = email.strip().lower() if email else None
-                linkedin = contact.get("linkedin")
-                linkedin_norm = linkedin.rstrip("/").lower() if linkedin else None
-
-                cur.execute(
-                    """INSERT INTO contacts
-                           (company_id, first_name, last_name, full_name,
-                            email, email_normalized, email_status,
-                            linkedin_url, linkedin_url_normalized,
-                            title, source)
-                       VALUES (%s, %s, %s, %s, %s, %s, 'unverified', %s, %s, %s, 'research')
-                       ON CONFLICT DO NOTHING
-                       RETURNING id""",
-                    (
-                        company_id, first_name, last_name, name,
-                        email, email_norm,
-                        linkedin, linkedin_norm,
-                        contact.get("title"),
-                    ),
-                )
-                row = cur.fetchone()
-                if row is None:
+                contact_id = import_single_contact(cur, contact, company_id)
+                if contact_id is None:
                     skipped += 1
                     continue
 
-                contact_id = row["id"]
                 imported_contacts += 1
 
-                # Enroll in campaign if specified
                 if campaign_id:
                     try:
                         enroll_contact(
@@ -607,7 +614,7 @@ def batch_import_and_enroll(
                         )
                         enrolled += 1
                     except Exception:
-                        pass  # Already enrolled or other constraint
+                        pass
 
         conn.commit()
     except Exception:

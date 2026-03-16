@@ -3,7 +3,7 @@ interface CryptoScoreBadgeProps {
   showLabel?: boolean;
 }
 
-const scoreConfig = (score: number) => {
+export const scoreConfig = (score: number) => {
   if (score >= 80) return { bg: "bg-green-100", text: "text-green-700", ring: "ring-green-600/20" };
   if (score >= 60) return { bg: "bg-blue-100", text: "text-blue-700", ring: "ring-blue-600/20" };
   if (score >= 40) return { bg: "bg-yellow-100", text: "text-yellow-700", ring: "ring-yellow-600/20" };

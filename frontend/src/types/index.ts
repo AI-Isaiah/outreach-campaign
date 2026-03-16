@@ -510,6 +510,8 @@ export interface RecipientPreview {
 
 // --- Crypto Research Pipeline ---
 
+export const TERMINAL_STATUSES = ["completed", "failed", "cancelled"] as const;
+
 export interface ResearchJob {
   id: number;
   name: string;

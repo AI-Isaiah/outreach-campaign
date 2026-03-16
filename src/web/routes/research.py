@@ -28,19 +28,23 @@ from pydantic import BaseModel, Field
 
 from src.config import SUPABASE_DB_URL
 from src.services.crypto_research import (
-    _normalize_company_name,
     batch_import_and_enroll,
     cancel_research_job,
     check_duplicate_companies,
     estimate_job_cost,
+    import_single_contact,
     parse_research_csv,
     preview_research_csv,
+    resolve_or_create_company,
     start_research_job_background,
     start_retry_background,
 )
+from src.services.normalization_utils import normalize_company_name
 from src.web.dependencies import get_db
 
 router = APIRouter(prefix="/research", tags=["research"])
+
+MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 
 
 # ---------------------------------------------------------------------------
@@ -62,7 +66,6 @@ def preview_csv(
     file: UploadFile = File(...),
 ):
     """Preview a CSV file: parse rows, show mapping, stats. No DB required."""
-    MAX_UPLOAD_BYTES = 5 * 1024 * 1024
     raw = file.file.read(MAX_UPLOAD_BYTES + 1)
     if len(raw) > MAX_UPLOAD_BYTES:
         raise HTTPException(413, "CSV exceeds 5 MB limit")
@@ -116,7 +119,6 @@ def create_research_job(
     finally:
         cur.close()
 
-    MAX_UPLOAD_BYTES = 5 * 1024 * 1024
     raw = file.file.read(MAX_UPLOAD_BYTES + 1)
     if len(raw) > MAX_UPLOAD_BYTES:
         raise HTTPException(413, "CSV exceeds 5 MB limit")
@@ -163,16 +165,17 @@ def create_research_job(
         )
         job_id = cur.fetchone()["id"]
 
+        # Batch lookup existing companies (avoid N+1)
+        all_norms = [normalize_company_name(c["company_name"]) for c in companies]
+        cur.execute(
+            "SELECT id, name_normalized FROM companies WHERE name_normalized = ANY(%s)",
+            (all_norms,),
+        )
+        company_map = {row["name_normalized"]: row["id"] for row in cur.fetchall()}
+
         for company in companies:
-            company_id = None
-            name_norm = _normalize_company_name(company["company_name"])
-            cur.execute(
-                "SELECT id FROM companies WHERE name_normalized = %s",
-                (name_norm,),
-            )
-            match = cur.fetchone()
-            if match:
-                company_id = match["id"]
+            name_norm = normalize_company_name(company["company_name"])
+            company_id = company_map.get(name_norm)
 
             cur.execute(
                 """INSERT INTO research_results
@@ -250,7 +253,7 @@ def get_research_job(job_id: int, conn=Depends(get_db)):
         if not job:
             raise HTTPException(404, "Research job not found")
 
-        # Category breakdown
+        # Category breakdown (needs GROUP BY, kept separate)
         cur.execute(
             """SELECT category, COUNT(*) AS cnt
                FROM research_results
@@ -260,29 +263,7 @@ def get_research_job(job_id: int, conn=Depends(get_db)):
         )
         by_category = {row["category"]: row["cnt"] for row in cur.fetchall()}
 
-        # Score distribution (bucketed for histogram)
-        cur.execute(
-            """SELECT
-                   CASE
-                       WHEN crypto_score >= 80 THEN '80-100'
-                       WHEN crypto_score >= 60 THEN '60-79'
-                       WHEN crypto_score >= 40 THEN '40-59'
-                       WHEN crypto_score >= 20 THEN '20-39'
-                       ELSE '0-19'
-                   END AS bucket,
-                   COUNT(*) AS cnt
-               FROM research_results
-               WHERE job_id = %s AND crypto_score IS NOT NULL
-               GROUP BY bucket
-               ORDER BY bucket DESC""",
-            (job_id,),
-        )
-        score_distribution = [
-            {"range": row["bucket"], "count": row["cnt"]}
-            for row in cur.fetchall()
-        ]
-
-        # Aggregate stats
+        # Aggregate stats + score distribution in one scan (polled every 3s)
         cur.execute(
             """SELECT
                    AVG(crypto_score) AS avg_score,
@@ -295,11 +276,21 @@ def get_research_job(job_id: int, conn=Depends(get_db)):
                        AS with_contacts,
                    COALESCE(SUM(jsonb_array_length(discovered_contacts_json)), 0)
                        AS total_contacts_discovered,
-                   COUNT(*) FILTER (WHERE status = 'error') AS error_count
+                   COUNT(*) FILTER (WHERE status = 'error') AS error_count,
+                   COUNT(*) FILTER (WHERE crypto_score >= 80) AS bucket_80_100,
+                   COUNT(*) FILTER (WHERE crypto_score >= 60 AND crypto_score < 80) AS bucket_60_79,
+                   COUNT(*) FILTER (WHERE crypto_score >= 40 AND crypto_score < 60) AS bucket_40_59,
+                   COUNT(*) FILTER (WHERE crypto_score >= 20 AND crypto_score < 40) AS bucket_20_39,
+                   COUNT(*) FILTER (WHERE crypto_score < 20) AS bucket_0_19
                FROM research_results WHERE job_id = %s""",
             (job_id,),
         )
         stats = cur.fetchone()
+        score_distribution = [
+            {"range": r, "count": stats[f"bucket_{r.replace('-', '_')}"] or 0}
+            for r in ("80-100", "60-79", "40-59", "20-39", "0-19")
+            if (stats[f"bucket_{r.replace('-', '_')}"] or 0) > 0
+        ]
     finally:
         cur.close()
 
@@ -486,55 +477,12 @@ def import_discovered_contacts(
 
         company_id = result["company_id"]
         if not company_id:
-            name_norm = _normalize_company_name(result["company_name"])
-            cur.execute(
-                "SELECT id FROM companies WHERE name_normalized = %s",
-                (name_norm,),
-            )
-            match = cur.fetchone()
-            if match:
-                company_id = match["id"]
-            else:
-                cur.execute(
-                    """INSERT INTO companies (name, name_normalized)
-                       VALUES (%s, %s) RETURNING id""",
-                    (result["company_name"], name_norm),
-                )
-                company_id = cur.fetchone()["id"]
+            company_id = resolve_or_create_company(cur, result["company_name"])
 
         imported = 0
         for contact in discovered:
-            name = (contact.get("name") or "").strip()
-            if not name:
-                continue
-
-            parts = name.split(None, 1)
-            first_name = parts[0] if parts else name
-            last_name = parts[1] if len(parts) > 1 else ""
-
-            email = contact.get("email")
-            email_norm = email.strip().lower() if email else None
-            linkedin = contact.get("linkedin")
-            linkedin_norm = linkedin.rstrip("/").lower() if linkedin else None
-
-            # Use ON CONFLICT DO NOTHING to avoid TOCTOU race with unique indexes
-            cur.execute(
-                """INSERT INTO contacts
-                       (company_id, first_name, last_name, full_name,
-                        email, email_normalized, email_status,
-                        linkedin_url, linkedin_url_normalized,
-                        title, source)
-                   VALUES (%s, %s, %s, %s, %s, %s, 'unverified', %s, %s, %s, 'research')
-                   ON CONFLICT DO NOTHING
-                   RETURNING id""",
-                (
-                    company_id, first_name, last_name, name,
-                    email, email_norm,
-                    linkedin, linkedin_norm,
-                    contact.get("title"),
-                ),
-            )
-            if cur.fetchone():
+            contact_id = import_single_contact(cur, contact, company_id)
+            if contact_id is not None:
                 imported += 1
 
         conn.commit()
