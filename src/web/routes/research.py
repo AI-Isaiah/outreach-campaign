@@ -26,6 +26,11 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+import logging
+import os
+
+import httpx as _httpx
+
 from src.config import SUPABASE_DB_URL
 from src.services.crypto_research import (
     batch_import_and_enroll,
@@ -40,7 +45,41 @@ from src.services.crypto_research import (
     start_retry_background,
 )
 from src.services.normalization_utils import normalize_company_name
-from src.web.dependencies import get_db
+from src.web.dependencies import get_current_user, get_db
+from src.web.routes.settings import get_user_api_keys
+
+_logger = logging.getLogger(__name__)
+_SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+_SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+
+
+def _trigger_research(endpoint: str, payload: dict) -> None:
+    """Start a research job via Supabase Edge Function or local background thread.
+
+    Uses Edge Function when SUPABASE_URL is configured (Vercel/production).
+    Falls back to in-process background threads for local development.
+    """
+    if _SUPABASE_URL and _SUPABASE_SERVICE_ROLE_KEY:
+        try:
+            _httpx.post(
+                f"{_SUPABASE_URL}/functions/v1/{endpoint}",
+                headers={
+                    "Authorization": f"Bearer {_SUPABASE_SERVICE_ROLE_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=5,
+            )
+        except Exception:
+            _logger.exception("Failed to trigger Edge Function %s", endpoint)
+    else:
+        # Local dev: use background threads
+        job_id = payload["job_id"]
+        api_keys = payload.get("api_keys")
+        if endpoint == "research-job":
+            start_research_job_background(job_id, SUPABASE_DB_URL, api_keys=api_keys)
+        elif endpoint == "research-retry":
+            start_retry_background(job_id, SUPABASE_DB_URL, api_keys=api_keys)
 
 router = APIRouter(prefix="/research", tags=["research"])
 
@@ -64,6 +103,7 @@ class BatchImportRequest(BaseModel):
 @router.post("/preview-csv")
 def preview_csv(
     file: UploadFile = File(...),
+    user=Depends(get_current_user),
 ):
     """Preview a CSV file: parse rows, show mapping, stats. No DB required."""
     raw = file.file.read(MAX_UPLOAD_BYTES + 1)
@@ -92,6 +132,7 @@ def create_research_job(
     method: str = Form(default="hybrid"),
     skip_duplicates: bool = Form(default=True),
     conn=Depends(get_db),
+    user=Depends(get_current_user),
 ):
     """Upload CSV and create a research job.
 
@@ -101,13 +142,15 @@ def create_research_job(
     if method not in ("web_search", "website_crawl", "hybrid"):
         raise HTTPException(400, "method must be web_search, website_crawl, or hybrid")
 
-    # Enforce max 1 running job
+    # Enforce max 1 running job for this user
     cur = conn.cursor()
     try:
         cur.execute(
             """SELECT id, name FROM research_jobs
                WHERE status IN ('pending', 'researching', 'classifying')
+               AND user_id = %s
                LIMIT 1""",
+            (user["id"],),
         )
         running = cur.fetchone()
         if running:
@@ -132,7 +175,7 @@ def create_research_job(
 
     # Check for duplicates
     company_names = [c["company_name"] for c in companies]
-    dupes = check_duplicate_companies(conn, company_names)
+    dupes = check_duplicate_companies(conn, company_names, user_id=user["id"])
     warnings = []
 
     if dupes["already_researched"]:
@@ -159,9 +202,9 @@ def create_research_job(
     cur = conn.cursor()
     try:
         cur.execute(
-            """INSERT INTO research_jobs (name, method, total_companies, cost_estimate_usd)
-               VALUES (%s, %s, %s, %s) RETURNING id""",
-            (name, method, len(companies), cost["total"]),
+            """INSERT INTO research_jobs (name, method, total_companies, cost_estimate_usd, user_id)
+               VALUES (%s, %s, %s, %s, %s) RETURNING id""",
+            (name, method, len(companies), cost["total"], user["id"]),
         )
         job_id = cur.fetchone()["id"]
 
@@ -193,7 +236,8 @@ def create_research_job(
     finally:
         cur.close()
 
-    start_research_job_background(job_id, SUPABASE_DB_URL)
+    api_keys = get_user_api_keys(conn, user["id"])
+    _trigger_research("research-job", {"job_id": job_id, "api_keys": api_keys})
 
     return {
         "job_id": job_id,
@@ -211,13 +255,15 @@ def list_research_jobs(
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=20, ge=1, le=100),
     conn=Depends(get_db),
+    user=Depends(get_current_user),
 ):
     """List research jobs with pagination and optional status filter."""
-    where = ""
-    params: list = []
+    conditions = ["user_id = %s"]
+    params: list = [user["id"]]
     if status:
-        where = "WHERE status = %s"
+        conditions.append("status = %s")
         params.append(status)
+    where = "WHERE " + " AND ".join(conditions)
 
     cur = conn.cursor()
     try:
@@ -244,11 +290,11 @@ def list_research_jobs(
 
 
 @router.get("/jobs/{job_id}")
-def get_research_job(job_id: int, conn=Depends(get_db)):
+def get_research_job(job_id: int, conn=Depends(get_db), user=Depends(get_current_user)):
     """Get job detail with progress, category summary, and score distribution."""
     cur = conn.cursor()
     try:
-        cur.execute("SELECT * FROM research_jobs WHERE id = %s", (job_id,))
+        cur.execute("SELECT * FROM research_jobs WHERE id = %s AND user_id = %s", (job_id, user["id"]))
         job = cur.fetchone()
         if not job:
             raise HTTPException(404, "Research job not found")
@@ -322,11 +368,12 @@ def get_research_results(
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=25, ge=1, le=100),
     conn=Depends(get_db),
+    user=Depends(get_current_user),
 ):
     """Get paginated results for a job with filtering."""
     cur = conn.cursor()
     try:
-        cur.execute("SELECT id FROM research_jobs WHERE id = %s", (job_id,))
+        cur.execute("SELECT id FROM research_jobs WHERE id = %s AND user_id = %s", (job_id, user["id"]))
         if not cur.fetchone():
             raise HTTPException(404, "Research job not found")
     finally:
@@ -390,11 +437,16 @@ def get_research_results(
 
 
 @router.get("/results/{result_id}")
-def get_research_result(result_id: int, conn=Depends(get_db)):
+def get_research_result(result_id: int, conn=Depends(get_db), user=Depends(get_current_user)):
     """Get full detail for a single research result."""
     cur = conn.cursor()
     try:
-        cur.execute("SELECT * FROM research_results WHERE id = %s", (result_id,))
+        cur.execute(
+            """SELECT rr.* FROM research_results rr
+               JOIN research_jobs rj ON rj.id = rr.job_id
+               WHERE rr.id = %s AND rj.user_id = %s""",
+            (result_id, user["id"]),
+        )
         result = cur.fetchone()
         if not result:
             raise HTTPException(404, "Research result not found")
@@ -409,8 +461,17 @@ def get_research_result(result_id: int, conn=Depends(get_db)):
 # ---------------------------------------------------------------------------
 
 @router.post("/jobs/{job_id}/cancel")
-def cancel_job(job_id: int, conn=Depends(get_db)):
+def cancel_job(job_id: int, conn=Depends(get_db), user=Depends(get_current_user)):
     """Cancel a running research job. Stops after current company."""
+    # Verify ownership
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT id FROM research_jobs WHERE id = %s AND user_id = %s", (job_id, user["id"]))
+        if not cur.fetchone():
+            raise HTTPException(404, "Research job not found")
+    finally:
+        cur.close()
+
     result = cancel_research_job(conn, job_id)
     if not result["success"]:
         raise HTTPException(400, result["error"])
@@ -418,11 +479,11 @@ def cancel_job(job_id: int, conn=Depends(get_db)):
 
 
 @router.post("/jobs/{job_id}/retry")
-def retry_job(job_id: int, conn=Depends(get_db)):
+def retry_job(job_id: int, conn=Depends(get_db), user=Depends(get_current_user)):
     """Retry all failed/errored results in a completed or failed job."""
     cur = conn.cursor()
     try:
-        cur.execute("SELECT status FROM research_jobs WHERE id = %s", (job_id,))
+        cur.execute("SELECT status FROM research_jobs WHERE id = %s AND user_id = %s", (job_id, user["id"]))
         job = cur.fetchone()
         if not job:
             raise HTTPException(404, "Research job not found")
@@ -440,7 +501,8 @@ def retry_job(job_id: int, conn=Depends(get_db)):
     finally:
         cur.close()
 
-    start_retry_background(job_id, SUPABASE_DB_URL)
+    api_keys = get_user_api_keys(conn, user["id"])
+    _trigger_research("research-retry", {"job_id": job_id, "api_keys": api_keys})
 
     return {"success": True, "retrying": error_count}
 
@@ -454,13 +516,16 @@ def import_discovered_contacts(
     result_id: int,
     indices: list[int] = [],
     conn=Depends(get_db),
+    user=Depends(get_current_user),
 ):
     """Import discovered contacts from a single research result."""
     cur = conn.cursor()
     try:
         cur.execute(
-            "SELECT * FROM research_results WHERE id = %s",
-            (result_id,),
+            """SELECT rr.* FROM research_results rr
+               JOIN research_jobs rj ON rj.id = rr.job_id
+               WHERE rr.id = %s AND rj.user_id = %s""",
+            (result_id, user["id"]),
         )
         result = cur.fetchone()
         if not result:
@@ -480,7 +545,7 @@ def import_discovered_contacts(
 
         company_id = result["company_id"]
         if not company_id:
-            company_id = resolve_or_create_company(cur, result["company_name"])
+            company_id = resolve_or_create_company(cur, result["company_name"], user_id=user["id"])
 
         imported = 0
         for contact in discovered:
@@ -505,7 +570,7 @@ def import_discovered_contacts(
 # ---------------------------------------------------------------------------
 
 @router.post("/batch-import")
-def batch_import(body: BatchImportRequest, conn=Depends(get_db)):
+def batch_import(body: BatchImportRequest, conn=Depends(get_db), user=Depends(get_current_user)):
     """Batch import contacts from multiple results, optionally create deals and enroll.
 
     This is the "complete the loop" endpoint: Research → Import → Deals → Campaign.
@@ -518,6 +583,7 @@ def batch_import(body: BatchImportRequest, conn=Depends(get_db)):
         result_ids=body.result_ids,
         create_deals=body.create_deals,
         campaign_name=body.campaign_name,
+        user_id=user["id"],
     )
 
     return {"success": True, **result}
@@ -533,11 +599,12 @@ def export_research_results(
     min_score: Optional[int] = Query(default=None),
     categories: Optional[str] = Query(default=None),
     conn=Depends(get_db),
+    user=Depends(get_current_user),
 ):
     """Export research results as CSV download."""
     cur = conn.cursor()
     try:
-        cur.execute("SELECT id FROM research_jobs WHERE id = %s", (job_id,))
+        cur.execute("SELECT id FROM research_jobs WHERE id = %s AND user_id = %s", (job_id, user["id"]))
         if not cur.fetchone():
             raise HTTPException(404, "Research job not found")
 
@@ -611,13 +678,13 @@ def export_research_results(
 # ---------------------------------------------------------------------------
 
 @router.delete("/jobs/{job_id}")
-def delete_research_job(job_id: int, conn=Depends(get_db)):
+def delete_research_job(job_id: int, conn=Depends(get_db), user=Depends(get_current_user)):
     """Delete a research job and all its results (CASCADE)."""
     cur = conn.cursor()
     try:
         cur.execute(
-            "DELETE FROM research_jobs WHERE id = %s RETURNING id",
-            (job_id,),
+            "DELETE FROM research_jobs WHERE id = %s AND user_id = %s RETURNING id",
+            (job_id, user["id"]),
         )
         deleted = cur.fetchone()
         if not deleted:

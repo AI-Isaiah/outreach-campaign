@@ -168,7 +168,7 @@ def estimate_job_cost(company_count: int, method: str) -> dict:
 # Duplicate Detection
 # ---------------------------------------------------------------------------
 
-def check_duplicate_companies(conn, company_names: list[str]) -> dict:
+def check_duplicate_companies(conn, company_names: list[str], user_id: int | None = None) -> dict:
     """Check which companies have already been researched in prior jobs.
 
     Returns dict with 'already_researched' (list of names) and 'new' (list of names).
@@ -181,14 +181,16 @@ def check_duplicate_companies(conn, company_names: list[str]) -> dict:
 
     cur = conn.cursor()
     try:
-        cur.execute(
-            """SELECT DISTINCT regexp_replace(lower(trim(rr.company_name)), '\\s+', ' ', 'g') AS name_norm
+        query = """SELECT DISTINCT regexp_replace(lower(trim(rr.company_name)), '\\s+', ' ', 'g') AS name_norm
                FROM research_results rr
                JOIN research_jobs rj ON rj.id = rr.job_id
                WHERE rj.status IN ('completed', 'researching', 'classifying')
-                 AND regexp_replace(lower(trim(rr.company_name)), '\\s+', ' ', 'g') = ANY(%s)""",
-            (normalized,),
-        )
+                 AND regexp_replace(lower(trim(rr.company_name)), '\\s+', ' ', 'g') = ANY(%s)"""
+        params: list = [normalized]
+        if user_id is not None:
+            query += " AND rj.user_id = %s"
+            params.append(user_id)
+        cur.execute(query, params)
         existing = {row["name_norm"] for row in cur.fetchall()}
     finally:
         cur.close()
@@ -462,23 +464,34 @@ def find_warm_intros(conn, company_name: str, company_id: int | None) -> dict:
 # Shared Contact Import Helper
 # ---------------------------------------------------------------------------
 
-def resolve_or_create_company(cur, company_name: str) -> int:
+def resolve_or_create_company(cur, company_name: str, user_id: int | None = None) -> int:
     """Find existing company by normalized name or create a new one. Returns company_id."""
     if not company_name or not company_name.strip():
         raise ValueError("company_name must be a non-empty string")
     name_norm = normalize_company_name(company_name)
-    cur.execute(
-        "SELECT id FROM companies WHERE name_normalized = %s",
-        (name_norm,),
-    )
+    if user_id is not None:
+        cur.execute(
+            "SELECT id FROM companies WHERE name_normalized = %s AND user_id = %s",
+            (name_norm, user_id),
+        )
+    else:
+        cur.execute(
+            "SELECT id FROM companies WHERE name_normalized = %s",
+            (name_norm,),
+        )
     match = cur.fetchone()
     if match:
         return match["id"]
-    cur.execute(
-        """INSERT INTO companies (name, name_normalized)
-           VALUES (%s, %s) RETURNING id""",
-        (company_name, name_norm),
-    )
+    if user_id is not None:
+        cur.execute(
+            "INSERT INTO companies (name, name_normalized, user_id) VALUES (%s, %s, %s) RETURNING id",
+            (company_name, name_norm, user_id),
+        )
+    else:
+        cur.execute(
+            "INSERT INTO companies (name, name_normalized) VALUES (%s, %s) RETURNING id",
+            (company_name, name_norm),
+        )
     return cur.fetchone()["id"]
 
 
@@ -537,6 +550,7 @@ def batch_import_and_enroll(
     result_ids: list[int],
     create_deals: bool = False,
     campaign_name: str | None = None,
+    user_id: int | None = None,
 ) -> dict:
     """Import discovered contacts, optionally create deals and enroll in campaign.
 
@@ -564,10 +578,12 @@ def batch_import_and_enroll(
                     "skipped_duplicates": 0, "results_processed": 0}
 
         cur.execute(
-            """SELECT id, company_id, company_name, crypto_score,
-                      evidence_summary, discovered_contacts_json
-               FROM research_results WHERE id = ANY(%s)""",
-            (result_ids,),
+            """SELECT rr.id, rr.company_id, rr.company_name, rr.crypto_score,
+                      rr.evidence_summary, rr.discovered_contacts_json
+               FROM research_results rr
+               JOIN research_jobs rj ON rj.id = rr.job_id
+               WHERE rr.id = ANY(%s) AND rj.user_id = %s""",
+            (result_ids, user_id),
         )
         results = [dict(row) for row in cur.fetchall()]
 
@@ -584,7 +600,7 @@ def batch_import_and_enroll(
             # Resolve company
             company_id = result["company_id"]
             if not company_id:
-                company_id = resolve_or_create_company(cur, result["company_name"])
+                company_id = resolve_or_create_company(cur, result["company_name"], user_id=user_id)
                 cur.execute(
                     "UPDATE research_results SET company_id = %s WHERE id = %s",
                     (company_id, result["id"]),
@@ -704,10 +720,11 @@ def cancel_research_job(conn, job_id: int) -> dict:
         cur.close()
 
 
-def retry_failed_results(job_id: int, db_url: str) -> None:
+def retry_failed_results(job_id: int, db_url: str, api_keys: dict | None = None) -> None:
     """Retry all errored results in a job. Runs in background thread."""
     from src.models.database import get_connection, run_migrations
 
+    _apply_api_keys(api_keys)
     conn = get_connection(db_url)
     try:
         run_migrations(conn)
@@ -834,10 +851,21 @@ def retry_failed_results(job_id: int, db_url: str) -> None:
 # Background Job Orchestrator
 # ---------------------------------------------------------------------------
 
-def run_research_job(job_id: int, db_url: str) -> None:
+def _apply_api_keys(api_keys: dict | None) -> None:
+    """Override module-level API keys for the current thread's job."""
+    global PERPLEXITY_API_KEY, ANTHROPIC_API_KEY
+    if api_keys:
+        if api_keys.get("perplexity"):
+            PERPLEXITY_API_KEY = api_keys["perplexity"]
+        if api_keys.get("anthropic"):
+            ANTHROPIC_API_KEY = api_keys["anthropic"]
+
+
+def run_research_job(job_id: int, db_url: str, api_keys: dict | None = None) -> None:
     """Background thread entry point for running a research job."""
     from src.models.database import get_connection, run_migrations
 
+    _apply_api_keys(api_keys)
     conn = get_connection(db_url)
     try:
         run_migrations(conn)
@@ -1075,22 +1103,22 @@ def _mark_result_error(conn, result_id: int, error: str) -> None:
         cur.close()
 
 
-def start_research_job_background(job_id: int, db_url: str) -> None:
+def start_research_job_background(job_id: int, db_url: str, api_keys: dict | None = None) -> None:
     """Spawn a background thread to run the research job."""
     thread = threading.Thread(
         target=run_research_job,
-        args=(job_id, db_url),
+        args=(job_id, db_url, api_keys),
         daemon=True,
         name=f"research-job-{job_id}",
     )
     thread.start()
 
 
-def start_retry_background(job_id: int, db_url: str) -> None:
+def start_retry_background(job_id: int, db_url: str, api_keys: dict | None = None) -> None:
     """Spawn a background thread to retry failed results."""
     thread = threading.Thread(
         target=retry_failed_results,
-        args=(job_id, db_url),
+        args=(job_id, db_url, api_keys),
         daemon=True,
         name=f"research-retry-{job_id}",
     )

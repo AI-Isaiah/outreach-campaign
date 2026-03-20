@@ -38,6 +38,7 @@ from src.config import SUPABASE_DB_URL  # noqa: E402
 from src.models.database import close_pool, get_connection, init_pool, run_migrations  # noqa: E402
 from src.web.dependencies import require_auth  # noqa: E402
 from src.web.routes import (  # noqa: E402
+    auth,
     campaigns,
     contacts,
     conversations,
@@ -64,7 +65,12 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Run migrations at startup, initialize connection pool, cleanup on shutdown."""
+    """Run migrations at startup, initialize connection pool, cleanup on shutdown.
+
+    In serverless mode (Vercel), lifespan is disabled via Mangum(lifespan="off").
+    Migrations are run via Supabase SQL Editor or the /api/admin/migrate endpoint.
+    Connections are created per-request in get_db() when the pool is not initialized.
+    """
     if SUPABASE_DB_URL:
         conn = get_connection(SUPABASE_DB_URL)
         try:
@@ -91,8 +97,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+from src.web.errors import AppError, app_error_handler  # noqa: E402
+
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(AppError, app_error_handler)
 
 _default_origins = "http://localhost:5173,http://127.0.0.1:5173"
 _allowed_origins = [
@@ -131,6 +140,9 @@ def health_check():
         pass
     return {"status": "ok" if db_ok else "degraded", "database": db_ok}
 
+
+# Auth router — no auth dependency (it IS the auth entry point)
+app.include_router(auth.router, prefix="/api")
 
 # All other routers — auth required
 _auth_deps = [Depends(require_auth)]
