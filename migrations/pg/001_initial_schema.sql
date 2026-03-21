@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS contact_campaign_status (
     id SERIAL PRIMARY KEY,
     contact_id INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
     campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
-    current_step INTEGER NOT NULL DEFAULT 0,
+    current_step INTEGER NOT NULL DEFAULT 1,
     status TEXT NOT NULL DEFAULT 'queued',
     assigned_variant TEXT,
     next_action_date DATE,

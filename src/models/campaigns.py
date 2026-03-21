@@ -1,11 +1,23 @@
-"""CRUD operations for campaigns, templates, sequence steps, enrollment, and events."""
+"""CRUD operations for campaigns, templates, sequence steps, enrollment, and events.
+
+Templates and events have been split into ``models/templates.py`` and
+``models/events.py`` respectively. They are re-exported here so existing
+``from src.models.campaigns import ...`` statements continue to work.
+"""
 
 from __future__ import annotations
 
-import json
 import psycopg2
-from datetime import datetime
+import psycopg2.extras
 from typing import Callable, Optional
+
+from psycopg2.extensions import connection as PgConnection
+
+from src.models.database import get_cursor
+
+# Re-export from split modules for backward compatibility
+from src.models.templates import create_template, get_template, list_templates  # noqa: F401
+from src.models.events import log_event  # noqa: F401
 
 
 # ---------------------------------------------------------------------------
@@ -13,127 +25,71 @@ from typing import Callable, Optional
 # ---------------------------------------------------------------------------
 
 def create_campaign(
-    conn,
+    conn: PgConnection,
     name: str,
     description: Optional[str] = None,
+    *,
+    user_id: int,
 ) -> int:
     """Create a new campaign and return its id."""
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO campaigns (name, description) VALUES (%s, %s) RETURNING id",
-        (name, description),
-    )
-    row = cursor.fetchone()
-    conn.commit()
-    return row["id"]
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            "INSERT INTO campaigns (name, description, user_id) VALUES (%s, %s, %s) RETURNING id",
+            (name, description, user_id),
+        )
+        row = cursor.fetchone()
+        conn.commit()
+        return row["id"]
 
 
-def get_campaign(conn, campaign_id: int):
+def get_campaign(conn: PgConnection, campaign_id: int):
     """Return a single campaign by id, or None."""
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT * FROM campaigns WHERE id = %s",
-        (campaign_id,),
-    )
-    return cursor.fetchone()
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            "SELECT * FROM campaigns WHERE id = %s",
+            (campaign_id,),
+        )
+        return cursor.fetchone()
 
 
-def get_campaign_by_name(conn, name: str):
+def get_campaign_by_name(conn: PgConnection, name: str):
     """Return a single campaign by name, or None."""
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT * FROM campaigns WHERE name = %s",
-        (name,),
-    )
-    return cursor.fetchone()
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            "SELECT * FROM campaigns WHERE name = %s",
+            (name,),
+        )
+        return cursor.fetchone()
 
 
 def list_campaigns(
-    conn,
+    conn: PgConnection,
     status: Optional[str] = None,
 ) -> list:
     """Return all campaigns, optionally filtered by status."""
-    cursor = conn.cursor()
-    if status is not None:
-        cursor.execute(
-            "SELECT * FROM campaigns WHERE status = %s ORDER BY id",
-            (status,),
-        )
-    else:
-        cursor.execute("SELECT * FROM campaigns ORDER BY id")
-    return cursor.fetchall()
+    with get_cursor(conn) as cursor:
+        if status is not None:
+            cursor.execute(
+                "SELECT * FROM campaigns WHERE status = %s ORDER BY id",
+                (status,),
+            )
+        else:
+            cursor.execute("SELECT * FROM campaigns ORDER BY id")
+        return cursor.fetchall()
 
 
 def update_campaign_status(
-    conn,
+    conn: PgConnection,
     campaign_id: int,
     status: str,
 ) -> None:
     """Update the status of a campaign."""
-    cursor = conn.cursor()
-    cursor.execute(
-        "UPDATE campaigns SET status = %s WHERE id = %s",
-        (status, campaign_id),
-    )
-    conn.commit()
-
-
-# ---------------------------------------------------------------------------
-# Templates
-# ---------------------------------------------------------------------------
-
-def create_template(
-    conn,
-    name: str,
-    channel: str,
-    body_template: str,
-    subject: Optional[str] = None,
-    variant_group: Optional[str] = None,
-    variant_label: Optional[str] = None,
-) -> int:
-    """Create a new template and return its id."""
-    cursor = conn.cursor()
-    cursor.execute(
-        """INSERT INTO templates
-           (name, channel, body_template, subject, variant_group, variant_label)
-           VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
-        (name, channel, body_template, subject, variant_group, variant_label),
-    )
-    row = cursor.fetchone()
-    conn.commit()
-    return row["id"]
-
-
-def get_template(conn, template_id: int):
-    """Return a single template by id, or None."""
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT * FROM templates WHERE id = %s",
-        (template_id,),
-    )
-    return cursor.fetchone()
-
-
-def list_templates(
-    conn,
-    channel: Optional[str] = None,
-    is_active: bool = True,
-) -> list:
-    """Return templates, optionally filtered by channel and active status."""
-    query = "SELECT * FROM templates WHERE 1=1"
-    params: list = []
-
-    if channel is not None:
-        query += " AND channel = %s"
-        params.append(channel)
-
-    query += " AND is_active = %s"
-    params.append(is_active)
-
-    query += " ORDER BY id"
-    cursor = conn.cursor()
-    cursor.execute(query, params)
-    return cursor.fetchall()
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            "UPDATE campaigns SET status = %s WHERE id = %s",
+            (status, campaign_id),
+        )
+        conn.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -141,7 +97,7 @@ def list_templates(
 # ---------------------------------------------------------------------------
 
 def add_sequence_step(
-    conn,
+    conn: PgConnection,
     campaign_id: int,
     step_order: int,
     channel: str,
@@ -151,38 +107,38 @@ def add_sequence_step(
     non_gdpr_only: bool = False,
 ) -> int:
     """Add a sequence step to a campaign and return its id."""
-    cursor = conn.cursor()
-    cursor.execute(
-        """INSERT INTO sequence_steps
-           (campaign_id, step_order, channel, template_id, delay_days, gdpr_only, non_gdpr_only)
-           VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
-        (
-            campaign_id,
-            step_order,
-            channel,
-            template_id,
-            delay_days,
-            gdpr_only,
-            non_gdpr_only,
-        ),
-    )
-    row = cursor.fetchone()
-    conn.commit()
-    return row["id"]
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            """INSERT INTO sequence_steps
+               (campaign_id, step_order, channel, template_id, delay_days, gdpr_only, non_gdpr_only)
+               VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+            (
+                campaign_id,
+                step_order,
+                channel,
+                template_id,
+                delay_days,
+                gdpr_only,
+                non_gdpr_only,
+            ),
+        )
+        row = cursor.fetchone()
+        conn.commit()
+        return row["id"]
 
 
 # ---------------------------------------------------------------------------
 # Sequence Steps (query)
 # ---------------------------------------------------------------------------
 
-def get_sequence_steps(conn, campaign_id: int) -> list:
+def get_sequence_steps(conn: PgConnection, campaign_id: int) -> list:
     """Return all steps for a campaign, ordered by step_order."""
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT * FROM sequence_steps WHERE campaign_id = %s ORDER BY step_order",
-        (campaign_id,),
-    )
-    return cursor.fetchall()
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            "SELECT * FROM sequence_steps WHERE campaign_id = %s ORDER BY step_order",
+            (campaign_id,),
+        )
+        return cursor.fetchall()
 
 
 # ---------------------------------------------------------------------------
@@ -190,36 +146,39 @@ def get_sequence_steps(conn, campaign_id: int) -> list:
 # ---------------------------------------------------------------------------
 
 def enroll_contact(
-    conn,
+    conn: PgConnection,
     contact_id: int,
     campaign_id: int,
     variant: Optional[str] = None,
     next_action_date: Optional[str] = None,
 ) -> Optional[int]:
     """Enroll a contact in a campaign. Returns enrollment id, or None if already enrolled."""
-    try:
-        cursor = conn.cursor()
-        cursor.execute(
-            """INSERT INTO contact_campaign_status
-               (contact_id, campaign_id, current_step, assigned_variant, next_action_date)
-               VALUES (%s, %s, 1, %s, %s) RETURNING id""",
-            (contact_id, campaign_id, variant, next_action_date),
-        )
-        row = cursor.fetchone()
-        conn.commit()
-        return row["id"]
-    except psycopg2.IntegrityError:
-        conn.rollback()
-        return None
+    with get_cursor(conn) as cursor:
+        try:
+            cursor.execute(
+                """INSERT INTO contact_campaign_status
+                   (contact_id, campaign_id, current_step, assigned_variant, next_action_date)
+                   VALUES (%s, %s, 1, %s, %s) RETURNING id""",
+                (contact_id, campaign_id, variant, next_action_date),
+            )
+            row = cursor.fetchone()
+            conn.commit()
+            return row["id"]
+        except psycopg2.IntegrityError:
+            conn.rollback()
+            return None
 
 
 def bulk_enroll_contacts(
-    conn,
+    conn: PgConnection,
     campaign_id: int,
     contact_ids: list,
     variant_assigner: Optional[Callable] = None,
 ) -> int:
     """Enroll multiple contacts in a campaign.
+
+    Uses ``psycopg2.extras.execute_values`` for a single INSERT round-trip
+    instead of one INSERT per contact.
 
     Args:
         conn: database connection
@@ -233,47 +192,51 @@ def bulk_enroll_contacts(
     if not contact_ids:
         return 0
     placeholders = ",".join("%s" for _ in contact_ids)
-    cursor = conn.cursor()
-    cursor.execute(
-        f"SELECT contact_id FROM contact_campaign_status "
-        f"WHERE campaign_id = %s AND contact_id IN ({placeholders})",
-        [campaign_id] + list(contact_ids),
-    )
-    already_enrolled = {row["contact_id"] for row in cursor.fetchall()}
-
-    enrolled_count = 0
-    for contact_id in contact_ids:
-        if contact_id in already_enrolled:
-            continue
-        variant = variant_assigner(contact_id) if variant_assigner else None
+    with get_cursor(conn) as cursor:
         cursor.execute(
-            """INSERT INTO contact_campaign_status
-               (contact_id, campaign_id, current_step, assigned_variant)
-               VALUES (%s, %s, 1, %s)""",
-            (contact_id, campaign_id, variant),
+            f"SELECT contact_id FROM contact_campaign_status "
+            f"WHERE campaign_id = %s AND contact_id IN ({placeholders})",
+            [campaign_id] + list(contact_ids),
         )
-        enrolled_count += 1
+        already_enrolled = {row["contact_id"] for row in cursor.fetchall()}
 
-    conn.commit()
-    return enrolled_count
+        # Pre-compute all rows to insert
+        rows_to_insert = []
+        for contact_id in contact_ids:
+            if contact_id in already_enrolled:
+                continue
+            variant = variant_assigner(contact_id) if variant_assigner else None
+            rows_to_insert.append((contact_id, campaign_id, 1, variant))
+
+        if rows_to_insert:
+            psycopg2.extras.execute_values(
+                cursor,
+                """INSERT INTO contact_campaign_status
+                   (contact_id, campaign_id, current_step, assigned_variant)
+                   VALUES %s""",
+                rows_to_insert,
+            )
+
+        conn.commit()
+        return len(rows_to_insert)
 
 
 def get_contact_campaign_status(
-    conn,
+    conn: PgConnection,
     contact_id: int,
     campaign_id: int,
 ):
     """Return the enrollment/status row for a contact in a campaign, or None."""
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT * FROM contact_campaign_status WHERE contact_id = %s AND campaign_id = %s",
-        (contact_id, campaign_id),
-    )
-    return cursor.fetchone()
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            "SELECT * FROM contact_campaign_status WHERE contact_id = %s AND campaign_id = %s",
+            (contact_id, campaign_id),
+        )
+        return cursor.fetchone()
 
 
 def update_contact_campaign_status(
-    conn,
+    conn: PgConnection,
     contact_id: int,
     campaign_id: int,
     status: Optional[str] = None,
@@ -307,34 +270,6 @@ def update_contact_campaign_status(
         f"WHERE contact_id = %s AND campaign_id = %s"
     )
     params.extend([contact_id, campaign_id])
-    cursor = conn.cursor()
-    cursor.execute(query, params)
-    conn.commit()
-
-
-# ---------------------------------------------------------------------------
-# Events
-# ---------------------------------------------------------------------------
-
-def log_event(
-    conn,
-    contact_id: int,
-    event_type: str,
-    campaign_id: Optional[int] = None,
-    template_id: Optional[int] = None,
-    metadata: Optional[str] = None,
-) -> int:
-    """Log an event and return its id.
-
-    The metadata argument should be a JSON string (or None).
-    """
-    cursor = conn.cursor()
-    cursor.execute(
-        """INSERT INTO events
-           (contact_id, event_type, campaign_id, template_id, metadata)
-           VALUES (%s, %s, %s, %s, %s) RETURNING id""",
-        (contact_id, event_type, campaign_id, template_id, metadata),
-    )
-    row = cursor.fetchone()
-    conn.commit()
-    return row["id"]
+    with get_cursor(conn) as cursor:
+        cursor.execute(query, params)
+        conn.commit()

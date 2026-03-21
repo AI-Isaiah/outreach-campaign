@@ -75,17 +75,36 @@ def migrate(sqlite_path: str, pg_url: str) -> dict:
         placeholders = ", ".join(["%s"] * len(columns))
         insert_sql = f"INSERT INTO {table} ({col_list}) VALUES ({placeholders})"
 
-        # Insert rows
+        # Detect boolean and timestamp columns in PG for type casting
+        pg_cursor.execute(
+            "SELECT column_name, data_type FROM information_schema.columns "
+            "WHERE table_name = %s AND table_schema = 'public'",
+            (table,),
+        )
+        pg_col_types = {r["column_name"]: r["data_type"] for r in pg_cursor.fetchall()}
+        bool_cols = {c for c in columns if pg_col_types.get(c) == "boolean"}
+        ts_cols = {
+            c for c in columns
+            if pg_col_types.get(c) in ("timestamp with time zone", "timestamp without time zone")
+        }
+
+        # Insert rows (cast SQLite integers to PG booleans, handle timestamps)
         count = 0
         for row in rows:
-            values = tuple(row[col] for col in columns)
+            values = []
+            for col in columns:
+                v = row[col]
+                if col in bool_cols and isinstance(v, int):
+                    v = bool(v)
+                if col in ts_cols and v is not None and isinstance(v, str) and v.strip() == "":
+                    v = None
+                values.append(v)
             try:
-                pg_cursor.execute(insert_sql, values)
+                pg_cursor.execute(insert_sql, tuple(values))
                 count += 1
             except Exception as e:
                 print(f"  WARNING: Failed to insert into {table}: {e}")
                 pg_conn.rollback()
-                # Try to continue with remaining rows
                 continue
 
         pg_conn.commit()
