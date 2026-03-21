@@ -38,8 +38,10 @@ src/cli.py              → Typer app, all 24 @app.command() definitions, config
 src/commands/            → Command handlers (call services, format Rich output)
 src/services/            → Pure business logic (no CLI dependencies)
 src/models/              → PostgreSQL CRUD operations (campaigns.py) and DB setup (database.py)
+src/web/                 → FastAPI app and API route modules (routes/)
 src/templates/           → Jinja2 email/ and linkedin/ templates
 migrations/pg/           → PostgreSQL schema files (auto-run on every command via run_migrations)
+frontend/src/            → React + TypeScript frontend (pages/, components/, api/)
 ```
 
 ### Data flow
@@ -51,19 +53,21 @@ CSV/email import → deduplication (3-pass: email, LinkedIn, fuzzy) → email ve
 - **`services/priority_queue.py`** — Selects daily contacts to action. Enforces: one contact per company, orders by AUM, validates channel availability (email/LinkedIn).
 - **`services/state_machine.py`** — Contact status transitions (queued → in_progress → replied/completed/unsubscribed). Auto-activates next contact at same company when one reaches terminal state.
 - **`services/compliance.py`** — CAN-SPAM footer injection, GDPR email limits (max 2 vs 3), unsubscribe link generation.
-- **`services/template_engine.py`** — Jinja2 rendering with compliance integration.
+- **`services/template_engine.py`** — Jinja2 rendering with compliance integration. Injects `deep_research` key into template context when available.
+- **`services/deep_research_service.py`** — Per-company deep research pipeline. Runs parallel Perplexity Sonar queries, synthesizes with Claude Sonnet into structured JSON (talking points, key people, crypto signals), enriches CRM contacts from output. Statuses: pending → researching → synthesizing → completed/failed/cancelled.
+- **`web/routes/deep_research.py`** — Deep research API: POST trigger, GET latest, POST cancel (prefix: `/research/deep`).
 - **`models/campaigns.py`** — All CRUD for companies, contacts, campaigns, templates, enrollment, events.
 
 ### Database
 
-PostgreSQL on Supabase via `psycopg2` with `RealDictCursor`. Key tables: `companies`, `contacts`, `campaigns`, `sequence_steps`, `templates`, `contact_campaign_status`, `events`, `dedup_log`. Schema in `migrations/pg/001_initial_schema.sql`. Migrations run automatically on every CLI command. Connection URL configured via `SUPABASE_DB_URL` env var.
+PostgreSQL on Supabase via `psycopg2` with `RealDictCursor`. Key tables: `companies`, `contacts`, `campaigns`, `sequence_steps`, `templates`, `contact_campaign_status`, `events`, `dedup_log`, `deep_research`. Schema in `migrations/pg/001_initial_schema.sql`. Deep research schema in `migrations/pg/016_deep_research.sql`. Migrations run automatically on every CLI command. Connection URL configured via `SUPABASE_DB_URL` env var.
 
 Normalized fields (`email_normalized`, `linkedin_url_normalized`, `name_normalized`) are used for dedup and lookups — always populate these alongside raw fields.
 
 ### Config
 
 - `config.yaml` — SMTP settings, calendly URL, physical address, GDPR country list (see `config.yaml.example`)
-- `.env` — SUPABASE_DB_URL, SMTP_PASSWORD, EMAIL_VERIFY_API_KEY (see `.env.example`)
+- `.env` — SUPABASE_DB_URL, SMTP_PASSWORD, EMAIL_VERIFY_API_KEY, ANTHROPIC_API_KEY, PERPLEXITY_API_KEY (see `.env.example`)
 - CLI loads config in `src/cli.py` and injects SMTP password from env
 
 ## Conventions
@@ -105,6 +109,7 @@ No custom tailwind.config.js extensions yet — uses default Tailwind palette. T
 - **Buttons**: Primary dark: `bg-gray-900 text-white rounded-lg px-4 py-2.5 text-sm font-medium hover:bg-gray-800`. Primary blue: `bg-blue-600 text-white rounded text-sm font-medium px-3 py-1.5 hover:bg-blue-700 disabled:opacity-50`. Secondary: `bg-white border border-gray-200 text-gray-700 rounded-lg px-4 py-2.5 text-sm font-medium hover:bg-gray-50`.
 - **Tables**: Container: `bg-white rounded-lg border border-gray-200 overflow-hidden`. Header: `bg-gray-50 border-b`, text: `text-xs font-medium text-gray-500 uppercase tracking-wide`. Rows: `divide-y divide-gray-100 hover:bg-gray-50 transition-colors`. Cell padding: `px-5 py-4` (body), `px-5 py-3` (header).
 - **Navigation**: Dark sidebar `w-56 bg-gray-900`. Links: `text-sm font-medium text-gray-300`, active: `bg-gray-800 text-white`, hover: `hover:bg-gray-800/50 hover:text-white`.
+- **DeepResearchBrief**: 4-state component (idle/running/completed/failed) on CompanyDetail page. Triggers and displays per-company deep research results (talking points, key people, crypto signals).
 
 ### Layout
 

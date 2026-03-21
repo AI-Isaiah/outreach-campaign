@@ -16,6 +16,7 @@
 | Phase 4: Gmail + Reply Detection | **Done** | 95% |
 | Phase 5: CRM | **In Progress** | 70% |
 | Phase 6: Deployment | **Done** | 90% |
+| Phase 7: Deep Research | **Done** | 100% |
 
 ### Codebase Size
 - Python backend: 9,194 lines (50+ files)
@@ -70,8 +71,18 @@
 - GitHub Actions deploy to Railway
 - Health endpoint at /api/health
 
+### Deep Research
+- Per-company research pipeline: Perplexity Sonar queries (parallel) + Claude Sonnet synthesis
+- Structured output: company overview, crypto signals, key people, talking points, risk factors, updated crypto score
+- Deep research API (3 endpoints: trigger, get latest, cancel) at `/research/deep`
+- DeepResearchBrief component on CompanyDetail page (4-state UI: idle/running/completed/failed)
+- Template engine extended with `deep_research` context key for personalized outreach
+- Cost tracking per query and per research run
+- Migration: `migrations/pg/016_deep_research.sql`
+- 31 tests in `tests/test_deep_research.py` (967 lines)
+
 ### Testing
-- 27 test files including: test_web_api.py (481 lines), test_deals.py (238 lines), test_tags.py (233 lines), test_inbox.py (155 lines)
+- 28 test files including: test_web_api.py (481 lines), test_deep_research.py (967 lines), test_deals.py (238 lines), test_tags.py (233 lines), test_inbox.py (155 lines)
 
 ---
 
@@ -145,4 +156,4 @@ REMAINING WORK (in order of priority):
 
 ## Competitive Position
 
-Your platform now covers most of what Lemlist does for email + LinkedIn sequences, plus things Lemlist does not have (Thompson sampling adaptive engine, LLM advisor). The main competitive gaps are LinkedIn automation (Phantombuster-style scraping), email enrichment (Dropcontact-style), and WhatsApp auto-sending. These are integration projects, not core architecture work — the foundation is solid.
+Your platform now covers most of what Lemlist does for email + LinkedIn sequences, plus things Lemlist does not have (Thompson sampling adaptive engine, LLM advisor, per-company deep research with Perplexity + Sonnet synthesis). The main competitive gaps are LinkedIn automation (Phantombuster-style scraping), email enrichment (Dropcontact-style), and WhatsApp auto-sending. These are integration projects, not core architecture work — the foundation is solid.
