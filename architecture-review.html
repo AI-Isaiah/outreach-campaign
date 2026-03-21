@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Architecture Review — Outreach Campaign Platform</title>
+<style>
+  :root {
+    --bg: #0f172a; --surface: #1e293b; --surface2: #334155;
+    --text: #e2e8f0; --muted: #94a3b8; --accent: #38bdf8;
+    --red: #f87171; --orange: #fb923c; --yellow: #fbbf24;
+    --green: #4ade80; --purple: #a78bfa; --cyan: #22d3ee;
+    --border: #475569;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', -apple-system, system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.7; }
+  .container { max-width: 1100px; margin: 0 auto; padding: 2rem; }
+  h1 { font-size: 2rem; font-weight: 800; letter-spacing: -0.02em; }
+  .subtitle { color: var(--muted); font-size: 0.9rem; margin-top: 0.25rem; margin-bottom: 2rem; }
+  h2 { font-size: 1.3rem; font-weight: 700; margin: 2.5rem 0 0.75rem; color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+  h3 { font-size: 1.05rem; font-weight: 600; margin: 1.5rem 0 0.5rem; }
+  h4 { font-size: 0.9rem; font-weight: 600; margin: 1rem 0 0.35rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  p { margin: 0.5rem 0; font-size: 0.88rem; color: var(--muted); }
+  code { font-family: 'Fira Code', 'JetBrains Mono', monospace; font-size: 0.8rem; background: var(--surface2); padding: 0.1rem 0.35rem; border-radius: 3px; color: var(--cyan); }
+
+  .card { background: var(--surface); border-radius: 12px; padding: 1.25rem 1.5rem; margin: 0.75rem 0; border: 1px solid var(--border); }
+  .card-accent { border-left: 4px solid var(--accent); }
+  .card-green { border-left: 4px solid var(--green); }
+  .card-orange { border-left: 4px solid var(--orange); }
+  .card-red { border-left: 4px solid var(--red); }
+  .card-purple { border-left: 4px solid var(--purple); }
+
+  .diagram { background: var(--surface); border-radius: 10px; padding: 1.5rem; margin: 1rem 0; font-family: 'Fira Code', monospace; font-size: 0.78rem; line-height: 1.6; color: var(--green); border: 1px solid var(--border); overflow-x: auto; white-space: pre; }
+  .diagram .dim { color: var(--muted); }
+  .diagram .hl { color: var(--accent); font-weight: 700; }
+  .diagram .warn { color: var(--orange); }
+
+  .verdict { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 5px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; }
+  .verdict.good { background: rgba(74,222,128,0.15); color: var(--green); }
+  .verdict.fair { background: rgba(251,191,36,0.15); color: var(--yellow); }
+  .verdict.poor { background: rgba(248,113,113,0.15); color: var(--red); }
+
+  table { width: 100%; border-collapse: collapse; margin: 0.75rem 0; font-size: 0.82rem; }
+  th { background: var(--surface2); text-align: left; padding: 0.5rem 0.65rem; font-weight: 600; color: var(--muted); text-transform: uppercase; font-size: 0.68rem; letter-spacing: 0.05em; }
+  td { padding: 0.5rem 0.65rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:hover td { background: rgba(56, 189, 248, 0.04); }
+
+  .adr { background: var(--surface); border-radius: 12px; padding: 1.5rem 2rem; margin: 1.5rem 0; border: 1px solid var(--border); }
+  .adr-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.5rem; }
+  .adr-title { font-weight: 700; font-size: 1.1rem; }
+  .adr-status { font-size: 0.75rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 4px; background: rgba(56,189,248,0.15); color: var(--accent); }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  @media (max-width: 700px) { .grid2 { grid-template-columns: 1fr; } }
+
+  .score-row { display: flex; gap: 1rem; margin: 0.5rem 0; flex-wrap: wrap; }
+  .score-item { background: var(--surface); border-radius: 8px; padding: 0.6rem 1rem; border: 1px solid var(--border); flex: 1; min-width: 120px; }
+  .score-item .label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .score-item .val { font-size: 1.25rem; font-weight: 800; margin-top: 0.1rem; }
+
+  footer { color: var(--muted); font-size: 0.75rem; margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Architecture Review</h1>
+<p class="subtitle">Outreach Campaign Platform &mdash; 16 Mar 2026 &mdash; Current state analysis + 4 ADRs for proposed improvements</p>
+
+<!-- ============ CURRENT ARCHITECTURE ============ -->
+<h2>1. Current Architecture Overview</h2>
+
+<div class="diagram"><span class="dim">┌────────────────────────────────────────────────────────────────┐</span>
+<span class="dim">│</span>  <span class="hl">ENTRY POINTS</span>                                                 <span class="dim">│</span>
+<span class="dim">│</span>  ┌──────────┐   ┌───────────────────────┐                     <span class="dim">│</span>
+<span class="dim">│</span>  │ <span class="hl">Typer CLI</span> │   │ <span class="hl">FastAPI Web</span> (18 routes)│                     <span class="dim">│</span>
+<span class="dim">│</span>  │ 24 cmds  │   │ CORS · Auth · Sentry  │                     <span class="dim">│</span>
+<span class="dim">│</span>  └────┬─────┘   └──────────┬────────────┘                     <span class="dim">│</span>
+<span class="dim">│</span>       │                    │                                   <span class="dim">│</span>
+<span class="dim">│</span>  <span class="hl">COMMAND / ROUTE HANDLERS</span>                                     <span class="dim">│</span>
+<span class="dim">│</span>  ┌────┴────┐   ┌──────────┴────────────┐                     <span class="dim">│</span>
+<span class="dim">│</span>  │Commands │   │  Route Handlers        │                     <span class="dim">│</span>
+<span class="dim">│</span>  │(import, │   │  (get_queue, contacts, │                     <span class="dim">│</span>
+<span class="dim">│</span>  │ export) │   │   deals, templates...) │                     <span class="dim">│</span>
+<span class="dim">│</span>  └────┬────┘   └──────────┬────────────┘                     <span class="dim">│</span>
+<span class="dim">│</span>       │                    │                                   <span class="dim">│</span>
+<span class="dim">│</span>  <span class="hl">SERVICES</span> (31 modules, ~5900 LOC)                              <span class="dim">│</span>
+<span class="dim">│</span>  ┌──────────────────────────┴─────────────────────────┐       <span class="dim">│</span>
+<span class="dim">│</span>  │ priority_queue · state_machine · email_sender      │       <span class="dim">│</span>
+<span class="dim">│</span>  │ compliance · template_engine · deduplication        │       <span class="dim">│</span>
+<span class="dim">│</span>  │ adaptive_queue · contact_scorer · metrics           │       <span class="dim">│</span>
+<span class="dim">│</span>  │ gmail_drafter · linkedin_actions · llm_advisor      │       <span class="dim">│</span>
+<span class="dim">│</span>  │ crypto_research · newsletter · response_analyzer    │       <span class="dim">│</span>
+<span class="dim">│</span>  └──────────────────────────┬─────────────────────────┘       <span class="dim">│</span>
+<span class="dim">│</span>                             │                                   <span class="dim">│</span>
+<span class="dim">│</span>  <span class="hl">MODELS / CRUD</span>  (campaigns.py — 1000+ LOC)                     <span class="dim">│</span>
+<span class="dim">│</span>  ┌──────────────────────────┴─────────────────────────┐       <span class="dim">│</span>
+<span class="dim">│</span>  │ campaigns · templates · contacts · events · status │       <span class="dim">│</span>
+<span class="dim">│</span>  │ enrollments · sequence_steps · dedup_log            │       <span class="dim">│</span>
+<span class="dim">│</span>  └──────────────────────────┬─────────────────────────┘       <span class="dim">│</span>
+<span class="dim">│</span>                             │                                   <span class="dim">│</span>
+<span class="dim">│</span>  <span class="hl">DATABASE</span>  PostgreSQL (Supabase) · psycopg2 ThreadedPool       <span class="dim">│</span>
+<span class="dim">└────────────────────────────────────────────────────────────────┘</span>
+
+<span class="dim">┌────────────────────────────────────────────────────────────────┐</span>
+<span class="dim">│</span>  <span class="hl">FRONTEND</span>  React 18 · Router 6 · TanStack Query 5 · Tailwind  <span class="dim">│</span>
+<span class="dim">│</span>  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────────────┐     <span class="dim">│</span>
+<span class="dim">│</span>  │ 18 Pages │ │26 Comps  │ │api/client│ │ types/index   │     <span class="dim">│</span>
+<span class="dim">│</span>  │(lazy-load)│ │(flat dir)│ │(572 LOC) │ │ (635 LOC)     │     <span class="dim">│</span>
+<span class="dim">│</span>  └──────────┘ └──────────┘ └──────────┘ └───────────────┘     <span class="dim">│</span>
+<span class="dim">└────────────────────────────────────────────────────────────────┘</span></div>
+
+<h3>Architecture Scorecard</h3>
+<div class="score-row">
+  <div class="score-item"><div class="label">Layer Separation</div><div class="val" style="color:var(--green);">A-</div></div>
+  <div class="score-item"><div class="label">Dependency Direction</div><div class="val" style="color:var(--green);">A</div></div>
+  <div class="score-item"><div class="label">Testability</div><div class="val" style="color:var(--yellow);">B-</div></div>
+  <div class="score-item"><div class="label">Scalability</div><div class="val" style="color:var(--orange);">C+</div></div>
+  <div class="score-item"><div class="label">Maintainability</div><div class="val" style="color:var(--yellow);">B</div></div>
+  <div class="score-item"><div class="label">Security</div><div class="val" style="color:var(--yellow);">B-</div></div>
+</div>
+
+<!-- ============ WHAT'S WORKING ============ -->
+<h2>2. What's Working Well</h2>
+
+<div class="grid2">
+  <div class="card card-green">
+    <h4>Clean dependency flow</h4>
+    <p>Routes → Services → Models → DB. Services never import from web layer. No circular dependencies (one deferred import in linkedin_actions).</p>
+  </div>
+  <div class="card card-green">
+    <h4>Services are pure & testable</h4>
+    <p>All services accept <code>conn</code> as first param. No global state, no side effects beyond DB writes. Can be unit-tested with a test database.</p>
+  </div>
+  <div class="card card-green">
+    <h4>Lightweight CRUD layer</h4>
+    <p>Raw psycopg2 with <code>RealDictCursor</code> — no ORM overhead. SQL is explicit and optimizable. Window functions in priority_queue work cleanly.</p>
+  </div>
+  <div class="card card-green">
+    <h4>Frontend: React Query as data layer</h4>
+    <p>Server state cleanly separated from UI state. No Redux needed. Stale-while-revalidate, cache invalidation on mutations, lazy page loading all in place.</p>
+  </div>
+  <div class="card card-green">
+    <h4>Type safety throughout</h4>
+    <p>Frontend: TypeScript strict mode, all API responses typed (635 LOC of types). Backend: Pydantic request models in FastAPI routes.</p>
+  </div>
+  <div class="card card-green">
+    <h4>Defensive migration pattern</h4>
+    <p>Migrations run on every command/startup. <code>CREATE TABLE IF NOT EXISTS</code> makes them idempotent. No external migration tool needed.</p>
+  </div>
+</div>
+
+<!-- ============ STRUCTURAL ISSUES ============ -->
+<h2>3. Structural Issues</h2>
+
+<div class="card card-red">
+  <h3>3.1 Routes contain business logic</h3>
+  <p>Route handlers in <code>queue.py</code> (140+ lines) do batch fetching, template rendering, AUM filtering, and firm-type grouping. This logic should live in an application service layer, not the HTTP handler. It can't be reused from CLI commands.</p>
+  <p><strong>Impact:</strong> Code duplication between CLI and web, routes are hard to test, business logic tied to HTTP context.</p>
+</div>
+
+<div class="card card-orange">
+  <h3>3.2 Monolithic CRUD module</h3>
+  <p><code>models/campaigns.py</code> is 1,000+ lines handling campaigns, templates, contacts, events, enrollments, and sequence steps. Finding a function requires scrolling through unrelated CRUD.</p>
+  <p><strong>Impact:</strong> Navigation friction, merge conflicts, cognitive load.</p>
+</div>
+
+<div class="card card-orange">
+  <h3>3.3 No application service / orchestration layer</h3>
+  <p>Routes call services directly, sometimes composing 3-4 service calls with their own transaction logic. There's no intermediate layer to orchestrate multi-service operations.</p>
+  <p><strong>Impact:</strong> Routes become fat, transaction boundaries are ad-hoc, CLI and web can't share orchestration logic.</p>
+</div>
+
+<div class="card card-orange">
+  <h3>3.4 No background job system</h3>
+  <p>All operations are request-scoped. Gmail scanning, bulk email, AI analysis, and metric computation must be triggered by a user action or external cron. Long-running tasks block the web server.</p>
+  <p><strong>Impact:</strong> Limits scalability, no scheduled automation, poor UX for slow operations.</p>
+</div>
+
+<div class="card card-orange">
+  <h3>3.5 Frontend: flat component directory at scale</h3>
+  <p>26 components in a flat <code>/components/</code> folder with no feature-based grouping. API client is 572 lines with 100+ methods in a single flat object. No query key factory, no constants file.</p>
+  <p><strong>Impact:</strong> Hard to navigate, duplicate constants in 4+ pages, magic strings for query keys.</p>
+</div>
+
+<!-- ============ ADR 1 ============ -->
+<h2>4. Architecture Decision Records</h2>
+
+<div class="adr">
+  <div class="adr-header">
+    <div class="adr-title">ADR-001: Introduce Application Service Layer</div>
+    <div class="adr-status">Proposed</div>
+  </div>
+  <p><strong>Date:</strong> 16 Mar 2026 &nbsp;|&nbsp; <strong>Deciders:</strong> Backend lead</p>
+
+  <h4>Context</h4>
+  <p>Route handlers in <code>queue.py</code>, <code>contacts.py</code>, and <code>deals.py</code> perform multi-service orchestration (batch fetching, template rendering, compliance checks, state transitions). This logic can't be reused from CLI commands. CLI commands duplicate some of this orchestration in <code>src/commands/</code>.</p>
+
+  <h4>Decision</h4>
+  <p>Create <code>src/application/</code> with orchestration services that compose domain services. Routes become thin HTTP adapters; CLI commands call the same application services.</p>
+
+  <div class="diagram"><span class="hl">PROPOSED STRUCTURE</span>
+
+src/application/
+├── queue_app.py       <span class="dim"># get_daily_queue() — composes priority_queue + template_engine + compliance</span>
+├── contact_app.py     <span class="dim"># create_contact() — composes normalization + dedup + enrollment</span>
+├── import_app.py      <span class="dim"># import_csv() — composes import + dedup + verification</span>
+└── campaign_app.py    <span class="dim"># send_batch() — composes email_sender + state_machine + metrics</span>
+
+<span class="dim">Routes:  route → app_service → [service₁, service₂, ...] → models → DB</span>
+<span class="dim">CLI:     command → app_service → [service₁, service₂, ...] → models → DB</span></div>
+
+  <h4>Options Considered</h4>
+  <table>
+    <tr><th>Dimension</th><th>A: App Service Layer</th><th>B: Keep Routes Fat</th><th>C: Move Logic to Services</th></tr>
+    <tr><td>Complexity</td><td>Medium (new layer)</td><td>Low (status quo)</td><td>Medium (services grow)</td></tr>
+    <tr><td>Code reuse CLI↔Web</td><td><span class="verdict good">Full</span></td><td><span class="verdict poor">None</span></td><td><span class="verdict fair">Partial</span></td></tr>
+    <tr><td>Testability</td><td><span class="verdict good">High</span> — test app services</td><td><span class="verdict poor">Low</span> — must mock HTTP</td><td><span class="verdict fair">Medium</span></td></tr>
+    <tr><td>Transaction clarity</td><td><span class="verdict good">Explicit</span> in app service</td><td><span class="verdict poor">Ad-hoc</span> in routes</td><td><span class="verdict fair">Implicit</span></td></tr>
+  </table>
+
+  <h4>Trade-off Analysis</h4>
+  <p>Option A adds a thin layer (~500 lines) but eliminates ~300 lines of duplicated orchestration between CLI and web. Transaction boundaries become explicit. The downside is indirection — developers must look in <code>application/</code> for business logic instead of routes.</p>
+
+  <h4>Consequences</h4>
+  <p><strong>Easier:</strong> Testing orchestration logic, reusing logic from CLI, understanding transaction boundaries.<br>
+  <strong>Harder:</strong> Tracing a request through one more layer, deciding what's "orchestration" vs "service logic".<br>
+  <strong>Revisit:</strong> If the app service layer grows beyond 6-8 files, consider whether some should merge back into domain services.</p>
+
+  <h4>Action Items</h4>
+  <p>1. Create <code>src/application/queue_app.py</code> by extracting from <code>routes/queue.py</code> (highest LOC).<br>
+  2. Move batch-fetch + render logic from queue route into app service.<br>
+  3. Update CLI <code>queue</code> command to call app service.<br>
+  4. Repeat for contacts, campaigns. Estimated effort: 6-8 hours.</p>
+</div>
+
+<!-- ============ ADR 2 ============ -->
+<div class="adr">
+  <div class="adr-header">
+    <div class="adr-title">ADR-002: Split CRUD Layer into Domain Repositories</div>
+    <div class="adr-status">Proposed</div>
+  </div>
+  <p><strong>Date:</strong> 16 Mar 2026 &nbsp;|&nbsp; <strong>Deciders:</strong> Backend lead</p>
+
+  <h4>Context</h4>
+  <p><code>models/campaigns.py</code> is 1,000+ lines containing CRUD for campaigns, templates, contacts, events, enrollments, and sequence steps. Finding a function requires scrolling through unrelated operations. The file is a frequent source of merge conflicts.</p>
+
+  <h4>Decision</h4>
+  <p>Split into focused repository modules with a shared base pattern for cursor management.</p>
+
+  <div class="diagram"><span class="hl">PROPOSED STRUCTURE</span>
+
+src/repositories/
+├── base.py              <span class="dim"># execute_query(), fetch_one(), fetch_all() helpers</span>
+├── campaign_repo.py     <span class="dim"># campaigns, sequence_steps (~200 LOC)</span>
+├── template_repo.py     <span class="dim"># templates, variant management (~150 LOC)</span>
+├── contact_repo.py      <span class="dim"># contacts, enrollment, status (~250 LOC)</span>
+├── event_repo.py        <span class="dim"># events, dedup_log (~150 LOC)</span>
+└── company_repo.py      <span class="dim"># companies (~100 LOC)</span></div>
+
+  <h4>Options Considered</h4>
+  <table>
+    <tr><th>Dimension</th><th>A: Split Repositories</th><th>B: Add ORM (SQLAlchemy)</th><th>C: Keep Monolith</th></tr>
+    <tr><td>Migration effort</td><td>4 hrs (move + re-import)</td><td>20+ hrs (rewrite all SQL)</td><td>0 hrs</td></tr>
+    <tr><td>SQL flexibility</td><td><span class="verdict good">Full</span> — same raw SQL</td><td><span class="verdict fair">Reduced</span> — ORM abstracts</td><td><span class="verdict good">Full</span></td></tr>
+    <tr><td>Discoverability</td><td><span class="verdict good">High</span> — domain-scoped files</td><td><span class="verdict good">High</span> — model classes</td><td><span class="verdict poor">Low</span> — 1000 lines</td></tr>
+    <tr><td>Cursor boilerplate</td><td><span class="verdict good">Eliminated</span> via base.py</td><td><span class="verdict good">Eliminated</span> via session</td><td><span class="verdict poor">Repeated 40+ times</span></td></tr>
+  </table>
+
+  <h4>Trade-off Analysis</h4>
+  <p>Option A is the lowest-risk change — it's a pure refactor (move functions to new files, update imports). Option B (ORM) would be cleaner long-term but is a massive rewrite with risk of breaking complex SQL (window functions, CTEs). Option C is free but the file will only grow.</p>
+
+  <h4>Consequences</h4>
+  <p><strong>Easier:</strong> Finding CRUD functions, reducing merge conflicts, writing focused tests.<br>
+  <strong>Harder:</strong> Import paths change (one-time cost to update all callers).<br>
+  <strong>Revisit:</strong> If repository count exceeds 8, consider consolidation.</p>
+
+  <h4>Action Items</h4>
+  <p>1. Create <code>src/repositories/base.py</code> with <code>fetch_one()</code>, <code>fetch_all()</code>, <code>execute()</code> helpers.<br>
+  2. Split <code>campaigns.py</code> into 5 repository files, keeping existing function signatures.<br>
+  3. Update all imports across services and routes (use IDE refactor).<br>
+  4. Re-export from <code>models/campaigns.py</code> for backwards compatibility during transition. Estimated effort: 4 hours.</p>
+</div>
+
+<!-- ============ ADR 3 ============ -->
+<div class="adr">
+  <div class="adr-header">
+    <div class="adr-title">ADR-003: Add Background Job System</div>
+    <div class="adr-status">Proposed</div>
+  </div>
+  <p><strong>Date:</strong> 16 Mar 2026 &nbsp;|&nbsp; <strong>Deciders:</strong> Backend lead, DevOps</p>
+
+  <h4>Context</h4>
+  <p>All operations are request-scoped. Gmail reply scanning (10-30s), bulk email sends (variable), AI analysis (60s+), and metric computation block the web server. Scheduled tasks require external cron. The research job system already needs polling for status updates.</p>
+
+  <h4>Decision</h4>
+  <p>Add a lightweight task queue. Start with <strong>APScheduler + in-process workers</strong> for simplicity. Migrate to Celery + Redis only if task volume exceeds ~100/day.</p>
+
+  <h4>Options Considered</h4>
+  <table>
+    <tr><th>Dimension</th><th>A: APScheduler (in-process)</th><th>B: Celery + Redis</th><th>C: External Cron</th></tr>
+    <tr><td>Setup complexity</td><td><span class="verdict good">Low</span> — pip install, config</td><td><span class="verdict fair">Medium</span> — Redis infra needed</td><td><span class="verdict good">Low</span> — crontab</td></tr>
+    <tr><td>Scalability</td><td><span class="verdict fair">~100 tasks/day</span></td><td><span class="verdict good">Thousands/day</span></td><td><span class="verdict poor">Manual only</span></td></tr>
+    <tr><td>Job visibility</td><td><span class="verdict fair">Logs only</span></td><td><span class="verdict good">Flower dashboard</span></td><td><span class="verdict poor">None</span></td></tr>
+    <tr><td>Retry/dead-letter</td><td><span class="verdict fair">Basic</span></td><td><span class="verdict good">Full</span></td><td><span class="verdict poor">None</span></td></tr>
+    <tr><td>Deployment change</td><td>None (same process)</td><td>+1 worker, +Redis</td><td>None</td></tr>
+  </table>
+
+  <h4>Trade-off Analysis</h4>
+  <p>APScheduler runs inside the FastAPI process, avoiding infrastructure changes. It handles the 4-5 scheduled tasks (reply scan, metric refresh, daily queue prep, email batch). If task volume grows or we need distributed workers, migrate to Celery — the task functions stay the same, only the dispatch changes.</p>
+
+  <h4>Candidate Tasks</h4>
+  <table>
+    <tr><th>Task</th><th>Current Trigger</th><th>Proposed Schedule</th></tr>
+    <tr><td>Gmail reply scan</td><td>Manual button click</td><td>Every 15 min</td></tr>
+    <tr><td>LinkedIn acceptance scan</td><td>Manual CLI command</td><td>Every 30 min</td></tr>
+    <tr><td>Metrics refresh</td><td>On page load (slow)</td><td>Every 5 min (cached)</td></tr>
+    <tr><td>Bulk email send</td><td>Sync in request</td><td>Background job with progress</td></tr>
+    <tr><td>AI analysis</td><td>Sync in request (blocks 60s)</td><td>Background job with polling</td></tr>
+  </table>
+
+  <h4>Action Items</h4>
+  <p>1. Add <code>apscheduler</code> to dependencies.<br>
+  2. Create <code>src/jobs/scheduler.py</code> with job definitions.<br>
+  3. Wire into FastAPI lifespan (start on startup, shutdown on exit).<br>
+  4. Convert Gmail scan and AI analysis to background tasks first. Estimated effort: 8 hours.</p>
+</div>
+
+<!-- ============ ADR 4 ============ -->
+<div class="adr">
+  <div class="adr-header">
+    <div class="adr-title">ADR-004: Reorganize Frontend into Feature Modules</div>
+    <div class="adr-status">Proposed</div>
+  </div>
+  <p><strong>Date:</strong> 16 Mar 2026 &nbsp;|&nbsp; <strong>Deciders:</strong> Frontend lead</p>
+
+  <h4>Context</h4>
+  <p>The frontend has 18 pages, 26 components, a 572-line API client, and a 635-line types file — all in flat directories. Constants (lifecycle stages, status colors) are duplicated in 4+ pages. Query keys are magic strings. As the app grows, this structure becomes harder to navigate.</p>
+
+  <h4>Decision</h4>
+  <p>Reorganize into feature modules with shared infrastructure. Don't move to a monorepo or framework — just restructure within the existing Vite + React setup.</p>
+
+  <div class="diagram"><span class="hl">PROPOSED STRUCTURE</span>
+
+frontend/src/
+├── api/
+│   ├── client.ts        <span class="dim"># Base request() function only (~50 LOC)</span>
+│   ├── queue.ts          <span class="dim"># Queue-specific endpoints</span>
+│   ├── contacts.ts       <span class="dim"># Contact endpoints</span>
+│   ├── campaigns.ts      <span class="dim"># Campaign endpoints</span>
+│   └── index.ts          <span class="dim"># Re-exports all APIs</span>
+├── constants/
+│   ├── statuses.ts       <span class="dim"># ContactStatus, LifecycleStage unions</span>
+│   ├── queryKeys.ts      <span class="dim"># Typed query key factory</span>
+│   └── colors.ts         <span class="dim"># Status→color mappings</span>
+├── hooks/
+│   ├── useForm.ts        <span class="dim"># Generic form hook</span>
+│   ├── useModal.ts       <span class="dim"># Modal open/close state</span>
+│   └── usePagination.ts  <span class="dim"># Shared pagination logic</span>
+├── components/
+│   ├── shared/           <span class="dim"># Badges, buttons, DataTable, skeleton</span>
+│   ├── queue/            <span class="dim"># QueueEmailCard, QueueLinkedInCard</span>
+│   ├── contacts/         <span class="dim"># ContactForm, ContactTimeline</span>
+│   └── pipeline/         <span class="dim"># StageColumn, DealCard, PipelineFilters</span>
+├── pages/                <span class="dim"># Thin page shells (import from features)</span>
+└── types/
+    ├── contacts.ts       <span class="dim"># Contact, Company types</span>
+    ├── queue.ts           <span class="dim"># QueueItem, QueueResponse</span>
+    └── index.ts           <span class="dim"># Re-exports</span></div>
+
+  <h4>Options Considered</h4>
+  <table>
+    <tr><th>Dimension</th><th>A: Feature Modules</th><th>B: Full Feature Slices</th><th>C: Keep Flat</th></tr>
+    <tr><td>Migration effort</td><td>6 hrs (move + update imports)</td><td>16 hrs (restructure everything)</td><td>0 hrs</td></tr>
+    <tr><td>Discoverability</td><td><span class="verdict good">Good</span> — domain folders</td><td><span class="verdict good">Best</span> — self-contained</td><td><span class="verdict fair">Declining</span></td></tr>
+    <tr><td>Refactoring risk</td><td><span class="verdict good">Low</span> — moves only</td><td><span class="verdict fair">Medium</span> — new patterns</td><td><span class="verdict good">None</span></td></tr>
+    <tr><td>Scales to 50+ components</td><td><span class="verdict good">Yes</span></td><td><span class="verdict good">Yes</span></td><td><span class="verdict poor">No</span></td></tr>
+  </table>
+
+  <h4>Trade-off Analysis</h4>
+  <p>Option A is a series of safe file moves. It doesn't introduce new patterns (no barrel imports required, no circular dependency risk). Option B (full feature slices where each feature owns its own types, hooks, API) is cleaner but requires more upfront work and discipline. Option C is free but the flat structure degrades as components grow past 30-40.</p>
+
+  <h4>Action Items</h4>
+  <p>1. Create <code>constants/queryKeys.ts</code> + <code>constants/statuses.ts</code> — immediate dedup win.<br>
+  2. Split <code>api/client.ts</code> into domain files (queue, contacts, campaigns, etc.).<br>
+  3. Move feature-specific components into subdirectories.<br>
+  4. Extract <code>useForm</code> hook from modal patterns. Estimated effort: 6 hours.</p>
+</div>
+
+<!-- ============ PROPOSED ARCHITECTURE ============ -->
+<h2>5. Target Architecture (After ADRs)</h2>
+
+<div class="diagram"><span class="hl">PROPOSED ARCHITECTURE</span>
+
+<span class="dim">┌────────────────────────────────────────────────────────────────┐</span>
+<span class="dim">│</span>  <span class="hl">ENTRY POINTS</span>                                                 <span class="dim">│</span>
+<span class="dim">│</span>  ┌──────────┐   ┌──────────────┐   ┌──────────────────┐       <span class="dim">│</span>
+<span class="dim">│</span>  │ Typer CLI │   │ FastAPI Web   │   │ <span class="warn">APScheduler Jobs</span> │       <span class="dim">│</span>
+<span class="dim">│</span>  └────┬─────┘   └──────┬───────┘   └────────┬─────────┘       <span class="dim">│</span>
+<span class="dim">│</span>       │                │                    │                  <span class="dim">│</span>
+<span class="dim">│</span>       └────────────────┼────────────────────┘                  <span class="dim">│</span>
+<span class="dim">│</span>                        ▼                                       <span class="dim">│</span>
+<span class="dim">│</span>  <span class="warn">APPLICATION SERVICES</span> (new layer)                               <span class="dim">│</span>
+<span class="dim">│</span>  ┌──────────────────────────────────────────────────────┐      <span class="dim">│</span>
+<span class="dim">│</span>  │ queue_app · contact_app · campaign_app · import_app  │      <span class="dim">│</span>
+<span class="dim">│</span>  │ Orchestrates services, owns transaction boundaries    │      <span class="dim">│</span>
+<span class="dim">│</span>  └───────────────────────┬──────────────────────────────┘      <span class="dim">│</span>
+<span class="dim">│</span>                          ▼                                      <span class="dim">│</span>
+<span class="dim">│</span>  <span class="hl">DOMAIN SERVICES</span> (unchanged)                                    <span class="dim">│</span>
+<span class="dim">│</span>  ┌──────────────────────────────────────────────────────┐      <span class="dim">│</span>
+<span class="dim">│</span>  │ priority_queue · state_machine · email_sender · etc  │      <span class="dim">│</span>
+<span class="dim">│</span>  └───────────────────────┬──────────────────────────────┘      <span class="dim">│</span>
+<span class="dim">│</span>                          ▼                                      <span class="dim">│</span>
+<span class="dim">│</span>  <span class="warn">REPOSITORIES</span> (split from campaigns.py)                        <span class="dim">│</span>
+<span class="dim">│</span>  ┌──────────────────────────────────────────────────────┐      <span class="dim">│</span>
+<span class="dim">│</span>  │ campaign_repo · template_repo · contact_repo · etc   │      <span class="dim">│</span>
+<span class="dim">│</span>  │ base.py — shared cursor helpers                      │      <span class="dim">│</span>
+<span class="dim">│</span>  └───────────────────────┬──────────────────────────────┘      <span class="dim">│</span>
+<span class="dim">│</span>                          ▼                                      <span class="dim">│</span>
+<span class="dim">│</span>  <span class="hl">DATABASE</span>  PostgreSQL · ThreadedPool · <span class="warn">Migration State Table</span>  <span class="dim">│</span>
+<span class="dim">└────────────────────────────────────────────────────────────────┘</span>
+
+<span class="warn">▲ YELLOW = new/changed layers</span></div>
+
+<!-- ============ IMPLEMENTATION ROADMAP ============ -->
+<h2>6. Implementation Roadmap</h2>
+
+<div class="card card-accent">
+  <h4>Sprint 1 (Week 1-2) — Foundation</h4>
+  <p><strong>ADR-002:</strong> Split <code>campaigns.py</code> into repositories + create <code>base.py</code> cursor helpers.<br>
+  <strong>Frontend:</strong> Create <code>constants/</code> and <code>hooks/</code> directories. Move lifecycle stages, query keys, status colors to shared files.<br>
+  <strong>Effort:</strong> ~10 hours. <strong>Risk:</strong> Low (pure refactoring, no behavior change).</p>
+</div>
+
+<div class="card card-accent">
+  <h4>Sprint 2 (Week 3-4) — Application Layer</h4>
+  <p><strong>ADR-001:</strong> Create <code>src/application/</code>. Start with <code>queue_app.py</code> (highest ROI — 140-line route becomes 20-line handler).<br>
+  <strong>Frontend:</strong> Split <code>api/client.ts</code> into domain modules. Decompose ContactDetail, Pipeline, ResearchJobDetail.<br>
+  <strong>Effort:</strong> ~16 hours. <strong>Risk:</strong> Medium (new abstraction layer, needs team buy-in).</p>
+</div>
+
+<div class="card card-accent">
+  <h4>Sprint 3 (Week 5-6) — Background Jobs</h4>
+  <p><strong>ADR-003:</strong> Add APScheduler. Convert Gmail scan and AI analysis to background tasks. Add job status API endpoint.<br>
+  <strong>Frontend:</strong> Feature-folder reorganization for components.<br>
+  <strong>Effort:</strong> ~14 hours. <strong>Risk:</strong> Medium (new infrastructure, but contained).</p>
+</div>
+
+<div class="card card-accent">
+  <h4>Sprint 4 (Week 7-8) — Polish & Validate</h4>
+  <p>Verify all ADRs landed correctly. Add tests for new application services. Update CLAUDE.md with new architecture. Clean up deprecated imports.<br>
+  <strong>Effort:</strong> ~8 hours. <strong>Risk:</strong> Low.</p>
+</div>
+
+<h2>7. Architecture Principles Going Forward</h2>
+
+<div class="grid2">
+  <div class="card card-purple">
+    <h4>Dependency Rule</h4>
+    <p>Dependencies always point inward: Routes → App Services → Domain Services → Repositories → DB. Never import outward.</p>
+  </div>
+  <div class="card card-purple">
+    <h4>Transaction Ownership</h4>
+    <p>Application services own transaction boundaries. Domain services never call <code>conn.commit()</code>. Routes never call services directly for multi-step operations.</p>
+  </div>
+  <div class="card card-purple">
+    <h4>Single Responsibility per File</h4>
+    <p>No file exceeds 400 lines. When it does, split by domain or responsibility. God modules are the #1 maintainability killer.</p>
+  </div>
+  <div class="card card-purple">
+    <h4>Constants Over Strings</h4>
+    <p>All status values, channel types, and lifecycle stages must come from a shared constants module. No magic strings in business logic.</p>
+  </div>
+</div>
+
+<footer>
+  Architecture review generated from full codebase analysis on 16 Mar 2026. Backend: 31 service modules (~5,900 LOC), 18 route modules, 1 CRUD module. Frontend: 18 pages, 26 components, 1 API client (572 LOC). Database: PostgreSQL via Supabase, 12 migration files.
+</footer>
+
+</div>
+</body>
+</html>

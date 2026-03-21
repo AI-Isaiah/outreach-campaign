@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Codebase Audit Report — Outreach Campaign Manager</title>
+<style>
+  :root { --bg: #f9fafb; --card: #fff; --border: #e5e7eb; --text: #111827; --muted: #6b7280; --accent: #2563eb; --red: #dc2626; --orange: #d97706; --yellow: #ca8a04; --green: #16a34a; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+  .container { max-width: 960px; margin: 0 auto; padding: 2rem 1.5rem; }
+  h1 { font-size: 1.75rem; font-weight: 700; margin-bottom: 0.25rem; }
+  .subtitle { color: var(--muted); font-size: 0.95rem; margin-bottom: 2rem; }
+  h2 { font-size: 1.25rem; font-weight: 700; margin: 2.5rem 0 1rem; padding-bottom: 0.5rem; border-bottom: 2px solid var(--border); }
+  h3 { font-size: 1.05rem; font-weight: 600; margin: 1.5rem 0 0.5rem; }
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin: 1.5rem 0; }
+  .summary-card { background: var(--card); border-radius: 8px; padding: 1.25rem; border-left: 4px solid var(--border); }
+  .summary-card.critical { border-left-color: var(--red); }
+  .summary-card.high { border-left-color: var(--orange); }
+  .summary-card.medium { border-left-color: var(--yellow); }
+  .summary-card.low { border-left-color: var(--green); }
+  .summary-card .label { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 600; }
+  .summary-card .value { font-size: 1.75rem; font-weight: 700; }
+  .issue { background: var(--card); border-radius: 8px; padding: 1.25rem; margin: 0.75rem 0; border: 1px solid var(--border); }
+  .issue .meta { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
+  .badge { display: inline-block; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; padding: 2px 8px; border-radius: 999px; }
+  .badge.critical { background: #fef2f2; color: var(--red); }
+  .badge.high { background: #fff7ed; color: var(--orange); }
+  .badge.medium { background: #fefce8; color: var(--yellow); }
+  .badge.low { background: #f0fdf4; color: var(--green); }
+  .badge.perf { background: #eff6ff; color: var(--accent); }
+  .badge.bug { background: #fef2f2; color: var(--red); }
+  .badge.quality { background: #f5f3ff; color: #7c3aed; }
+  .badge.backend { background: #f0f9ff; color: #0369a1; }
+  .badge.frontend { background: #fdf4ff; color: #a21caf; }
+  .badge.db { background: #ecfdf5; color: #047857; }
+  .file { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.8rem; color: var(--muted); }
+  .issue p { margin: 0.4rem 0; font-size: 0.92rem; }
+  .fix { background: #f0fdf4; border-radius: 6px; padding: 0.75rem 1rem; margin-top: 0.5rem; font-size: 0.88rem; }
+  .fix strong { color: var(--green); }
+  code { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.85em; background: #f3f4f6; padding: 1px 5px; border-radius: 3px; }
+  pre { background: #1f2937; color: #e5e7eb; padding: 1rem; border-radius: 6px; overflow-x: auto; font-size: 0.82rem; margin: 0.5rem 0; }
+  pre code { background: none; padding: 0; }
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.9rem; }
+  th, td { padding: 0.6rem 0.75rem; text-align: left; border-bottom: 1px solid var(--border); }
+  th { background: #f9fafb; font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+  .priority-table td:first-child { font-weight: 600; }
+  .section-intro { color: var(--muted); font-size: 0.92rem; margin-bottom: 1rem; }
+  .tag-group { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Codebase Audit Report</h1>
+<p class="subtitle">Outreach Campaign Manager — Full-stack review (Python + React + PostgreSQL) — March 13, 2026</p>
+
+<div class="summary-grid">
+  <div class="summary-card critical"><div class="label">Critical</div><div class="value">7</div></div>
+  <div class="summary-card high"><div class="label">High</div><div class="value">14</div></div>
+  <div class="summary-card medium"><div class="label">Medium</div><div class="value">24</div></div>
+  <div class="summary-card low"><div class="label">Low</div><div class="value">18</div></div>
+</div>
+
+<h2>Critical Issues</h2>
+<p class="section-intro">Issues that cause performance degradation, data corruption, or resource exhaustion under normal usage.</p>
+
+<div class="issue">
+  <div class="meta">
+    <span class="badge critical">Critical</span>
+    <span class="badge perf">Performance</span>
+    <span class="badge backend">Backend</span>
+  </div>
+  <h3>N+1 Query Pattern in Queue Endpoint</h3>
+  <p class="file">src/web/routes/queue.py — lines 104-175</p>
+  <p>For each contact in the queue, the route runs separate queries for Gmail draft status and LinkedIn URL. With limit=25, that's 50+ extra DB round-trips per request. Dashboard becomes sluggish under normal use.</p>
+  <div class="fix"><strong>Fix:</strong> Batch-load all contact IDs upfront with <code>WHERE contact_id IN (...)</code> for both gmail_drafts and contacts tables.</div>
+</div>
+
+<div class="issue">
+  <div class="meta">
+    <span class="badge critical">Critical</span>
+    <span class="badge perf">Performance</span>
+    <span class="badge backend">Backend</span>
+  </div>
+  <h3>N+1 Query Pattern in import_expandi.py</h3>
+  <p class="file">src/commands/import_expandi.py — lines 169-252</p>
+  <p>For each CSV row, individual SELECT queries find contacts and campaign status. A 1,000-row CSV causes 3,000+ round-trips instead of batch operations.</p>
+  <div class="fix"><strong>Fix:</strong> Pre-fetch all contacts by <code>linkedin_url_normalized</code> into a dict before the loop, then do O(1) lookups.</div>
+</div>
+
+<div class="issue">
+  <div class="meta">
+    <span class="badge critical">Critical</span>
+    <span class="badge bug">Bug</span>
+    <span class="badge backend">Backend</span>
+  </div>
+  <h3>Unclosed Cursors — Connection Pool Exhaustion</h3>
+  <p class="file">Multiple files: reply_detector.py, whatsapp_scanner.py, template_engine.py, import_contacts.py, ab_testing.py, email_verifier.py</p>
+  <p>Cursors created via <code>conn.cursor()</code> but never explicitly closed. Under concurrent load, this pins connections in the pool until garbage collection runs, eventually exhausting available connections.</p>
+  <div class="fix"><strong>Fix:</strong> Add <code>cursor.close()</code> in <code>finally</code> blocks or use Python context managers throughout.</div>
+</div>
+
+<div class="issue">
+  <div class="meta">
+    <span class="badge critical">Critical</span>
+    <span class="badge bug">Bug</span>
+    <span class="badge backend">Backend</span>
+  </div>
+  <h3>Race Condition in LinkedIn Acceptance Dedup</h3>
+  <p class="file">src/services/linkedin_acceptance_scanner.py — lines 246-255</p>
+  <p>Check-then-insert pattern using <code>metadata LIKE %msg_id%</code> is not atomic. Concurrent scans could process the same acceptance twice, advancing the sequence step twice.</p>
+  <div class="fix"><strong>Fix:</strong> Use a unique constraint or <code>INSERT ... ON CONFLICT</code> pattern for deduplication instead of check-then-insert.</div>
+</div>
+
+<div class="issue">
+  <div class="meta">
+    <span class="badge critical">Critical</span>
+    <span class="badge perf">Performance</span>
+    <span class="badge backend">Backend</span>
+  </div>
+  <h3>N+1 Query in LinkedIn Acceptance Scanner</h3>
+  <p class="file">src/services/linkedin_acceptance_scanner.py — lines 199-214</p>
+  <p>For each of 50 matched messages, separate queries fetch enrollments and sequence steps. Results in 400+ unnecessary queries per scan.</p>
+  <div class="fix"><strong>Fix:</strong> Batch-load enrollments and cache sequence steps per campaign_id.</div>
+</div>
+
+<div class="issue">
+  <div class="meta">
+    <span class="badge critical">Critical</span>
+    <span class="badge bug">Bug</span>
+    <span class="badge frontend">Frontend</span>
+  </div>
+  <h3>Missing Null Safety on API Responses</h3>
+  <p class="file">frontend/src/pages/CampaignDetail.tsx — line 22</p>
+  <p>Destructures <code>{ campaign, metrics, variants, weekly, firm_breakdown }</code> without null checks. If backend returns incomplete data, accessing <code>metrics.by_status</code> crashes the page.</p>
+  <div class="fix"><strong>Fix:</strong> Add optional chaining: <code>metrics?.by_status || {}</code> and default values for all destructured fields.</div>
+</div>
+
+<div class="issue">
+  <div class="meta">
+    <span class="badge critical">Critical</span>
+    <span class="badge bug">Bug</span>
+    <span class="badge frontend">Frontend</span>
+  </div>
+  <h3>Memory Leak in GlobalSearchBar</h3>
+  <p class="file">frontend/src/components/GlobalSearchBar.tsx — lines 14-43</p>
+  <p>Pending fetch requests complete on unmounted component, causing React state update warnings. No AbortController used.</p>
+  <div class="fix"><strong>Fix:</strong> Add AbortController to the fetch and abort in the cleanup function.</div>
+</div>
+
+<h2>High-Severity Issues</h2>
+<p class="section-intro">Issues that affect reliability, data quality, or user experience under edge conditions.</p>
+
+<div class="issue">
+  <div class="meta"><span class="badge high">High</span><span class="badge bug">Bug</span><span class="badge backend">Backend</span></div>
+  <h3>Missing Transaction Boundaries in CSV Import</h3>
+  <p class="file">src/commands/import_contacts.py — lines 171-209</p>
+  <p>Entire CSV import runs in a single transaction. If row 500 of 875 fails, all 499 previous inserts roll back with no resume capability.</p>
+  <div class="fix"><strong>Fix:</strong> Use savepoints per company/contact batch, track failed rows, allow resume from last success.</div>
+</div>
+
+<div class="issue">
+  <div class="meta"><span class="badge high">High</span><span class="badge bug">Bug</span><span class="badge backend">Backend</span></div>
+  <h3>Silent Failures in External API Calls</h3>
+  <p class="file">src/services/email_verifier.py — lines 110-145</p>
+  <p>ZeroBounce/Hunter API errors silently mark all emails as "unknown" without logging details. No API key validation at startup. Configuration issues go undetected.</p>
+  <div class="fix"><strong>Fix:</strong> Add structured logging, validate API keys on first use, implement retry with backoff.</div>
+</div>
+
+<div class="issue">
+  <div class="meta"><span class="badge high">High</span><span class="badge bug">Bug</span><span class="badge backend">Backend</span></div>
+  <h3>No Transaction Isolation for State Machine</h3>
+  <p class="file">src/services/state_machine.py, linkedin_acceptance_scanner.py</p>
+  <p>Concurrent campaign operations could interleave contact status updates. PostgreSQL defaults to READ COMMITTED, allowing race conditions in step advancement.</p>
+  <div class="fix"><strong>Fix:</strong> Use <code>SELECT ... FOR UPDATE</code> or advisory locks on contact_id during state transitions.</div>
+</div>
+
+<div class="issue">
+  <div class="meta"><span class="badge high">High</span><span class="badge db">Database</span></div>
+  <h3>Missing Performance Indexes</h3>
+  <p class="file">migrations/pg/</p>
+  <p>Several frequently-queried columns lack indexes: <code>pending_replies.confirmed</code>, <code>response_notes.note_type</code>, <code>whatsapp_messages.direction</code>, <code>templates(is_active, channel)</code> composite, <code>dedup_log</code> columns.</p>
+  <div class="fix"><strong>Fix:</strong> Add a new migration (008) with targeted indexes on these columns.</div>
+</div>
+
+<div class="issue">
+  <div class="meta"><span class="badge high">High</span><span class="badge quality">Quality</span><span class="badge frontend">Frontend</span></div>
+  <h3>40+ <code>any</code> Types in API Client</h3>
+  <p class="file">frontend/src/api/client.ts — throughout</p>
+  <p>Most API methods return <code>request&lt;any&gt;()</code>, defeating TypeScript. Refactoring is risky and bugs are hidden at compile time.</p>
+  <div class="fix"><strong>Fix:</strong> Define response types for all endpoints and replace <code>any</code> with proper generics.</div>
+</div>
+
+<div class="issue">
+  <div class="meta"><span class="badge high">High</span><span class="badge bug">Bug</span><span class="badge frontend">Frontend</span></div>
+  <h3>Missing Error UI for Pipeline Drag-and-Drop</h3>
+  <p class="file">frontend/src/pages/Pipeline.tsx — lines 406-442</p>
+  <p>Stage mutation has rollback logic but never shows users that an error occurred. Deals silently snap back without explanation.</p>
+  <div class="fix"><strong>Fix:</strong> Add error toast or inline error when <code>stageMutation.isError</code>.</div>
+</div>
+
+<div class="issue">
+  <div class="meta"><span class="badge high">High</span><span class="badge bug">Bug</span><span class="badge frontend">Frontend</span></div>
+  <h3>Stale Closures in QueueEmailCard</h3>
+  <p class="file">frontend/src/components/QueueEmailCard.tsx — lines 91-105</p>
+  <p><code>handleSaveEdit()</code> captures form values via closure. If state updates while promises are pending, mutations use stale values.</p>
+  <div class="fix"><strong>Fix:</strong> Capture values at mutation time or use refs.</div>
+</div>
+
+<div class="issue">
+  <div class="meta"><span class="badge high">High</span><span class="badge quality">Quality</span><span class="badge frontend">Frontend</span></div>
+  <h3>No Focus-Visible Styles (Accessibility)</h3>
+  <p class="file">All components</p>
+  <p>Buttons and inputs lack <code>focus-visible:ring-2</code> outlines. Keyboard navigation has no visual indicator — WCAG 2.1 AA violation.</p>
+  <div class="fix"><strong>Fix:</strong> Add global <code>focus-visible:ring-2 ring-blue-500 ring-offset-2</code> to index.css.</div>
+</div>
+
+<div class="issue">
+  <div class="meta"><span class="badge high">High</span><span class="badge quality">Quality</span><span class="badge frontend">Frontend</span></div>
+  <h3>No ARIA Landmarks</h3>
+  <p class="file">frontend/src/components/Layout.tsx</p>
+  <p>Missing <code>&lt;nav&gt;</code>, <code>&lt;main&gt;</code>, <code>&lt;aside&gt;</code> semantic elements. Screen readers can't navigate the app structure.</p>
+  <div class="fix"><strong>Fix:</strong> Wrap sidebar in <code>&lt;aside&gt;</code>, content in <code>&lt;main&gt;</code>, nav links in <code>&lt;nav&gt;</code>.</div>
+</div>
+
+<div class="issue">
+  <div class="meta"><span class="badge high">High</span><span class="badge quality">Quality</span><span class="badge backend">Backend</span></div>
+  <h3>Inconsistent Error Response Format</h3>
+  <p class="file">src/services/llm_advisor.py, reply_detector.py</p>
+  <p>On error, some services return JSON strings while others return dicts. Callers can crash on type mismatches.</p>
+  <div class="fix"><strong>Fix:</strong> Always return structured dicts with an <code>error</code> key.</div>
+</div>
+
+<h2>Priority Fix Order</h2>
+<p class="section-intro">Recommended implementation order, balancing impact vs. effort.</p>
+
+<table class="priority-table">
+  <thead>
+    <tr><th>#</th><th>Fix</th><th>Impact</th><th>Effort</th><th>Layer</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>1</td><td>Add cursor.close() throughout services</td><td>Eliminates connection leaks</td><td>1-2h</td><td>Backend</td></tr>
+    <tr><td>2</td><td>Batch queue enrichment queries</td><td>50-100x faster dashboard</td><td>30min</td><td>Backend</td></tr>
+    <tr><td>3</td><td>Add focus-visible + ARIA landmarks</td><td>WCAG 2.1 AA compliance</td><td>30min</td><td>Frontend</td></tr>
+    <tr><td>4</td><td>Add missing DB indexes (migration 008)</td><td>Faster queries across the board</td><td>15min</td><td>Database</td></tr>
+    <tr><td>5</td><td>Fix LinkedIn scanner dedup race condition</td><td>Prevents duplicate advances</td><td>30min</td><td>Backend</td></tr>
+    <tr><td>6</td><td>Add error handling to external API calls</td><td>Prevents silent failures</td><td>1h</td><td>Backend</td></tr>
+    <tr><td>7</td><td>Add null safety to CampaignDetail</td><td>Prevents page crashes</td><td>15min</td><td>Frontend</td></tr>
+    <tr><td>8</td><td>Fix GlobalSearchBar memory leak</td><td>Eliminates React warnings</td><td>15min</td><td>Frontend</td></tr>
+    <tr><td>9</td><td>Add React.memo to list components</td><td>Reduces re-render spam</td><td>15min</td><td>Frontend</td></tr>
+    <tr><td>10</td><td>Type API client responses (remove any)</td><td>Compile-time safety</td><td>2h</td><td>Frontend</td></tr>
+  </tbody>
+</table>
+
+<h2>Architecture Notes</h2>
+
+<div class="issue">
+  <div class="meta"><span class="badge medium">Note</span></div>
+  <h3>Connection Pool Lifecycle</h3>
+  <p>Pool initializes at startup but routes lack middleware for cleanup on exception. Add an HTTP middleware that ensures connections are returned to the pool even on unhandled errors.</p>
+</div>
+
+<div class="issue">
+  <div class="meta"><span class="badge medium">Note</span></div>
+  <h3>Template Selector Cold-Start Bias</h3>
+  <p>The explore/exploit algorithm in <code>template_selector.py</code> locks onto early winners too fast. Untested templates get score 0.0 in exploit mode. Consider guaranteeing each template gets a minimum 5 sends before locking in.</p>
+</div>
+
+<div class="issue">
+  <div class="meta"><span class="badge medium">Note</span></div>
+  <h3>Duplicate Import Logic</h3>
+  <p><code>import_contacts.py</code>, <code>import_emails.py</code>, and <code>import_expandi.py</code> all follow CSV-read → normalize → insert patterns. Could be refactored into a shared <code>csv_import.py</code> service.</p>
+</div>
+
+<p style="margin-top: 3rem; color: var(--muted); font-size: 0.85rem; text-align: center;">
+  Generated March 13, 2026 — Full-stack audit of Outreach Campaign Manager
+</p>
+
+</div>
+</body>
+</html>

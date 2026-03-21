@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tech Debt Report — Outreach Campaign Manager</title>
+<style>
+  :root { --bg: #0f172a; --surface: #1e293b; --border: #334155; --text: #e2e8f0; --muted: #94a3b8; --accent: #3b82f6; --green: #22c55e; --yellow: #eab308; --red: #ef4444; --orange: #f97316; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; padding: 2rem; max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 1.75rem; margin-bottom: .25rem; }
+  .subtitle { color: var(--muted); margin-bottom: 2rem; }
+  h2 { font-size: 1.3rem; margin: 2rem 0 1rem; padding-bottom: .5rem; border-bottom: 1px solid var(--border); }
+  h3 { font-size: 1.05rem; margin: 1.25rem 0 .5rem; color: var(--accent); }
+
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+  .stat-card { background: var(--surface); border-radius: 10px; padding: 1.25rem; border: 1px solid var(--border); }
+  .stat-card .label { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; }
+  .stat-card .value { font-size: 1.6rem; font-weight: 700; margin: .25rem 0; }
+  .stat-card .detail { font-size: .85rem; color: var(--muted); }
+
+  .debt-item { background: var(--surface); border-radius: 10px; padding: 1.25rem; margin-bottom: 1rem; border-left: 4px solid var(--border); }
+  .debt-item.critical { border-left-color: var(--red); }
+  .debt-item.high { border-left-color: var(--orange); }
+  .debt-item.medium { border-left-color: var(--yellow); }
+  .debt-item.low { border-left-color: var(--green); }
+
+  .debt-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: .5rem; flex-wrap: wrap; gap: .5rem; }
+  .debt-title { font-weight: 600; font-size: 1rem; }
+  .tags { display: flex; gap: .4rem; flex-wrap: wrap; }
+  .tag { font-size: .7rem; padding: .15rem .5rem; border-radius: 100px; background: var(--border); color: var(--muted); }
+  .tag.code { background: #1e3a5f; color: #93c5fd; }
+  .tag.arch { background: #3b1f4e; color: #c4b5fd; }
+  .tag.test { background: #1a3326; color: #86efac; }
+  .tag.dep { background: #3b2f1f; color: #fcd34d; }
+  .tag.doc { background: #2d2424; color: #fca5a5; }
+  .tag.infra { background: #1f2d3d; color: #7dd3fc; }
+
+  .scores { display: flex; gap: 1rem; margin: .5rem 0; font-size: .8rem; color: var(--muted); }
+  .scores span { background: var(--bg); padding: .2rem .6rem; border-radius: 6px; }
+  .priority-badge { font-weight: 700; padding: .2rem .6rem; border-radius: 6px; font-size: .75rem; }
+  .priority-badge.critical { background: var(--red); color: #fff; }
+  .priority-badge.high { background: var(--orange); color: #fff; }
+  .priority-badge.medium { background: var(--yellow); color: #1a1a1a; }
+  .priority-badge.low { background: var(--green); color: #1a1a1a; }
+
+  .description { font-size: .9rem; color: var(--muted); margin-top: .5rem; }
+  .justification { font-size: .85rem; margin-top: .4rem; padding: .5rem .75rem; background: var(--bg); border-radius: 6px; border: 1px solid var(--border); }
+
+  .phase { background: var(--surface); border-radius: 10px; padding: 1.25rem; margin-bottom: 1rem; border: 1px solid var(--border); }
+  .phase-title { font-weight: 700; font-size: 1rem; margin-bottom: .5rem; }
+  .phase ul { padding-left: 1.25rem; }
+  .phase li { margin-bottom: .3rem; font-size: .9rem; }
+  .phase .timeline { color: var(--muted); font-size: .8rem; margin-bottom: .5rem; }
+
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: .85rem; }
+  th, td { padding: .6rem .75rem; text-align: left; border: 1px solid var(--border); }
+  th { background: var(--surface); color: var(--muted); font-weight: 600; text-transform: uppercase; font-size: .75rem; letter-spacing: .03em; }
+  tr:nth-child(even) { background: rgba(255,255,255,.02); }
+</style>
+</head>
+<body>
+
+<h1>Tech Debt Report</h1>
+<p class="subtitle">Outreach Campaign Manager &mdash; March 13, 2026</p>
+
+<!-- EXECUTIVE SUMMARY -->
+<div class="summary-grid">
+  <div class="stat-card">
+    <div class="label">Codebase</div>
+    <div class="value">~820KB</div>
+    <div class="detail">Python backend + React/TS frontend</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Source Files</div>
+    <div class="value">75</div>
+    <div class="detail">41 Python · 31 TSX/TS · 3 SQL</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Test Files</div>
+    <div class="value">28</div>
+    <div class="detail">Backend only — 0 frontend tests</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Debt Items Found</div>
+    <div class="value" style="color:var(--orange)">12</div>
+    <div class="detail">2 critical · 4 high · 4 medium · 2 low</div>
+  </div>
+</div>
+
+<!-- PRIORITIZED DEBT ITEMS -->
+<h2>Prioritized Tech Debt</h2>
+<p style="color:var(--muted);font-size:.85rem;margin-bottom:1rem;">
+  Scored as <strong>Priority = (Impact + Risk) × (6 − Effort)</strong>. Higher = fix sooner.
+</p>
+
+<!-- #1 -->
+<div class="debt-item critical">
+  <div class="debt-header">
+    <span class="debt-title">1. cli.py God-File (41 KB, ~1,200+ lines)</span>
+    <div class="tags"><span class="tag code">Code</span><span class="priority-badge critical">CRITICAL · 50</span></div>
+  </div>
+  <div class="scores">
+    <span>Impact: 5</span><span>Risk: 5</span><span>Effort: 4</span>
+  </div>
+  <div class="description">
+    <code>src/cli.py</code> is by far the largest file in the project at 41 KB — roughly 3× bigger than the next largest service. It almost certainly mixes CLI parsing, business logic, and orchestration into one monolith. This makes it fragile to change, hard to test in isolation, and a constant merge-conflict magnet.
+  </div>
+  <div class="justification">
+    <strong>Business case:</strong> Every new feature or bug fix risks breaking unrelated CLI workflows. Splitting into focused command modules will accelerate development and reduce regressions.
+  </div>
+</div>
+
+<!-- #2 -->
+<div class="debt-item critical">
+  <div class="debt-header">
+    <span class="debt-title">2. Zero Frontend Tests</span>
+    <div class="tags"><span class="tag test">Test</span><span class="priority-badge critical">CRITICAL · 50</span></div>
+  </div>
+  <div class="scores">
+    <span>Impact: 5</span><span>Risk: 5</span><span>Effort: 4</span>
+  </div>
+  <div class="description">
+    The React frontend has 31 source files totaling ~183 KB including pages like Pipeline (20 KB), ContactDetail (17 KB), and complex components like QueueLinkedInCard (13 KB) — yet there are zero test files. Any refactor or feature change in the frontend is completely unguarded.
+  </div>
+  <div class="justification">
+    <strong>Business case:</strong> The frontend is the user-facing layer. Without tests, every deployment is a roll of the dice. Adding Vitest + React Testing Library for critical paths (Pipeline, Queue, ContactDetail) provides an immediate safety net.
+  </div>
+</div>
+
+<!-- #3 -->
+<div class="debt-item high">
+  <div class="debt-header">
+    <span class="debt-title">3. SQLite Database Still in Repo (1.4 MB)</span>
+    <div class="tags"><span class="tag arch">Architecture</span><span class="tag infra">Infra</span><span class="priority-badge high">HIGH · 40</span></div>
+  </div>
+  <div class="scores">
+    <span>Impact: 4</span><span>Risk: 4</span><span>Effort: 2</span>
+  </div>
+  <div class="description">
+    The project has migrated to PostgreSQL (7 pg migrations, Supabase config, migrate script), yet <code>outreach.db</code> (1.4 MB), <code>outreach.db-shm</code>, and <code>outreach.db-wal</code> are still sitting in the root directory. The <code>.gitignore</code> blocks <code>*.db</code> from commits, but the files are already checked in and still on disk. There are also duplicate SQLite-era migrations (<code>migrations/001_initial_schema.sql</code> and <code>002_web_app.sql</code>) alongside the proper <code>migrations/pg/</code> directory.
+  </div>
+  <div class="justification">
+    <strong>Business case:</strong> Stale SQLite artifacts confuse new developers ("which database am I using?"), risk accidental reads from the wrong store, and bloat the repo. Quick cleanup.
+  </div>
+</div>
+
+<!-- #4 -->
+<div class="debt-item high">
+  <div class="debt-header">
+    <span class="debt-title">4. No Authentication / Authorization</span>
+    <div class="tags"><span class="tag arch">Architecture</span><span class="priority-badge high">HIGH · 36</span></div>
+  </div>
+  <div class="scores">
+    <span>Impact: 4</span><span>Risk: 5</span><span>Effort: 3.5</span>
+  </div>
+  <div class="description">
+    The FastAPI web app and 16 route files expose a full CRM (contacts, deals, campaigns, emails, WhatsApp data) without any visible auth middleware. There's a <code>specs/02_SECURITY_AUTH.md</code> spec (11 KB) that appears to plan for this — but it hasn't been implemented. A <code>.env</code> with real credentials exists on disk.
+  </div>
+  <div class="justification">
+    <strong>Business case:</strong> This is a compliance and data protection risk. PII (names, emails, phone numbers, AUM data) is accessible to anyone who can reach the API. Must be addressed before any multi-user or public deployment.
+  </div>
+</div>
+
+<!-- #5 -->
+<div class="debt-item high">
+  <div class="debt-header">
+    <span class="debt-title">5. Five Backend Services Have No Tests</span>
+    <div class="tags"><span class="tag test">Test</span><span class="priority-badge high">HIGH · 32</span></div>
+  </div>
+  <div class="scores">
+    <span>Impact: 4</span><span>Risk: 4</span><span>Effort: 3</span>
+  </div>
+  <div class="description">
+    Missing test coverage for: <code>ab_testing.py</code>, <code>compliance.py</code>, <code>gmail_drafter.py</code>, <code>linkedin_actions.py</code>, <code>template_engine.py</code>. The compliance module in particular handles GDPR/unsubscribe logic — the kind of code that absolutely must be regression-tested. Web API routes also have only a single test file (<code>test_web_api.py</code>) covering 16 route modules.
+  </div>
+  <div class="justification">
+    <strong>Business case:</strong> Untested compliance logic is a legal risk. Untested email/LinkedIn integration code can send incorrect messages to real contacts.
+  </div>
+</div>
+
+<!-- #6 -->
+<div class="debt-item high">
+  <div class="debt-header">
+    <span class="debt-title">6. Scattered Documentation / Spec Debt</span>
+    <div class="tags"><span class="tag doc">Documentation</span><span class="priority-badge high">HIGH · 30</span></div>
+  </div>
+  <div class="scores">
+    <span>Impact: 3</span><span>Risk: 3</span><span>Effort: 2</span>
+  </div>
+  <div class="description">
+    The root directory contains 10+ large markdown files (FINAL_HANDOFF 55 KB, Implementation_Plan 52 KB, CODE_REVIEW 24 KB, ENGINEERING_REVIEW 12 KB, etc.) alongside 6 spec files in <code>specs/</code> and more in <code>docs/</code>. These appear to be from different planning/review phases, many now outdated. There is no single README.md. New developers face a wall of competing documents with no clear entry point.
+  </div>
+  <div class="justification">
+    <strong>Business case:</strong> Onboarding friction. Consolidate into a single README + an architecture doc + archive the historical files.
+  </div>
+</div>
+
+<!-- #7 -->
+<div class="debt-item medium">
+  <div class="debt-header">
+    <span class="debt-title">7. Oversized Frontend Components</span>
+    <div class="tags"><span class="tag code">Code</span><span class="priority-badge medium">MEDIUM · 24</span></div>
+  </div>
+  <div class="scores">
+    <span>Impact: 3</span><span>Risk: 3</span><span>Effort: 3</span>
+  </div>
+  <div class="description">
+    Several React components are very large: Pipeline.tsx (20 KB), ContactDetail.tsx (17 KB), QueueLinkedInCard.tsx (13 KB), QueueEmailCard.tsx (12 KB). These likely mix data fetching, business logic, and UI rendering in single files — a maintenance burden and a barrier to reuse.
+  </div>
+  <div class="justification">
+    <strong>Business case:</strong> Large components are harder to modify, slower to review, and prone to state bugs. Breaking them into container/presenter pairs with custom hooks improves velocity.
+  </div>
+</div>
+
+<!-- #8 -->
+<div class="debt-item medium">
+  <div class="debt-header">
+    <span class="debt-title">8. No API Client Type Safety</span>
+    <div class="tags"><span class="tag code">Code</span><span class="tag arch">Architecture</span><span class="priority-badge medium">MEDIUM · 24</span></div>
+  </div>
+  <div class="scores">
+    <span>Impact: 3</span><span>Risk: 3</span><span>Effort: 3</span>
+  </div>
+  <div class="description">
+    The frontend has a single <code>api/client.ts</code> (11 KB) and a <code>types/index.ts</code> (7 KB) but the backend is plain Python with no OpenAPI schema generation. The frontend types are likely manually maintained — any backend schema change can silently break the frontend.
+  </div>
+  <div class="justification">
+    <strong>Business case:</strong> Backend-frontend contract drift causes runtime errors. Adding FastAPI response models + auto-generated TypeScript types eliminates an entire class of bugs.
+  </div>
+</div>
+
+<!-- #9 -->
+<div class="debt-item medium">
+  <div class="debt-header">
+    <span class="debt-title">9. Migration Management — No Runner, Dual Formats</span>
+    <div class="tags"><span class="tag infra">Infra</span><span class="priority-badge medium">MEDIUM · 20</span></div>
+  </div>
+  <div class="scores">
+    <span>Impact: 2</span><span>Risk: 4</span><span>Effort: 3</span>
+  </div>
+  <div class="description">
+    Migrations live in two directories (<code>migrations/</code> for old SQLite, <code>migrations/pg/</code> for Postgres) with no migration runner or version tracking in code. The <code>database.py</code> module is only 2 KB, suggesting migrations might be run manually. No rollback support visible.
+  </div>
+  <div class="justification">
+    <strong>Business case:</strong> Without versioned, automated migrations, schema changes in production are risky. Adopt Alembic or a simple version-tracked runner.
+  </div>
+</div>
+
+<!-- #10 -->
+<div class="debt-item medium">
+  <div class="debt-header">
+    <span class="debt-title">10. .env with Real Credentials on Disk</span>
+    <div class="tags"><span class="tag infra">Infra</span><span class="priority-badge medium">MEDIUM · 20</span></div>
+  </div>
+  <div class="scores">
+    <span>Impact: 2</span><span>Risk: 5</span><span>Effort: 1</span>
+  </div>
+  <div class="description">
+    A real <code>.env</code> file (168 bytes) exists alongside <code>.env.example</code> (665 bytes). While <code>.gitignore</code> excludes it, the presence of real credentials next to source code increases exposure risk — especially if the folder is shared, backed up, or accessed via tools like this one.
+  </div>
+  <div class="justification">
+    <strong>Business case:</strong> Credential hygiene. Rotate any secrets that may have been exposed and move to a secrets manager for production.
+  </div>
+</div>
+
+<!-- #11 -->
+<div class="debt-item low">
+  <div class="debt-header">
+    <span class="debt-title">11. __pycache__ and .DS_Store in Source Tree</span>
+    <div class="tags"><span class="tag infra">Infra</span><span class="priority-badge low">LOW · 15</span></div>
+  </div>
+  <div class="scores">
+    <span>Impact: 1</span><span>Risk: 1</span><span>Effort: 1</span>
+  </div>
+  <div class="description">
+    Multiple <code>__pycache__</code> directories and <code>.DS_Store</code> files are present in the source tree. While <code>.gitignore</code> covers some of these, they add noise when browsing or searching.
+  </div>
+  <div class="justification">
+    <strong>Business case:</strong> Minimal risk, quick cleanup. Add a <code>make clean</code> step to CI.
+  </div>
+</div>
+
+<!-- #12 -->
+<div class="debt-item low">
+  <div class="debt-header">
+    <span class="debt-title">12. No Frontend Linting / Formatting Config</span>
+    <div class="tags"><span class="tag code">Code</span><span class="priority-badge low">LOW · 12</span></div>
+  </div>
+  <div class="scores">
+    <span>Impact: 2</span><span>Risk: 1</span><span>Effort: 1</span>
+  </div>
+  <div class="description">
+    The frontend <code>package.json</code> has no ESLint, Prettier, or any code quality tooling configured. As the frontend grows, inconsistent code style will accumulate.
+  </div>
+  <div class="justification">
+    <strong>Business case:</strong> 15-minute setup prevents ongoing style debates and catches bugs early.
+  </div>
+</div>
+
+<!-- REMEDIATION PLAN -->
+<h2>Phased Remediation Plan</h2>
+<p style="color:var(--muted);font-size:.85rem;margin-bottom:1rem;">
+  Designed to run alongside feature work. Each phase targets the highest-priority items that can be done together.
+</p>
+
+<div class="phase">
+  <div class="phase-title">Phase 1 — Quick Wins (1–2 days)</div>
+  <div class="timeline">Can be done in a single sprint alongside regular work</div>
+  <ul>
+    <li><strong>#3</strong> Remove SQLite files and old migrations from repo</li>
+    <li><strong>#10</strong> Rotate exposed credentials, verify .gitignore, add pre-commit hook to block secrets</li>
+    <li><strong>#11</strong> Clean up __pycache__ and .DS_Store; add to .gitignore if missing</li>
+    <li><strong>#12</strong> Add ESLint + Prettier to frontend with a shared config</li>
+    <li><strong>#6</strong> (partial) Write a README.md, move historical docs to a <code>docs/archive/</code> folder</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="phase-title">Phase 2 — Safety Net (1–2 weeks)</div>
+  <div class="timeline">Establishes guard rails before any major refactoring</div>
+  <ul>
+    <li><strong>#2</strong> Add Vitest + React Testing Library; write tests for the 5 most critical pages (Pipeline, ContactDetail, Queue, Dashboard, Inbox)</li>
+    <li><strong>#5</strong> Add tests for compliance.py, gmail_drafter.py, and template_engine.py at minimum</li>
+    <li><strong>#4</strong> Implement basic auth middleware (JWT or session-based) per the existing <code>specs/02_SECURITY_AUTH.md</code> plan</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="phase-title">Phase 3 — Structural Refactors (2–4 weeks, incremental)</div>
+  <div class="timeline">Done module-by-module alongside feature work</div>
+  <ul>
+    <li><strong>#1</strong> Split cli.py into focused command modules (import, queue, send, report, etc.) — one subcommand group at a time</li>
+    <li><strong>#7</strong> Break Pipeline.tsx and ContactDetail.tsx into container + presenter components with custom hooks</li>
+    <li><strong>#8</strong> Add Pydantic response models to FastAPI routes; set up auto-generated TypeScript types</li>
+    <li><strong>#9</strong> Consolidate migrations under one directory, add a simple version tracker or adopt Alembic</li>
+  </ul>
+</div>
+
+<!-- SUMMARY TABLE -->
+<h2>Summary Scoreboard</h2>
+<table>
+  <thead>
+    <tr><th>#</th><th>Item</th><th>Category</th><th>Impact</th><th>Risk</th><th>Effort</th><th>Priority Score</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>1</td><td>cli.py God-File</td><td>Code</td><td>5</td><td>5</td><td>4</td><td style="color:var(--red);font-weight:700">50</td></tr>
+    <tr><td>2</td><td>Zero Frontend Tests</td><td>Test</td><td>5</td><td>5</td><td>4</td><td style="color:var(--red);font-weight:700">50</td></tr>
+    <tr><td>3</td><td>SQLite Leftovers</td><td>Arch / Infra</td><td>4</td><td>4</td><td>2</td><td style="color:var(--orange);font-weight:700">40</td></tr>
+    <tr><td>4</td><td>No Auth on API</td><td>Architecture</td><td>4</td><td>5</td><td>3.5</td><td style="color:var(--orange);font-weight:700">36</td></tr>
+    <tr><td>5</td><td>5 Untested Services</td><td>Test</td><td>4</td><td>4</td><td>3</td><td style="color:var(--orange);font-weight:700">32</td></tr>
+    <tr><td>6</td><td>Doc Sprawl</td><td>Documentation</td><td>3</td><td>3</td><td>2</td><td style="color:var(--orange);font-weight:700">30</td></tr>
+    <tr><td>7</td><td>Oversized Frontend Components</td><td>Code</td><td>3</td><td>3</td><td>3</td><td style="color:var(--yellow);font-weight:700">24</td></tr>
+    <tr><td>8</td><td>No API Type Safety</td><td>Code / Arch</td><td>3</td><td>3</td><td>3</td><td style="color:var(--yellow);font-weight:700">24</td></tr>
+    <tr><td>9</td><td>Migration Management</td><td>Infra</td><td>2</td><td>4</td><td>3</td><td style="color:var(--yellow);font-weight:700">20</td></tr>
+    <tr><td>10</td><td>.env Credentials</td><td>Infra</td><td>2</td><td>5</td><td>1</td><td style="color:var(--yellow);font-weight:700">20</td></tr>
+    <tr><td>11</td><td>Cache / OS File Noise</td><td>Infra</td><td>1</td><td>1</td><td>1</td><td style="color:var(--green)">15</td></tr>
+    <tr><td>12</td><td>No Frontend Lint/Format</td><td>Code</td><td>2</td><td>1</td><td>1</td><td style="color:var(--green)">12</td></tr>
+  </tbody>
+</table>
+
+<p style="color:var(--muted);font-size:.8rem;margin-top:2rem;text-align:center;">
+  Generated March 13, 2026 &mdash; based on structural analysis of the Outreach Campaign Manager codebase
+</p>
+
+</body>
+</html>

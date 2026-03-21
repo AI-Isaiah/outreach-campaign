@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tech Debt Report — Outreach Campaign Platform</title>
+<style>
+  :root {
+    --bg: #0f172a; --surface: #1e293b; --surface2: #334155;
+    --text: #e2e8f0; --muted: #94a3b8; --accent: #38bdf8;
+    --red: #f87171; --orange: #fb923c; --yellow: #fbbf24;
+    --green: #4ade80; --purple: #a78bfa; --cyan: #22d3ee;
+    --border: #475569;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', -apple-system, system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+
+  /* Header */
+  .header { margin-bottom: 2.5rem; }
+  h1 { font-size: 2rem; font-weight: 800; letter-spacing: -0.02em; }
+  .subtitle { color: var(--muted); font-size: 0.9rem; margin-top: 0.25rem; }
+  h2 { font-size: 1.3rem; font-weight: 700; margin: 2.5rem 0 1rem; color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+  h3 { font-size: 1.05rem; font-weight: 600; margin: 1.5rem 0 0.5rem; }
+
+  /* Summary Cards */
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; margin-bottom: 2rem; }
+  .stat-card { background: var(--surface); border-radius: 12px; padding: 1.25rem; border: 1px solid var(--border); }
+  .stat-card .label { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+  .stat-card .value { font-size: 2.25rem; font-weight: 800; margin-top: 0.15rem; }
+  .stat-card .value.critical { color: var(--red); }
+  .stat-card .value.high { color: var(--orange); }
+  .stat-card .value.medium { color: var(--yellow); }
+  .stat-card .value.low { color: var(--green); }
+  .stat-card .value.total { color: var(--text); }
+
+  /* Category breakdown */
+  .cat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.5rem; margin: 1rem 0 2rem; }
+  .cat-pill { background: var(--surface); border-radius: 8px; padding: 0.6rem 0.8rem; border: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; font-size: 0.82rem; }
+  .cat-pill .cat-name { color: var(--muted); }
+  .cat-pill .cat-count { font-weight: 700; color: var(--text); }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.82rem; }
+  th { background: var(--surface2); text-align: left; padding: 0.55rem 0.65rem; font-weight: 600; color: var(--muted); text-transform: uppercase; font-size: 0.68rem; letter-spacing: 0.05em; position: sticky; top: 0; }
+  td { padding: 0.55rem 0.65rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:hover td { background: rgba(56, 189, 248, 0.04); }
+  .tbl-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid var(--border); }
+  .tbl-wrap table { margin: 0; }
+
+  /* Badges */
+  .badge { display: inline-block; padding: 0.12rem 0.5rem; border-radius: 4px; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; white-space: nowrap; }
+  .badge.critical { background: rgba(248,113,113,0.2); color: var(--red); }
+  .badge.high { background: rgba(251,146,60,0.2); color: var(--orange); }
+  .badge.medium { background: rgba(251,191,36,0.15); color: var(--yellow); }
+  .badge.low { background: rgba(74,222,128,0.15); color: var(--green); }
+
+  .category { display: inline-block; padding: 0.12rem 0.5rem; border-radius: 4px; font-size: 0.68rem; font-weight: 600; }
+  .cat-code { background: rgba(167,139,250,0.15); color: var(--purple); }
+  .cat-arch { background: rgba(56,189,248,0.15); color: var(--accent); }
+  .cat-test { background: rgba(251,191,36,0.15); color: var(--yellow); }
+  .cat-dep { background: rgba(251,146,60,0.15); color: var(--orange); }
+  .cat-infra { background: rgba(34,211,238,0.15); color: var(--cyan); }
+  .cat-doc { background: rgba(148,163,184,0.15); color: var(--muted); }
+  .cat-sec { background: rgba(248,113,113,0.15); color: var(--red); }
+
+  .score-pill { display: inline-block; min-width: 2.25rem; text-align: center; padding: 0.12rem 0.35rem; border-radius: 4px; font-weight: 800; font-size: 0.78rem; }
+  .score-pill.s5 { background: var(--red); color: #1e1e1e; }
+  .score-pill.s4 { background: var(--orange); color: #1e1e1e; }
+  .score-pill.s3 { background: var(--yellow); color: #1e1e1e; }
+  .score-pill.s2 { background: var(--green); color: #1e1e1e; }
+
+  .file-ref { font-family: 'Fira Code', 'JetBrains Mono', 'Consolas', monospace; font-size: 0.75rem; color: var(--accent); word-break: break-all; }
+
+  /* Phases */
+  .phase { background: var(--surface); border-radius: 10px; padding: 1.25rem 1.5rem; margin: 1rem 0; border-left: 4px solid var(--accent); }
+  .phase-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.5rem; }
+  .phase-title { font-weight: 700; font-size: 1rem; }
+  .phase-meta { color: var(--muted); font-size: 0.78rem; }
+  .phase ul { padding-left: 1.25rem; margin-top: 0.5rem; }
+  .phase li { margin: 0.4rem 0; color: var(--muted); font-size: 0.85rem; }
+  .phase li strong { color: var(--text); }
+
+  .simplification { background: var(--surface); border-radius: 10px; padding: 1rem 1.25rem; margin: 0.75rem 0; border: 1px solid var(--border); }
+  .simplification h4 { font-size: 0.9rem; margin-bottom: 0.35rem; }
+  .simplification p { color: var(--muted); font-size: 0.82rem; }
+
+  .note { background: var(--surface); border-radius: 8px; padding: 0.85rem 1rem; margin: 0.75rem 0; font-size: 0.82rem; color: var(--muted); border: 1px solid var(--border); }
+
+  footer { color: var(--muted); font-size: 0.75rem; margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+
+  /* Tabs */
+  .tab-bar { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: 1.5rem; }
+  .tab { padding: 0.6rem 1.2rem; cursor: pointer; font-size: 0.85rem; font-weight: 600; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.15s; }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="header">
+  <h1>Tech Debt Report</h1>
+  <p class="subtitle">Outreach Campaign Platform &mdash; 16 Mar 2026 &mdash; Full codebase audit: backend, frontend, infra, tests, database</p>
+</div>
+
+<!-- ============ SUMMARY ============ -->
+<div class="summary-grid">
+  <div class="stat-card"><div class="label">Total Issues</div><div class="value total">55</div></div>
+  <div class="stat-card"><div class="label">Critical</div><div class="value critical">6</div></div>
+  <div class="stat-card"><div class="label">High</div><div class="value high">18</div></div>
+  <div class="stat-card"><div class="label">Medium</div><div class="value medium">23</div></div>
+  <div class="stat-card"><div class="label">Low</div><div class="value low">8</div></div>
+  <div class="stat-card"><div class="label">Est. Total Effort</div><div class="value" style="color:var(--accent);font-size:1.5rem;">~80 hrs</div></div>
+</div>
+
+<div class="cat-grid">
+  <div class="cat-pill"><span class="cat-name">Code</span><span class="cat-count">18</span></div>
+  <div class="cat-pill"><span class="cat-name">Architecture</span><span class="cat-count">8</span></div>
+  <div class="cat-pill"><span class="cat-name">Infrastructure</span><span class="cat-count">9</span></div>
+  <div class="cat-pill"><span class="cat-name">Test</span><span class="cat-count">7</span></div>
+  <div class="cat-pill"><span class="cat-name">Dependency</span><span class="cat-count">3</span></div>
+  <div class="cat-pill"><span class="cat-name">Documentation</span><span class="cat-count">4</span></div>
+  <div class="cat-pill"><span class="cat-name">Security</span><span class="cat-count">4</span></div>
+  <div class="cat-pill"><span class="cat-name">Database</span><span class="cat-count">2</span></div>
+</div>
+
+<!-- ============ TABS ============ -->
+<div class="tab-bar">
+  <div class="tab active" onclick="switchTab('all')">All Items (55)</div>
+  <div class="tab" onclick="switchTab('backend')">Backend (22)</div>
+  <div class="tab" onclick="switchTab('frontend')">Frontend (19)</div>
+  <div class="tab" onclick="switchTab('infra')">Infra &amp; DB (14)</div>
+</div>
+
+<!-- ============ ALL ITEMS TABLE ============ -->
+<div id="tab-all" class="tab-content active">
+<div class="tbl-wrap">
+<table>
+<thead>
+<tr>
+  <th style="width:2.5rem">#</th>
+  <th>Issue</th>
+  <th>Category</th>
+  <th style="width:5rem">Severity</th>
+  <th style="width:2rem">I</th>
+  <th style="width:2rem">R</th>
+  <th style="width:2rem">E</th>
+  <th style="width:3.5rem">Score</th>
+  <th>File(s)</th>
+</tr>
+</thead>
+<tbody>
+
+<!-- ===== CRITICAL ===== -->
+<tr>
+  <td>1</td>
+  <td><strong>No CI/CD pipeline</strong> — No automated testing, linting, or quality gates. Tests run manually only.</td>
+  <td><span class="category cat-infra">Infra</span></td>
+  <td><span class="badge critical">Critical</span></td>
+  <td>5</td><td>5</td><td>3</td>
+  <td><span class="score-pill s5">30</span></td>
+  <td><span class="file-ref">repo root</span></td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><strong>Hardcoded CORS origins</strong> — Only localhost allowed. Production deploys fail silently or require code changes.</td>
+  <td><span class="category cat-infra">Infra</span></td>
+  <td><span class="badge critical">Critical</span></td>
+  <td>5</td><td>5</td><td>1</td>
+  <td><span class="score-pill s5">50</span></td>
+  <td><span class="file-ref">src/web/app.py</span></td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><strong>Migration runner has no state tracking</strong> — Re-executes ALL migrations on every CLI command &amp; web startup. No <code>schema_migrations</code> table.</td>
+  <td><span class="category cat-infra">Infra</span></td>
+  <td><span class="badge critical">Critical</span></td>
+  <td>5</td><td>5</td><td>2</td>
+  <td><span class="score-pill s5">40</span></td>
+  <td><span class="file-ref">src/models/database.py</span></td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><strong>Race condition in DB pool init</strong> — Global <code>_pool</code> created lazily with no thread lock. Concurrent requests create duplicate pools.</td>
+  <td><span class="category cat-arch">Arch</span></td>
+  <td><span class="badge critical">Critical</span></td>
+  <td>5</td><td>5</td><td>2</td>
+  <td><span class="score-pill s5">40</span></td>
+  <td><span class="file-ref">src/models/database.py</span></td>
+</tr>
+<tr>
+  <td>5</td>
+  <td><strong>Duplicate migration directories</strong> — <code>migrations/</code> (SQLite syntax) vs <code>migrations/pg/</code> (PostgreSQL). Root dir is dead code but creates confusion risk.</td>
+  <td><span class="category cat-infra">Infra</span></td>
+  <td><span class="badge critical">Critical</span></td>
+  <td>4</td><td>5</td><td>1</td>
+  <td><span class="score-pill s5">45</span></td>
+  <td><span class="file-ref">migrations/</span></td>
+</tr>
+<tr>
+  <td>6</td>
+  <td><strong>Module-level auth runs at import</strong> — <code>get_current_user()</code> dependency does eager env checks; breaks test/dev startup.</td>
+  <td><span class="category cat-arch">Arch</span></td>
+  <td><span class="badge critical">Critical</span></td>
+  <td>4</td><td>5</td><td>2</td>
+  <td><span class="score-pill s5">36</span></td>
+  <td><span class="file-ref">src/web/dependencies.py</span></td>
+</tr>
+
+<!-- ===== HIGH ===== -->
+<tr>
+  <td>7</td>
+  <td><strong>Dependencies not pinned</strong> — All use <code>&gt;=</code> ranges. Non-reproducible builds, supply-chain risk.</td>
+  <td><span class="category cat-dep">Dep</span></td>
+  <td><span class="badge high">High</span></td>
+  <td>4</td><td>5</td><td>1</td>
+  <td><span class="score-pill s4">45</span></td>
+  <td><span class="file-ref">pyproject.toml</span></td>
+</tr>
+<tr>
+  <td>8</td>
+  <td><strong>No README.md</strong> — Standard project entry point missing. Onboarding friction for contributors.</td>
+  <td><span class="category cat-doc">Doc</span></td>
+  <td><span class="badge high">High</span></td>
+  <td>3</td><td>3</td><td>1</td>
+  <td><span class="score-pill s4">30</span></td>
+  <td><span class="file-ref">repo root</span></td>
+</tr>
+<tr>
+  <td>9</td>
+  <td><strong>10 untested service modules</strong> — compliance, template_engine, gmail_drafter, linkedin_scanner, ab_testing, normalization, etc. have zero tests.</td>
+  <td><span class="category cat-test">Test</span></td>
+  <td><span class="badge high">High</span></td>
+  <td>4</td><td>4</td><td>4</td>
+  <td><span class="score-pill s4">16</span></td>
+  <td><span class="file-ref">tests/</span></td>
+</tr>
+<tr>
+  <td>10</td>
+  <td><strong>Only 2 route test files for 20 route modules</strong> — HTTP API layer is almost entirely untested.</td>
+  <td><span class="category cat-test">Test</span></td>
+  <td><span class="badge high">High</span></td>
+  <td>4</td><td>4</td><td>4</td>
+  <td><span class="score-pill s4">16</span></td>
+  <td><span class="file-ref">tests/test_web_api.py</span></td>
+</tr>
+<tr>
+  <td>11</td>
+  <td><strong>crypto_research.py — 1,078 lines</strong> — API calls, scoring, caching, formatting, LLM all in one file.</td>
+  <td><span class="category cat-code">Code</span></td>
+  <td><span class="badge high">High</span></td>
+  <td>4</td><td>3</td><td>3</td>
+  <td><span class="score-pill s4">21</span></td>
+  <td><span class="file-ref">src/services/crypto_research.py</span></td>
+</tr>
+<tr>
+  <td>12</td>
+  <td><strong>ResearchJobDetail.tsx — 704 lines</strong> — CompletionSummary, BatchImportModal, ResultsGrid, filters all inlined.</td>
+  <td><span class="category cat-code">Code</span></td>
+  <td><span class="badge high">High</span></td>
+  <td>4</td><td>3</td><td>3</td>
+  <td><span class="score-pill s4">21</span></td>
+  <td><span class="file-ref">frontend/src/pages/ResearchJobDetail.tsx</span></td>
+</tr>
+<tr>
+  <td>13</td>
+  <td><strong>ContactDetail.tsx — 700 lines</strong> — Tabs, forms, event logging, timeline, products, deals mixed into one component.</td>
+  <td><span class="category cat-code">Code</span></td>
+  <td><span class="badge high">High</span></td>
+  <td>4</td><td>3</td><td>3</td>
+  <td><span class="score-pill s4">21</span></td>
+  <td><span class="file-ref">frontend/src/pages/ContactDetail.tsx</span></td>
+</tr>
+<tr>
+  <td>14</td>
+  <td><strong>Pipeline.tsx — 620 lines</strong> — Kanban + drag logic + filters + stats. No DealCard, StageColumn, PipelineFilters extraction.</td>
+  <td><span class="category cat-code">Code</span></td>
+  <td><span class="badge high">High</span></td>
+  <td>4</td><td>3</td><td>3</td>
+  <td><span class="score-pill s4">21</span></td>
+  <td><span class="file-ref">frontend/src/pages/Pipeline.tsx</span></td>
+</tr>
+<tr>
+  <td>15</td>
+  <td><strong>Duplicated query builder pattern (15+ routes)</strong> — Every list endpoint repeats <code>WHERE 1=1</code> + conditional AND + params.append().</td>
+  <td><span class="category cat-code">Code</span></td>
+  <td><span class="badge high">High</span></td>
+  <td>4</td><td>2</td><td>3</td>
+  <td><span class="score-pill s4">18</span></td>
+  <td><span class="file-ref">src/web/routes/*.py</span></td>
+</tr>
+<tr>
+  <td>16</td>
+  <td><strong>Missing input validation in services</strong> — No email format checks, campaign_id existence validation, length guards.</td>
+  <td><span class="category cat-sec">Security</span></td>
+  <td><span class="badge high">High</span></td>
+  <td>3</td><td>4</td><td>3</td>
+  <td><span class="score-pill s4">21</span></td>
+  <td><span class="file-ref">src/services/*.py</span></td>
+</tr>
+<tr>
+  <td>17</td>
+  <td><strong>Unsafe FK constraint changes in migration 010</strong> — Drops and re-adds FK constraints on <code>deals</code> table without guarding against concurrent writes.</td>
+  <td><span class="category cat-infra">Infra</span></td>
+  <td><span class="badge high">High</span></td>
+  <td>3</td><td>4</td><td>2</td>
+  <td><span class="score-pill s4">28</span></td>
+  <td><span class="file-ref">migrations/pg/010_performance_review.sql</span></td>
+</tr>
+<tr>
+  <td>18</td>
+  <td><strong>Duplicated API fetch pattern (15+ pages)</strong> — URLSearchParams + fetch + error handling repeated everywhere. No shared apiClient.</td>
+  <td><span class="category cat-code">Code</span></td>
+  <td><span class="badge high">High</span></td>
+  <td>3</td><td>2</td><td>2</td>
+  <td><span class="score-pill s4">20</span></td>
+  <td><span class="file-ref">frontend/src/pages/*.tsx</span></td>
+</tr>
+<tr>
+  <td>19</td>
+  <td><strong>No focus-visible styles globally</strong> — Tab navigation is invisible. Critical accessibility gap.</td>
+  <td><span class="category cat-code">Code</span></td>
+  <td><span class="badge high">High</span></td>
+  <td>3</td><td>3</td><td>2</td>
+  <td><span class="score-pill s4">24</span></td>
+  <td><span class="file-ref">frontend/src/</span></td>
+</tr>
+<tr>
+  <td>20</td>
+  <td><strong>Missing transaction management in dedup</strong> — Individual DELETEs with single commit; midway failure leaves corrupted data.</td>
+  <td><span class="category cat-sec">Security</span></td>
+  <td><span class="badge high">High</span></td>
+  <td>3</td><td>4</td><td>2</td>
+  <td><span class="score-pill s4">28</span></td>
+  <td><span class="file-ref">src/services/deduplication.py</span></td>
+</tr>
+<tr>
+  <td>21</td>
+  <td><strong>Overly broad <code>except Exception</code> blocks</strong> — Catches SystemExit, swallows stack traces, masks bugs.</td>
+  <td><span class="category cat-code">Code</span></td>
+  <td><span class="badge high">High</span></td>
+  <td>3</td><td>3</td><td>2</td>
+  <td><span class="score-pill s4">24</span></td>
+  <td><span class="file-ref">src/cli.py, routes/import_routes.py</span></td>
+</tr>
+<tr>
+  <td>22</td>
+  <td><strong><code>any</code> types in frontend</strong> — <code>as any</code> casts in api/client.ts, ResearchJobDetail, various query hooks. Bypasses type safety.</td>
+  <td><span class="category cat-code">Code</span></td>
+  <td><span class="badge high">High</span></td>
+  <td>3</td><td>3</td><td>2</td>
+  <td><span class="score-pill s4">24</span></td>
+  <td><span class="file-ref">frontend/src/api/client.ts, pages/*.tsx</span></td>
+</tr>
+<tr>
+  <td>23</td>
+  <td><strong>Missing unique constraints on normalized fields (initial)</strong> — Migration 001 created non-unique indexes; 007 retrofitted uniqueness. Early duplicates may exist.</td>
+  <td><span class="category cat-infra">Infra</span></td>
+  <td><span class="badge high">High</span></td>
+  <td>3</td><td>4</td><td>2</td>
+  <td><span class="score-pill s4">28</span></td>
+  <td><span class="file-ref">migrations/pg/001, 007</span></td>
+</tr>
+<tr>
+  <td>24</td>
+  <td><strong>No retry logic on external API calls</strong> — Gmail, LLM, crypto, ZeroBounce API calls have no retry/backoff. Transient failures crash flows.</td>
+  <td><span class="category cat-code">Code</span></td>
+  <td><span class="badge high">High</span></td>
+  <td>3</td><td>3</td><td>3</td>
+  <td><span class="score-pill s4">18</span></td>
+  <td><span class="file-ref">src/services/email_verifier.py, gmail_drafter.py, llm_advisor.py</span></td>
+</tr>
+
+<!-- ===== MEDIUM ===== -->
+<tr>
+  <td>25</td>
+  <td><strong>Hardcoded thresholds / magic numbers</strong> — Fuzzy dedup 85, GDPR limit 2, scoring weights. No config constants.</td>
+  <td><span class="category cat-code">Code</span></td>
+  <td><span class="badge medium">Medium</span></td>
+  <td>3</td><td>2</td><td>1</td>
+  <td><span class="score-pill s3">25</span></td>
+  <td><span class="file-ref">src/services/deduplication.py, compliance.py, contact_scorer.py</span></td>
+</tr>
+<tr>
+  <td>26</td>
+  <td><strong>Magic strings for status/channel enums</strong> — <code>'queued'</code>, <code>'in_progress'</code>, <code>'email'</code> used as raw strings across 10+ files.</td>
+  <td><span class="category cat-code">Code</span></td>
+  <td><span class="badge medium">Medium</span></td>
+  <td>3</td><td>2</td><td>2</td>
+  <td><span class="score-pill s3">20</span></td>
+  <td><span class="file-ref">src/services/state_machine.py, priority_queue.py</span></td>
+</tr>
+<tr>
+  <td>27</td>
+  <td><strong>No /health endpoint</strong> — No readiness check for load balancers or uptime monitors.</td>
+  <td><span class="category cat-infra">Infra</span></td>
+  <td><span class="badge medium">Medium</span></td>
+  <td>2</td><td>3</td><td>1</td>
+  <td><span class="score-pill s3">25</span></td>
+  <td><span class="file-ref">src/web/app.py</span></td>
+</tr>
+<tr>
+  <td>28</td>
+  <td><strong>No structured logging</strong> — Mix of <code>print()</code> and basic logging. No JSON format for production grep/search.</td>
+  <td><span class="category cat-infra">Infra</span></td>
+  <td><span class="badge medium">Medium</span></td>
+  <td>2</td><td>3</td><td>2</td>
+  <td><span class="score-pill s3">20</span></td>
+  <td><span class="file-ref">src/</span></td>
+</tr>
+<tr>
+  <td>29</td>
+  <td><strong>Hardcoded default campaign name</strong> — <code>"Q1_2026_initial"</code> in multiple routes. Rename breaks silently.</td>
+  <td><span class="category cat-code">Code</span></td>
+  <td><span class="badge medium">Medium</span></td>
+  <td>3</td><td>2</td><td>1</td>
+  <td><span class="score-pill s3">25</span></td>
+  <td><span class="file-ref">src/web/routes/contacts.py, queue.py</span></td>
+</tr>
+<tr>
+  <td>30</td>
+  <td><strong>Frontend lifecycle constants duplicated in 4+ files</strong> — <code>["cold", "contacted", "nurturing", ...]</code> defined separately in each page.</td>
+  <td><span class="category cat-code">Code</span></td>
+  <td><span class="badge medium">Medium</span></td>
+  <td>3</td><td>2</td><td>1</td>
+  <td><span class="score-pill s3">25</span></td>
+  <td><span class="file-ref">frontend/src/pages/*.tsx</span></td>
+</tr>
+<tr>
+  <td>31</td>
+  <td><strong>Query keys not centralized</strong> — Hard-coded <code>["queue"]</code>, <code>["contacts"]</code> strings everywhere. No React Query key factory.</td>
+  <td><span class="category cat-code">Code</span></td>
+  <td><span class="badge medium">Medium</span></td>
+  <td>3</td><td>2</td><td>2</td>
+  <td><span class="score-pill s3">20</span></td>
+  <td><span class="file-ref">frontend/src/pages/*.tsx</span></td>
+</tr>
+<tr>
+  <td>32</td>
+  <td><strong>Missing loading skeletons</strong> — Pipeline, Research, ContactList, Templates show blank content while loading.</td>
+  <td><span class="category cat-code">Code</span></td>
+  <td><span class="badge medium">Medium</span></td>
+  <td>2</td><td>2</td><td>3</td>
+  <td><span class="score-pill s3">12</span></td>
+  <td><span class="file-ref">frontend/src/pages/*.tsx</span></td>
+</tr>
+<tr>
+  <td>33</td>
+  <td><strong>Incomplete test fixtures</strong> — No shared factory functions. Each test rebuilds campaigns, contacts, templates manually.</td>
+  <td><span class="category cat-test">Test</span></td>
+  <td><span class="badge medium">Medium</span></td>
+  <td>3</td><td>2</td><td>3</td>
+  <td><span class="score-pill s3">15</span></td>
+  <td><span class="file-ref">tests/conftest.py</span></td>
+</tr>
+<tr>
+  <td>34</td>
+  <td><strong>Tight coupling: template rendering + SMTP + compliance</strong> — <code>render_campaign_email()</code> mixes rendering, GDPR checks, footer injection.</td>
+  <td><span class="category cat-arch">Arch</span></td>
+  <td><span class="badge medium">Medium</span></td>
+  <td>3</td><td>2</td><td>3</td>
+  <td><span class="score-pill s3">15</span></td>
+  <td><span class="file-ref">src/services/email_sender.py</span></td>
+</tr>
+<tr>
+  <td>35</td>
+  <td><strong>O(n²) fuzzy matching in dedup</strong> — Checks all name pairs via <code>combinations()</code>. Breaks at 10K+ companies (50M comparisons).</td>
+  <td><span class="category cat-arch">Arch</span></td>
+  <td><span class="badge medium">Medium</span></td>
+  <td>3</td><td>2</td><td>4</td>
+  <td><span class="score-pill s3">10</span></td>
+  <td><span class="file-ref">src/services/deduplication.py</span></td>
+</tr>
+<tr>
+  <td>36</td>
+  <td><strong>No config validation</strong> — YAML loaded without Pydantic model or JSON schema. Missing keys fail late at runtime.</td>
+  <td><span class="category cat-infra">Infra</span></td>
+  <td><span class="badge medium">Medium</span></td>
+  <td>2</td><td>3</td><td>2</td>
+  <td><span class="score-pill s3">20</span></td>
+  <td><span class="file-ref">src/config.py, config.yaml</span></td>
+</tr>
+<tr>
+  <td>37</td>
+  <td><strong>Prop drilling for campaign/filters</strong> — Campaign string and filter state threaded through 3+ component levels. Needs Context.</td>
+  <td><span class="category cat-arch">Arch</span></td>
+  <td><span class="badge medium">Medium</span></td>
+  <td>3</td><td>2</td><td>3</td>
+  <td><span class="score-pill s3">15</span></td>
+  <td><span class="file-ref">frontend/src/pages/Queue.tsx, ContactList.tsx</span></td>
+</tr>
+<tr>
+  <td>38</td>
+  <td><strong>Repeated error response shapes</strong> — Some routes return <code>{"success": false}</code>, others <code>HTTPException</code>. Inconsistent API contract.</td>
+  <td><span class="category cat-arch">Arch</span></td>
+  <td><span class="badge medium">Medium</span></td>
+  <td>2</td><td>2</td><td>2</td>
+  <td><span class="score-pill s3">16</span></td>
+  <td><span class="file-ref">src/web/routes/*.py</span></td>
+</tr>
+<tr>
+  <td>39</td>
+  <td><strong>No React.memo() on card components</strong> — QueueEmailCard, QueueLinkedInCard, DealCard re-render on every parent update.</td>
+  <td><span class="category cat-code">Code</span></td>
+  <td><span class="badge medium">Medium</span></td>
+  <td>2</td><td>2</td><td>2</td>
+  <td><span class="score-pill s3">16</span></td>
+  <td><span class="file-ref">frontend/src/components/*.tsx</span></td>
+</tr>
+<tr>
+  <td>40</td>
+  <td><strong>Inconsistent ON DELETE behavior</strong> — <code>events.campaign_id</code> SET NULL vs <code>contact_campaign_status</code> CASCADE. Orphaned events on campaign delete.</td>
+  <td><span class="category cat-infra">Infra</span></td>
+  <td><span class="badge medium">Medium</span></td>
+  <td>2</td><td>3</td><td>2</td>
+  <td><span class="score-pill s3">20</span></td>
+  <td><span class="file-ref">migrations/pg/001</span></td>
+</tr>
+<tr>
+  <td>41</td>
+  <td><strong>Status fields are unconstrained TEXT</strong> — No CHECK constraints on <code>email_status</code>, <code>contact_campaign_status.status</code>. Invalid values allowed.</td>
+  <td><span class="category cat-infra">Infra</span></td>
+  <td><span class="badge medium">Medium</span></td>
+  <td>2</td><td>3</td><td>2</td>
+  <td><span class="score-pill s3">20</span></td>
+  <td><span class="file-ref">migrations/pg/*.sql</span></td>
+</tr>
+<tr>
+  <td>42</td>
+  <td><strong>Missing composite indexes</strong> — No index on <code>(campaign_id, status, next_action_date)</code> or <code>(company_id, email_status)</code>. Priority queue &amp; metrics scan full tables.</td>
+  <td><span class="category cat-infra">Infra</span></td>
+  <td><span class="badge medium">Medium</span></td>
+  <td>2</td><td>2</td><td>2</td>
+  <td><span class="score-pill s3">16</span></td>
+  <td><span class="file-ref">migrations/pg/</span></td>
+</tr>
+<tr>
+  <td>43</td>
+  <td><strong>datetime.utcnow() deprecated</strong> — Python 3.12+ deprecates it. Should use <code>datetime.now(timezone.utc)</code>.</td>
+  <td><span class="category cat-dep">Dep</span></td>
+  <td><span class="badge medium">Medium</span></td>
+  <td>2</td><td>2</td><td>1</td>
+  <td><span class="score-pill s3">20</span></td>
+  <td><span class="file-ref">src/services/compliance.py</span></td>
+</tr>
+<tr>
+  <td>44</td>
+  <td><strong>Focus trapping missing in modals</strong> — Tab can escape modals. CreateContactModal, NewJobModal lack focus trap.</td>
+  <td><span class="category cat-code">Code</span></td>
+  <td><span class="badge medium">Medium</span></td>
+  <td>2</td><td>2</td><td>2</td>
+  <td><span class="score-pill s3">16</span></td>
+  <td><span class="file-ref">frontend/src/components/*.tsx</span></td>
+</tr>
+<tr>
+  <td>45</td>
+  <td><strong>No rate limiting on contact creation</strong> — <code>POST /contacts</code> has no rate limit while <code>/import/csv</code> has 5/min limit.</td>
+  <td><span class="category cat-sec">Security</span></td>
+  <td><span class="badge medium">Medium</span></td>
+  <td>2</td><td>3</td><td>2</td>
+  <td><span class="score-pill s3">20</span></td>
+  <td><span class="file-ref">src/web/routes/contacts.py</span></td>
+</tr>
+<tr>
+  <td>46</td>
+  <td><strong>Misplaced test file in src/services/</strong> — <code>state_machine_test.py</code> won't be discovered by pytest.</td>
+  <td><span class="category cat-test">Test</span></td>
+  <td><span class="badge medium">Medium</span></td>
+  <td>2</td><td>2</td><td>1</td>
+  <td><span class="score-pill s3">20</span></td>
+  <td><span class="file-ref">src/services/state_machine_test.py</span></td>
+</tr>
+<tr>
+  <td>47</td>
+  <td><strong>No coverage enforcement</strong> — pytest-cov in devdeps but no .coveragerc or CI threshold. Gaps invisible.</td>
+  <td><span class="category cat-test">Test</span></td>
+  <td><span class="badge medium">Medium</span></td>
+  <td>2</td><td>2</td><td>2</td>
+  <td><span class="score-pill s3">16</span></td>
+  <td><span class="file-ref">pyproject.toml</span></td>
+</tr>
+
+<!-- ===== LOW ===== -->
+<tr>
+  <td>48</td>
+  <td><strong>CLI module is 1,126 lines</strong> — All 24 commands in one file. Should split into command groups.</td>
+  <td><span class="category cat-code">Code</span></td>
+  <td><span class="badge low">Low</span></td>
+  <td>2</td><td>1</td><td>3</td>
+  <td><span class="score-pill s2">9</span></td>
+  <td><span class="file-ref">src/cli.py</span></td>
+</tr>
+<tr>
+  <td>49</td>
+  <td><strong>No frontend error boundary</strong> — Uncaught JS errors crash the entire React tree.</td>
+  <td><span class="category cat-code">Code</span></td>
+  <td><span class="badge low">Low</span></td>
+  <td>2</td><td>2</td><td>1</td>
+  <td><span class="score-pill s2">20</span></td>
+  <td><span class="file-ref">frontend/src/App.tsx</span></td>
+</tr>
+<tr>
+  <td>50</td>
+  <td><strong>No docstrings on route handlers</strong> — Missing OpenAPI auto-generated docs.</td>
+  <td><span class="category cat-doc">Doc</span></td>
+  <td><span class="badge low">Low</span></td>
+  <td>2</td><td>1</td><td>2</td>
+  <td><span class="score-pill s2">12</span></td>
+  <td><span class="file-ref">src/web/routes/*.py</span></td>
+</tr>
+<tr>
+  <td>51</td>
+  <td><strong>Missing deployment documentation</strong> — No DEPLOYMENT.md. Must infer from railway.toml, gunicorn.conf.py.</td>
+  <td><span class="category cat-doc">Doc</span></td>
+  <td><span class="badge low">Low</span></td>
+  <td>2</td><td>2</td><td>2</td>
+  <td><span class="score-pill s2">16</span></td>
+  <td><span class="file-ref">repo root</span></td>
+</tr>
+<tr>
+  <td>52</td>
+  <td><strong>No code splitting beyond pages</strong> — Modals/heavy components always bundled. Could lazy-load.</td>
+  <td><span class="category cat-code">Code</span></td>
+  <td><span class="badge low">Low</span></td>
+  <td>1</td><td>1</td><td>2</td>
+  <td><span class="score-pill s2">8</span></td>
+  <td><span class="file-ref">frontend/src/App.tsx</span></td>
+</tr>
+<tr>
+  <td>53</td>
+  <td><strong>Python version constraint too loose</strong> — <code>&gt;=3.12</code> with no upper bound. Should be <code>&gt;=3.12,&lt;4.0</code>.</td>
+  <td><span class="category cat-dep">Dep</span></td>
+  <td><span class="badge low">Low</span></td>
+  <td>1</td><td>2</td><td>1</td>
+  <td><span class="score-pill s2">15</span></td>
+  <td><span class="file-ref">pyproject.toml</span></td>
+</tr>
+<tr>
+  <td>54</td>
+  <td><strong>No barrel exports in frontend components</strong> — Each import is an individual path. Could use <code>index.ts</code>.</td>
+  <td><span class="category cat-code">Code</span></td>
+  <td><span class="badge low">Low</span></td>
+  <td>1</td><td>1</td><td>2</td>
+  <td><span class="score-pill s2">8</span></td>
+  <td><span class="file-ref">frontend/src/components/</span></td>
+</tr>
+<tr>
+  <td>55</td>
+  <td><strong>No API pagination on tags endpoint</strong> — Hard-coded <code>LIMIT 500</code> with no cursor/offset.</td>
+  <td><span class="category cat-arch">Arch</span></td>
+  <td><span class="badge low">Low</span></td>
+  <td>1</td><td>1</td><td>2</td>
+  <td><span class="score-pill s2">8</span></td>
+  <td><span class="file-ref">src/web/routes/tags.py</span></td>
+</tr>
+
+</tbody>
+</table>
+</div>
+</div>
+
+<!-- ============ BACKEND TAB ============ -->
+<div id="tab-backend" class="tab-content">
+<div class="note">22 backend-specific items. Biggest wins: extract QueryBuilder (~400 lines saved), add Python Enums, fix broad exception handling.</div>
+<div class="tbl-wrap">
+<table>
+<thead><tr><th>#</th><th>Issue</th><th>Severity</th><th>Score</th><th>File(s)</th></tr></thead>
+<tbody>
+<tr><td>4</td><td><strong>Race condition in DB pool init</strong></td><td><span class="badge critical">Critical</span></td><td><span class="score-pill s5">40</span></td><td><span class="file-ref">src/models/database.py</span></td></tr>
+<tr><td>6</td><td><strong>Module-level auth runs at import</strong></td><td><span class="badge critical">Critical</span></td><td><span class="score-pill s5">36</span></td><td><span class="file-ref">src/web/dependencies.py</span></td></tr>
+<tr><td>11</td><td><strong>crypto_research.py — 1,078 lines</strong></td><td><span class="badge high">High</span></td><td><span class="score-pill s4">21</span></td><td><span class="file-ref">src/services/crypto_research.py</span></td></tr>
+<tr><td>15</td><td><strong>Duplicated query builder (15+ routes)</strong></td><td><span class="badge high">High</span></td><td><span class="score-pill s4">18</span></td><td><span class="file-ref">src/web/routes/*.py</span></td></tr>
+<tr><td>16</td><td><strong>Missing input validation</strong></td><td><span class="badge high">High</span></td><td><span class="score-pill s4">21</span></td><td><span class="file-ref">src/services/*.py</span></td></tr>
+<tr><td>20</td><td><strong>Missing transaction management in dedup</strong></td><td><span class="badge high">High</span></td><td><span class="score-pill s4">28</span></td><td><span class="file-ref">src/services/deduplication.py</span></td></tr>
+<tr><td>21</td><td><strong>Broad except Exception blocks</strong></td><td><span class="badge high">High</span></td><td><span class="score-pill s4">24</span></td><td><span class="file-ref">src/cli.py, routes</span></td></tr>
+<tr><td>24</td><td><strong>No retry logic on external APIs</strong></td><td><span class="badge high">High</span></td><td><span class="score-pill s4">18</span></td><td><span class="file-ref">src/services/*.py</span></td></tr>
+<tr><td>25</td><td><strong>Magic numbers</strong></td><td><span class="badge medium">Medium</span></td><td><span class="score-pill s3">25</span></td><td><span class="file-ref">src/services/dedup, compliance, scorer</span></td></tr>
+<tr><td>26</td><td><strong>Magic strings for enums</strong></td><td><span class="badge medium">Medium</span></td><td><span class="score-pill s3">20</span></td><td><span class="file-ref">src/services/state_machine.py</span></td></tr>
+<tr><td>28</td><td><strong>No structured logging</strong></td><td><span class="badge medium">Medium</span></td><td><span class="score-pill s3">20</span></td><td><span class="file-ref">src/</span></td></tr>
+<tr><td>29</td><td><strong>Hardcoded campaign name</strong></td><td><span class="badge medium">Medium</span></td><td><span class="score-pill s3">25</span></td><td><span class="file-ref">routes/contacts.py, queue.py</span></td></tr>
+<tr><td>34</td><td><strong>Template render + SMTP + compliance coupled</strong></td><td><span class="badge medium">Medium</span></td><td><span class="score-pill s3">15</span></td><td><span class="file-ref">src/services/email_sender.py</span></td></tr>
+<tr><td>35</td><td><strong>O(n²) fuzzy matching</strong></td><td><span class="badge medium">Medium</span></td><td><span class="score-pill s3">10</span></td><td><span class="file-ref">src/services/deduplication.py</span></td></tr>
+<tr><td>36</td><td><strong>No config validation</strong></td><td><span class="badge medium">Medium</span></td><td><span class="score-pill s3">20</span></td><td><span class="file-ref">src/config.py</span></td></tr>
+<tr><td>38</td><td><strong>Inconsistent error responses</strong></td><td><span class="badge medium">Medium</span></td><td><span class="score-pill s3">16</span></td><td><span class="file-ref">src/web/routes/*.py</span></td></tr>
+<tr><td>43</td><td><strong>deprecated utcnow()</strong></td><td><span class="badge medium">Medium</span></td><td><span class="score-pill s3">20</span></td><td><span class="file-ref">src/services/compliance.py</span></td></tr>
+<tr><td>45</td><td><strong>No rate limit on POST /contacts</strong></td><td><span class="badge medium">Medium</span></td><td><span class="score-pill s3">20</span></td><td><span class="file-ref">src/web/routes/contacts.py</span></td></tr>
+<tr><td>48</td><td><strong>CLI module 1,126 lines</strong></td><td><span class="badge low">Low</span></td><td><span class="score-pill s2">9</span></td><td><span class="file-ref">src/cli.py</span></td></tr>
+<tr><td>50</td><td><strong>No route docstrings</strong></td><td><span class="badge low">Low</span></td><td><span class="score-pill s2">12</span></td><td><span class="file-ref">src/web/routes/*.py</span></td></tr>
+<tr><td>55</td><td><strong>No pagination on tags</strong></td><td><span class="badge low">Low</span></td><td><span class="score-pill s2">8</span></td><td><span class="file-ref">src/web/routes/tags.py</span></td></tr>
+</tbody>
+</table>
+</div>
+</div>
+
+<!-- ============ FRONTEND TAB ============ -->
+<div id="tab-frontend" class="tab-content">
+<div class="note">19 frontend-specific items. Biggest wins: decompose god components (4 files &gt;600 LOC), centralize constants, typed API client.</div>
+<div class="tbl-wrap">
+<table>
+<thead><tr><th>#</th><th>Issue</th><th>Severity</th><th>Score</th><th>File(s)</th></tr></thead>
+<tbody>
+<tr><td>12</td><td><strong>ResearchJobDetail.tsx — 704 lines</strong></td><td><span class="badge high">High</span></td><td><span class="score-pill s4">21</span></td><td><span class="file-ref">pages/ResearchJobDetail.tsx</span></td></tr>
+<tr><td>13</td><td><strong>ContactDetail.tsx — 700 lines</strong></td><td><span class="badge high">High</span></td><td><span class="score-pill s4">21</span></td><td><span class="file-ref">pages/ContactDetail.tsx</span></td></tr>
+<tr><td>14</td><td><strong>Pipeline.tsx — 620 lines</strong></td><td><span class="badge high">High</span></td><td><span class="score-pill s4">21</span></td><td><span class="file-ref">pages/Pipeline.tsx</span></td></tr>
+<tr><td>18</td><td><strong>Duplicated API fetch pattern</strong></td><td><span class="badge high">High</span></td><td><span class="score-pill s4">20</span></td><td><span class="file-ref">pages/*.tsx</span></td></tr>
+<tr><td>19</td><td><strong>No focus-visible styles</strong></td><td><span class="badge high">High</span></td><td><span class="score-pill s4">24</span></td><td><span class="file-ref">frontend/src/</span></td></tr>
+<tr><td>22</td><td><strong><code>any</code> types scattered</strong></td><td><span class="badge high">High</span></td><td><span class="score-pill s4">24</span></td><td><span class="file-ref">api/client.ts, pages</span></td></tr>
+<tr><td>30</td><td><strong>Lifecycle constants duplicated 4x</strong></td><td><span class="badge medium">Medium</span></td><td><span class="score-pill s3">25</span></td><td><span class="file-ref">pages/*.tsx</span></td></tr>
+<tr><td>31</td><td><strong>Query keys not centralized</strong></td><td><span class="badge medium">Medium</span></td><td><span class="score-pill s3">20</span></td><td><span class="file-ref">pages/*.tsx</span></td></tr>
+<tr><td>32</td><td><strong>Missing loading skeletons</strong></td><td><span class="badge medium">Medium</span></td><td><span class="score-pill s3">12</span></td><td><span class="file-ref">pages/*.tsx</span></td></tr>
+<tr><td>37</td><td><strong>Prop drilling for campaign/filters</strong></td><td><span class="badge medium">Medium</span></td><td><span class="score-pill s3">15</span></td><td><span class="file-ref">pages/Queue.tsx, ContactList.tsx</span></td></tr>
+<tr><td>39</td><td><strong>No React.memo() on cards</strong></td><td><span class="badge medium">Medium</span></td><td><span class="score-pill s3">16</span></td><td><span class="file-ref">components/*.tsx</span></td></tr>
+<tr><td>44</td><td><strong>Focus trapping missing in modals</strong></td><td><span class="badge medium">Medium</span></td><td><span class="score-pill s3">16</span></td><td><span class="file-ref">components/*.tsx</span></td></tr>
+<tr><td>49</td><td><strong>No error boundary</strong></td><td><span class="badge low">Low</span></td><td><span class="score-pill s2">20</span></td><td><span class="file-ref">App.tsx</span></td></tr>
+<tr><td>52</td><td><strong>No code splitting beyond pages</strong></td><td><span class="badge low">Low</span></td><td><span class="score-pill s2">8</span></td><td><span class="file-ref">App.tsx</span></td></tr>
+<tr><td>54</td><td><strong>No barrel exports</strong></td><td><span class="badge low">Low</span></td><td><span class="score-pill s2">8</span></td><td><span class="file-ref">components/</span></td></tr>
+</tbody>
+</table>
+</div>
+</div>
+
+<!-- ============ INFRA TAB ============ -->
+<div id="tab-infra" class="tab-content">
+<div class="note">14 infra/test/DB items. Biggest wins: add CI pipeline, migration state tracking, pin dependencies.</div>
+<div class="tbl-wrap">
+<table>
+<thead><tr><th>#</th><th>Issue</th><th>Severity</th><th>Score</th><th>File(s)</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><strong>No CI/CD pipeline</strong></td><td><span class="badge critical">Critical</span></td><td><span class="score-pill s5">30</span></td><td><span class="file-ref">repo root</span></td></tr>
+<tr><td>2</td><td><strong>Hardcoded CORS</strong></td><td><span class="badge critical">Critical</span></td><td><span class="score-pill s5">50</span></td><td><span class="file-ref">src/web/app.py</span></td></tr>
+<tr><td>3</td><td><strong>Migration runner no state</strong></td><td><span class="badge critical">Critical</span></td><td><span class="score-pill s5">40</span></td><td><span class="file-ref">src/models/database.py</span></td></tr>
+<tr><td>5</td><td><strong>Duplicate migration dirs</strong></td><td><span class="badge critical">Critical</span></td><td><span class="score-pill s5">45</span></td><td><span class="file-ref">migrations/</span></td></tr>
+<tr><td>7</td><td><strong>Unpinned dependencies</strong></td><td><span class="badge high">High</span></td><td><span class="score-pill s4">45</span></td><td><span class="file-ref">pyproject.toml</span></td></tr>
+<tr><td>8</td><td><strong>No README.md</strong></td><td><span class="badge high">High</span></td><td><span class="score-pill s4">30</span></td><td><span class="file-ref">repo root</span></td></tr>
+<tr><td>9</td><td><strong>10 untested services</strong></td><td><span class="badge high">High</span></td><td><span class="score-pill s4">16</span></td><td><span class="file-ref">tests/</span></td></tr>
+<tr><td>10</td><td><strong>Only 2 route test files / 20</strong></td><td><span class="badge high">High</span></td><td><span class="score-pill s4">16</span></td><td><span class="file-ref">tests/</span></td></tr>
+<tr><td>17</td><td><strong>Unsafe FK changes in migration 010</strong></td><td><span class="badge high">High</span></td><td><span class="score-pill s4">28</span></td><td><span class="file-ref">migrations/pg/010</span></td></tr>
+<tr><td>23</td><td><strong>Missing unique constraints initially</strong></td><td><span class="badge high">High</span></td><td><span class="score-pill s4">28</span></td><td><span class="file-ref">migrations/pg/001, 007</span></td></tr>
+<tr><td>27</td><td><strong>No /health endpoint</strong></td><td><span class="badge medium">Medium</span></td><td><span class="score-pill s3">25</span></td><td><span class="file-ref">src/web/app.py</span></td></tr>
+<tr><td>33</td><td><strong>Incomplete test fixtures</strong></td><td><span class="badge medium">Medium</span></td><td><span class="score-pill s3">15</span></td><td><span class="file-ref">tests/conftest.py</span></td></tr>
+<tr><td>40</td><td><strong>Inconsistent ON DELETE</strong></td><td><span class="badge medium">Medium</span></td><td><span class="score-pill s3">20</span></td><td><span class="file-ref">migrations/pg/001</span></td></tr>
+<tr><td>41</td><td><strong>Status fields unconstrained TEXT</strong></td><td><span class="badge medium">Medium</span></td><td><span class="score-pill s3">20</span></td><td><span class="file-ref">migrations/pg/</span></td></tr>
+<tr><td>42</td><td><strong>Missing composite indexes</strong></td><td><span class="badge medium">Medium</span></td><td><span class="score-pill s3">16</span></td><td><span class="file-ref">migrations/pg/</span></td></tr>
+<tr><td>46</td><td><strong>Misplaced test file</strong></td><td><span class="badge medium">Medium</span></td><td><span class="score-pill s3">20</span></td><td><span class="file-ref">src/services/state_machine_test.py</span></td></tr>
+<tr><td>47</td><td><strong>No coverage enforcement</strong></td><td><span class="badge medium">Medium</span></td><td><span class="score-pill s3">16</span></td><td><span class="file-ref">pyproject.toml</span></td></tr>
+<tr><td>51</td><td><strong>Missing deployment docs</strong></td><td><span class="badge low">Low</span></td><td><span class="score-pill s2">16</span></td><td><span class="file-ref">repo root</span></td></tr>
+<tr><td>53</td><td><strong>Python version constraint loose</strong></td><td><span class="badge low">Low</span></td><td><span class="score-pill s2">15</span></td><td><span class="file-ref">pyproject.toml</span></td></tr>
+</tbody>
+</table>
+</div>
+</div>
+
+<!-- ============ SIMPLIFICATIONS ============ -->
+<h2>Top Simplification Opportunities</h2>
+
+<div class="simplification">
+  <h4>1. Extract <code>QueryBuilder</code> helper — saves ~400 lines across 15 routes</h4>
+  <p>Every list endpoint repeats <code>WHERE 1=1</code> + conditional <code>AND</code> + <code>params.append()</code>. A helper like <code>QueryBuilder().where("status = %s", val).order_by("id").limit(n).build()</code> cuts each list function from ~25 lines to ~8.</p>
+</div>
+
+<div class="simplification">
+  <h4>2. Centralize frontend API + constants — saves ~350 lines</h4>
+  <p>Create <code>src/constants.ts</code> (lifecycle stages, status types, colors, query keys) and upgrade <code>api/client.ts</code> with typed params + error response types. Eliminates repeated definitions in 4+ page files.</p>
+</div>
+
+<div class="simplification">
+  <h4>3. Split 4 god components — makes each 150-200 lines</h4>
+  <p><code>ResearchJobDetail</code> → CompletionSummary, BatchImportModal, ResultsGrid. <code>ContactDetail</code> → ContactTabs, ContactTimeline, ContactForm. <code>Pipeline</code> → StageColumn, DealCard, PipelineFilters. Each extraction is a standalone PR.</p>
+</div>
+
+<div class="simplification">
+  <h4>4. Split <code>crypto_research.py</code> into 4 modules — 1,078 → ~270 each</h4>
+  <p><code>crypto_api.py</code> (API clients), <code>crypto_scoring.py</code> (scoring), <code>crypto_cache.py</code> (caching), <code>crypto_report.py</code> (formatting/LLM). Single responsibility per module.</p>
+</div>
+
+<div class="simplification">
+  <h4>5. Python Enums + TS union types for statuses — eliminates magic strings</h4>
+  <p>Define <code>class ContactStatus(str, Enum)</code> and <code>class Channel(str, Enum)</code> in <code>src/constants.py</code>. Frontend gets a matching <code>type ContactStatus = "queued" | "in_progress" | ...</code>. Typos become errors, not silent bugs.</p>
+</div>
+
+<div class="simplification">
+  <h4>6. Standardize error responses with FastAPI exception handler</h4>
+  <p>Register a custom <code>AppError</code> exception + handler. Routes <code>raise AppError(400, "msg")</code>, middleware formats. Removes ~100 lines of manual <code>JSONResponse(content={"error": ...})</code>.</p>
+</div>
+
+<!-- ============ REMEDIATION PLAN ============ -->
+<h2>Phased Remediation Plan</h2>
+
+<div class="phase" style="border-left-color: var(--red);">
+  <div class="phase-header">
+    <div class="phase-title">Phase 1 — Critical Safety Fixes</div>
+    <div class="phase-meta">Week 1 &mdash; ~8 hours</div>
+  </div>
+  <ul>
+    <li><strong>#2 CORS → env var</strong> (15 min) — Move allowed origins to <code>CORS_ORIGINS</code> env variable.</li>
+    <li><strong>#4 DB pool race condition</strong> (1 hr) — Add <code>threading.Lock()</code> around <code>init_pool()</code>.</li>
+    <li><strong>#3 Migration state tracking</strong> (3 hrs) — Create <code>schema_migrations</code> table, check before applying each file.</li>
+    <li><strong>#5 Remove duplicate migration dir</strong> (15 min) — Archive root <code>migrations/*.sql</code> (SQLite) to prevent confusion.</li>
+    <li><strong>#6 Defer auth import</strong> (1 hr) — Use FastAPI <code>on_startup</code> or lazy loader for env checks.</li>
+    <li><strong>#7 Pin dependencies</strong> (30 min) — Run <code>pip freeze</code>, create <code>requirements.lock</code>.</li>
+    <li><strong>#1 CI/CD pipeline</strong> (2 hrs) — Add GitHub Actions: lint, typecheck, test on push/PR.</li>
+  </ul>
+</div>
+
+<div class="phase" style="border-left-color: var(--orange);">
+  <div class="phase-header">
+    <div class="phase-title">Phase 2 — High-Impact Code Simplifications</div>
+    <div class="phase-meta">Week 2-3 &mdash; ~20 hours</div>
+  </div>
+  <ul>
+    <li><strong>#15 Extract QueryBuilder</strong> (4 hrs) — Build helper, refactor 3 routes, then batch the rest.</li>
+    <li><strong>#18 Frontend apiClient upgrade</strong> (3 hrs) — Typed params + error types + centralized fetch.</li>
+    <li><strong>#26 Python Enums for statuses</strong> (2 hrs) — Define enums, find-replace across services.</li>
+    <li><strong>#25 Extract magic numbers to config</strong> (1 hr) — Create <code>src/constants.py</code>.</li>
+    <li><strong>#30 + #31 Frontend constants + query keys</strong> (2 hrs) — Create <code>constants.ts</code> + <code>queryKeys.ts</code>.</li>
+    <li><strong>#21 Narrow exception handling</strong> (2 hrs) — Audit and replace bare <code>except Exception</code>.</li>
+    <li><strong>#20 Transaction management in dedup</strong> (1 hr) — Wrap dedup operations in explicit transaction with rollback.</li>
+    <li><strong>#27 /health endpoint</strong> (15 min) — Add to app.py.</li>
+    <li><strong>#43 Fix deprecated utcnow()</strong> (15 min).</li>
+    <li><strong>#19 Add focus-visible styles</strong> (1 hr) — Global CSS rule + Tailwind plugin.</li>
+    <li><strong>#22 Remove <code>any</code> types</strong> (2 hrs) — Type API errors, fix client casts.</li>
+  </ul>
+</div>
+
+<div class="phase" style="border-left-color: var(--yellow);">
+  <div class="phase-header">
+    <div class="phase-title">Phase 3 — Component Decomposition</div>
+    <div class="phase-meta">Week 4-5 &mdash; ~20 hours</div>
+  </div>
+  <ul>
+    <li><strong>#12 Split ResearchJobDetail.tsx</strong> (3 hrs) — Extract CompletionSummary, BatchImportModal, ResultsGrid.</li>
+    <li><strong>#13 Split ContactDetail.tsx</strong> (3 hrs) — Extract tabs, timeline, form.</li>
+    <li><strong>#14 Split Pipeline.tsx</strong> (3 hrs) — Extract StageColumn, DealCard, PipelineFilters.</li>
+    <li><strong>#11 Split crypto_research.py</strong> (4 hrs) — 4 focused modules.</li>
+    <li><strong>#34 Decouple email_sender.py</strong> (3 hrs) — Separate rendering, compliance, SMTP.</li>
+    <li><strong>#38 Standardize error responses</strong> (2 hrs) — Custom AppError + exception handler.</li>
+    <li><strong>#37 Add CampaignContext</strong> (2 hrs) — React Context for campaign state.</li>
+  </ul>
+</div>
+
+<div class="phase" style="border-left-color: var(--green);">
+  <div class="phase-header">
+    <div class="phase-title">Phase 4 — Testing & Polish</div>
+    <div class="phase-meta">Week 6-8 &mdash; ~30 hours</div>
+  </div>
+  <ul>
+    <li><strong>#9 Test 10 untested services</strong> (10 hrs) — Start with compliance, state_machine, priority_queue.</li>
+    <li><strong>#10 Add route tests</strong> (8 hrs) — Cover contacts, queue, campaigns, deals, templates.</li>
+    <li><strong>#33 Improve test fixtures</strong> (2 hrs) — Factory functions for common entities.</li>
+    <li><strong>#47 Coverage enforcement</strong> (1 hr) — Add .coveragerc with 60% floor, enforce in CI.</li>
+    <li><strong>#46 Move misplaced test file</strong> (5 min).</li>
+    <li><strong>#32 + #44 Loading skeletons + modal focus trap</strong> (4 hrs) — Standardize UX patterns.</li>
+    <li><strong>#49 Error boundary</strong> (1 hr) — Root-level boundary with retry.</li>
+    <li><strong>#8 + #50 + #51 Documentation</strong> (3 hrs) — README, route docstrings, deployment guide.</li>
+    <li><strong>Remaining low-priority items</strong> (#48, #52-55) — pick up opportunistically.</li>
+  </ul>
+</div>
+
+<footer>
+  Full codebase audit: 55 items across backend (22), frontend (19), infrastructure/tests/DB (14). Scoring: Priority = (Impact + Risk) &times; (6 &minus; Effort). Estimated total remediation: ~80 hours across 8 weeks, parallelizable with feature work.
+</footer>
+
+</div>
+
+<script>
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('tab-' + tab).classList.add('active');
+}
+</script>
+</body>
+</html>
