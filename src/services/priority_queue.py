@@ -12,8 +12,11 @@ Core rules:
 
 from __future__ import annotations
 
-from datetime import date
+import json
+from datetime import date, timedelta
 from typing import Optional
+
+from src.models.database import get_cursor
 
 
 def get_daily_queue(
@@ -52,6 +55,7 @@ def get_daily_queue(
             c.is_gdpr AS contact_is_gdpr,
             comp.name AS company_name,
             comp.aum_millions,
+            comp.firm_type,
             ccs.current_step,
             ccs.status AS ccs_status
         FROM contact_campaign_status ccs
@@ -81,6 +85,7 @@ def get_daily_queue(
         ac.company_name,
         ac.company_id,
         ac.aum_millions,
+        ac.firm_type,
         ss.channel,
         ss.step_order,
         ss.template_id,
@@ -109,32 +114,65 @@ def get_daily_queue(
     LIMIT %s
     """
 
-    cursor = conn.cursor()
-    cursor.execute(query, (campaign_id, target_date, campaign_id, limit))
-    rows = cursor.fetchall()
+    with get_cursor(conn) as cursor:
+        cursor.execute(query, (campaign_id, target_date, campaign_id, limit))
+        rows = cursor.fetchall()
 
-    results = []
-    for row in rows:
-        # Compute total_steps for each contact (batch-friendly approach)
-        total_steps = count_steps_for_contact(conn, row["contact_id"], campaign_id) if "total_steps" not in row else row["total_steps"]
-        results.append(
-            {
-                "contact_id": row["contact_id"],
-                "contact_name": row["contact_name"],
-                "company_name": row["company_name"],
-                "company_id": row["company_id"],
-                "aum_millions": row["aum_millions"],
-                "channel": row["channel"],
-                "step_order": row["step_order"],
-                "total_steps": total_steps,
-                "template_id": row["template_id"],
-                "is_gdpr": bool(row["is_gdpr"]),
-                "email": row["email"],
-                "linkedin_url": row["linkedin_url"],
-            }
-        )
+        if not rows:
+            return []
 
-    return results
+        # Batch compute total_steps: one query for GDPR, one for non-GDPR
+        # The is_gdpr flag is already in each row from the CTE
+        gdpr_contacts = {r["contact_id"] for r in rows if r["is_gdpr"]}
+        non_gdpr_contacts = {r["contact_id"] for r in rows if not r["is_gdpr"]}
+
+        # Count steps by GDPR status (2 queries instead of 2N)
+        steps_count = {}
+        if non_gdpr_contacts:
+            cursor.execute(
+                """SELECT COUNT(*) AS cnt FROM sequence_steps
+                   WHERE campaign_id = %s
+                     AND (non_gdpr_only = false OR false = false)
+                     AND (gdpr_only = false OR false = true)""",
+                (campaign_id,),
+            )
+            non_gdpr_steps = cursor.fetchone()["cnt"]
+            for cid in non_gdpr_contacts:
+                steps_count[cid] = non_gdpr_steps
+
+        if gdpr_contacts:
+            cursor.execute(
+                """SELECT COUNT(*) AS cnt FROM sequence_steps
+                   WHERE campaign_id = %s
+                     AND (non_gdpr_only = false OR true = false)
+                     AND (gdpr_only = false OR true = true)""",
+                (campaign_id,),
+            )
+            gdpr_steps = cursor.fetchone()["cnt"]
+            for cid in gdpr_contacts:
+                steps_count[cid] = gdpr_steps
+
+        results = []
+        for row in rows:
+            results.append(
+                {
+                    "contact_id": row["contact_id"],
+                    "contact_name": row["contact_name"],
+                    "company_name": row["company_name"],
+                    "company_id": row["company_id"],
+                    "aum_millions": row["aum_millions"],
+                    "firm_type": row["firm_type"],
+                    "channel": row["channel"],
+                    "step_order": row["step_order"],
+                    "total_steps": steps_count.get(row["contact_id"], 0),
+                    "template_id": row["template_id"],
+                    "is_gdpr": bool(row["is_gdpr"]),
+                    "email": row["email"],
+                    "linkedin_url": row["linkedin_url"],
+                }
+            )
+
+        return results
 
 
 def get_next_step_for_contact(
@@ -147,39 +185,39 @@ def get_next_step_for_contact(
     Looks at the contact's current_step in contact_campaign_status, then finds
     the matching sequence_step. Respects GDPR filtering.
     """
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        SELECT c.is_gdpr, ccs.current_step
-        FROM contact_campaign_status ccs
-        JOIN contacts c ON c.id = ccs.contact_id
-        WHERE ccs.contact_id = %s AND ccs.campaign_id = %s
-        """,
-        (contact_id, campaign_id),
-    )
-    row = cursor.fetchone()
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            """
+            SELECT c.is_gdpr, ccs.current_step
+            FROM contact_campaign_status ccs
+            JOIN contacts c ON c.id = ccs.contact_id
+            WHERE ccs.contact_id = %s AND ccs.campaign_id = %s
+            """,
+            (contact_id, campaign_id),
+        )
+        row = cursor.fetchone()
 
-    if row is None:
-        return None
+        if row is None:
+            return None
 
-    is_gdpr = row["is_gdpr"]
-    current_step = row["current_step"]
+        is_gdpr = row["is_gdpr"]
+        current_step = row["current_step"]
 
-    cursor.execute(
-        """
-        SELECT * FROM sequence_steps
-        WHERE campaign_id = %s
-          AND step_order >= %s
-          AND (non_gdpr_only = false OR %s = false)
-          AND (gdpr_only = false OR %s = true)
-        ORDER BY step_order ASC
-        LIMIT 1
-        """,
-        (campaign_id, current_step, is_gdpr, is_gdpr),
-    )
-    step = cursor.fetchone()
+        cursor.execute(
+            """
+            SELECT * FROM sequence_steps
+            WHERE campaign_id = %s
+              AND step_order >= %s
+              AND (non_gdpr_only = false OR %s = false)
+              AND (gdpr_only = false OR %s = true)
+            ORDER BY step_order ASC
+            LIMIT 1
+            """,
+            (campaign_id, current_step, is_gdpr, is_gdpr),
+        )
+        step = cursor.fetchone()
 
-    return step
+        return step
 
 
 def count_steps_for_contact(
@@ -192,27 +230,156 @@ def count_steps_for_contact(
     Accounts for GDPR filtering: if the contact is GDPR, steps marked
     non_gdpr_only are excluded (and vice versa for gdpr_only).
     """
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT is_gdpr FROM contacts WHERE id = %s",
-        (contact_id,),
-    )
-    row = cursor.fetchone()
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            "SELECT is_gdpr FROM contacts WHERE id = %s",
+            (contact_id,),
+        )
+        row = cursor.fetchone()
 
-    if row is None:
-        return 0
+        if row is None:
+            return 0
 
-    is_gdpr = row["is_gdpr"]
+        is_gdpr = row["is_gdpr"]
 
-    cursor.execute(
+        cursor.execute(
+            """
+            SELECT COUNT(*) AS cnt FROM sequence_steps
+            WHERE campaign_id = %s
+              AND (non_gdpr_only = false OR %s = false)
+              AND (gdpr_only = false OR %s = true)
+            """,
+            (campaign_id, is_gdpr, is_gdpr),
+        )
+        result = cursor.fetchone()
+
+        return result["cnt"] if result else 0
+
+
+def defer_contact(
+    conn,
+    contact_id: int,
+    campaign_id: int,
+    reason: Optional[str] = None,
+) -> dict:
+    """Defer a contact to the back of the queue.
+
+    Pushes next_action_date to tomorrow and logs a ``deferred`` event
+    with the optional reason. The contact stays in their current status
+    (queued or in_progress) — deferral is not a terminal state.
+
+    Args:
+        conn: database connection
+        contact_id: the contact to defer
+        campaign_id: the campaign context
+        reason: optional skip reason for analytics
+
+    Returns:
+        Dict with success status and new next_action_date.
+    """
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            """UPDATE contact_campaign_status
+               SET next_action_date = %s, updated_at = NOW()
+               WHERE contact_id = %s AND campaign_id = %s
+               RETURNING id""",
+            (tomorrow, contact_id, campaign_id),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return {"success": False, "error": "Contact not enrolled in campaign"}
+
+        metadata = json.dumps({"reason": reason}) if reason else None
+        cursor.execute(
+            """INSERT INTO events (contact_id, campaign_id, event_type, metadata, notes)
+               VALUES (%s, %s, 'deferred', %s, %s)""",
+            (contact_id, campaign_id, metadata, reason),
+        )
+        conn.commit()
+
+    return {
+        "success": True,
+        "contact_id": contact_id,
+        "next_action_date": tomorrow,
+        "reason": reason,
+    }
+
+
+def get_defer_stats(
+    conn,
+    campaign_id: Optional[int] = None,
+    target_date: Optional[str] = None,
+) -> dict:
+    """Get defer/skip analytics.
+
+    Returns:
+        Dict with: today_count, total_count, by_reason (list of {reason, count}),
+        repeat_deferrals (contacts deferred 2+ times).
+    """
+    if target_date is None:
+        target_date = date.today().isoformat()
+
+    with get_cursor(conn) as cursor:
+        # Count deferrals today
+        params_today: list = [target_date]
+        today_query = """
+            SELECT COUNT(*) AS cnt FROM events
+            WHERE event_type = 'deferred'
+              AND created_at::date = %s
         """
-        SELECT COUNT(*) AS cnt FROM sequence_steps
-        WHERE campaign_id = %s
-          AND (non_gdpr_only = false OR %s = false)
-          AND (gdpr_only = false OR %s = true)
-        """,
-        (campaign_id, is_gdpr, is_gdpr),
-    )
-    result = cursor.fetchone()
+        if campaign_id:
+            today_query += " AND campaign_id = %s"
+            params_today.append(campaign_id)
+        cursor.execute(today_query, params_today)
+        today_count = cursor.fetchone()["cnt"]
 
-    return result["cnt"] if result else 0
+        # Total deferrals
+        params_total: list = []
+        total_query = "SELECT COUNT(*) AS cnt FROM events WHERE event_type = 'deferred'"
+        if campaign_id:
+            total_query += " AND campaign_id = %s"
+            params_total.append(campaign_id)
+        cursor.execute(total_query, params_total)
+        total_count = cursor.fetchone()["cnt"]
+
+        # By reason
+        params_reason: list = []
+        reason_query = """
+            SELECT notes AS reason, COUNT(*) AS cnt
+            FROM events
+            WHERE event_type = 'deferred'
+        """
+        if campaign_id:
+            reason_query += " AND campaign_id = %s"
+            params_reason.append(campaign_id)
+        reason_query += " GROUP BY notes ORDER BY cnt DESC"
+        cursor.execute(reason_query, params_reason)
+        by_reason = [{"reason": r["reason"] or "No reason", "count": r["cnt"]} for r in cursor.fetchall()]
+
+        # Repeat deferrals (contacts deferred 2+ times)
+        params_repeat: list = []
+        repeat_query = """
+            SELECT e.contact_id, COUNT(*) AS defer_count,
+                   COALESCE(c.full_name, c.email, c.id::text) AS contact_name
+            FROM events e
+            JOIN contacts c ON c.id = e.contact_id
+            WHERE e.event_type = 'deferred'
+        """
+        if campaign_id:
+            repeat_query += " AND e.campaign_id = %s"
+            params_repeat.append(campaign_id)
+        repeat_query += " GROUP BY e.contact_id, c.full_name, c.email, c.id HAVING COUNT(*) >= 2 ORDER BY defer_count DESC LIMIT 20"
+        cursor.execute(repeat_query, params_repeat)
+        repeat_deferrals = [
+            {"contact_id": r["contact_id"], "contact_name": r["contact_name"], "defer_count": r["defer_count"]}
+            for r in cursor.fetchall()
+        ]
+
+    return {
+        "today_count": today_count,
+        "total_count": total_count,
+        "by_reason": by_reason,
+        "repeat_deferrals": repeat_deferrals,
+    }

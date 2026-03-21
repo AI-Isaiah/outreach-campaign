@@ -8,8 +8,10 @@ and rendered content.
 from __future__ import annotations
 
 from datetime import date
+from collections import defaultdict
 from typing import Optional
 
+from src.models.database import get_cursor
 from src.services.contact_scorer import score_contacts
 from src.services.priority_queue import get_daily_queue
 from src.services.template_selector import select_template
@@ -20,6 +22,7 @@ def get_adaptive_queue(
     campaign_id: int,
     target_date: Optional[str] = None,
     limit: int = 20,
+    diverse: bool = True,
 ) -> list[dict]:
     """Get the daily queue with adaptive scoring and template recommendations.
 
@@ -34,7 +37,7 @@ def get_adaptive_queue(
     Falls back to static queue on error.
     """
     # Get base queue items (eligibility)
-    items = get_daily_queue(conn, campaign_id, target_date=target_date, limit=limit * 2)
+    items = get_daily_queue(conn, campaign_id, target_date=target_date, limit=limit * 3)
 
     if not items:
         return []
@@ -45,92 +48,94 @@ def get_adaptive_queue(
     score_map = {s["contact_id"]: s for s in scores}
 
     # Get available templates per channel
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT * FROM templates WHERE is_active = true ORDER BY id"
-    )
-    all_templates = [dict(r) for r in cursor.fetchall()]
-
-    templates_by_channel = {}
-    for t in all_templates:
-        ch = t["channel"]
-        templates_by_channel.setdefault(ch, []).append(t)
-
-    # Get previous touches per contact
-    cursor.execute(
-        """SELECT contact_id, string_agg(channel, ',' ORDER BY sent_at) AS channels
-           FROM contact_template_history
-           WHERE campaign_id = %s
-           GROUP BY contact_id""",
-        (campaign_id,),
-    )
-    history_map = {}
-    for row in cursor.fetchall():
-        history_map[row["contact_id"]] = row["channels"].split(",") if row["channels"] else []
-
-    enriched = []
-    for item in items:
-        contact_id = item["contact_id"]
-        channel = item["channel"]
-
-        # Apply channel rules
-        prev_channels = history_map.get(contact_id, [])
-        channel = _apply_channel_rules(channel, prev_channels, item)
-
-        # Get adaptive score
-        score_data = score_map.get(contact_id, {
-            "priority_score": 0.0,
-            "breakdown": {"aum_score": 0.0, "segment_score": 0.0, "channel_score": 0.0, "recency_score": 0.0},
-        })
-
-        # Check for manual override
-        override_key = f"override_{contact_id}_{campaign_id}"
+    with get_cursor(conn) as cursor:
         cursor.execute(
-            "SELECT value FROM engine_config WHERE key = %s",
-            (override_key,),
+            "SELECT * FROM templates WHERE is_active = true ORDER BY id"
         )
-        override_row = cursor.fetchone()
+        all_templates = [dict(r) for r in cursor.fetchall()]
 
-        if override_row:
-            # Manual override takes priority
-            template_result = {
-                "template_id": int(override_row["value"]),
-                "selection_mode": "manual_override",
-                "reasoning": "Template manually overridden by operator",
-                "alternatives": [],
-            }
-            # Clean up the override (one-time use)
-            cursor.execute("DELETE FROM engine_config WHERE key = %s", (override_key,))
-            conn.commit()
-        else:
-            # Adaptive template selection
-            available = templates_by_channel.get(channel, [])
-            template_result = select_template(
-                conn, contact_id, campaign_id, channel, available,
+        templates_by_channel = {}
+        for t in all_templates:
+            ch = t["channel"]
+            templates_by_channel.setdefault(ch, []).append(t)
+
+        # Get previous touches per contact
+        cursor.execute(
+            """SELECT contact_id, string_agg(channel, ',' ORDER BY sent_at) AS channels
+               FROM contact_template_history
+               WHERE campaign_id = %s
+               GROUP BY contact_id""",
+            (campaign_id,),
+        )
+        history_map = {}
+        for row in cursor.fetchall():
+            history_map[row["contact_id"]] = row["channels"].split(",") if row["channels"] else []
+
+        enriched = []
+        for item in items:
+            contact_id = item["contact_id"]
+            channel = item["channel"]
+
+            # Apply channel rules
+            prev_channels = history_map.get(contact_id, [])
+            channel = _apply_channel_rules(channel, prev_channels, item)
+
+            # Get adaptive score
+            score_data = score_map.get(contact_id, {
+                "priority_score": 0.0,
+                "breakdown": {"aum_score": 0.0, "segment_score": 0.0, "channel_score": 0.0, "recency_score": 0.0},
+            })
+
+            # Check for manual override
+            override_key = f"override_{contact_id}_{campaign_id}"
+            cursor.execute(
+                "SELECT value FROM engine_config WHERE key = %s",
+                (override_key,),
             )
+            override_row = cursor.fetchone()
 
-        enriched_item = {
-            **item,
-            "channel": channel,
-            "priority_score": score_data["priority_score"],
-            "score_breakdown": score_data.get("breakdown", {}),
-            "recommended_template_id": template_result["template_id"],
-            "selection_mode": template_result["selection_mode"],
-            "reasoning": template_result["reasoning"],
-            "alternatives": template_result.get("alternatives", []),
-            "previous_touches": len(prev_channels),
-            "previous_channels": prev_channels[-3:] if prev_channels else [],
-        }
+            if override_row:
+                # Manual override takes priority
+                template_result = {
+                    "template_id": int(override_row["value"]),
+                    "selection_mode": "manual_override",
+                    "reasoning": "Template manually overridden by operator",
+                    "alternatives": [],
+                }
+                # Clean up the override (one-time use)
+                cursor.execute("DELETE FROM engine_config WHERE key = %s", (override_key,))
+                conn.commit()
+            else:
+                # Adaptive template selection
+                available = templates_by_channel.get(channel, [])
+                template_result = select_template(
+                    conn, contact_id, campaign_id, channel, available,
+                )
 
-        # Use recommended template if original has none
-        if template_result["template_id"] and not item.get("template_id"):
-            enriched_item["template_id"] = template_result["template_id"]
+            enriched_item = {
+                **item,
+                "channel": channel,
+                "priority_score": score_data["priority_score"],
+                "score_breakdown": score_data.get("breakdown", {}),
+                "recommended_template_id": template_result["template_id"],
+                "selection_mode": template_result["selection_mode"],
+                "reasoning": template_result["reasoning"],
+                "alternatives": template_result.get("alternatives", []),
+                "previous_touches": len(prev_channels),
+                "previous_channels": prev_channels[-3:] if prev_channels else [],
+            }
 
-        enriched.append(enriched_item)
+            # Use recommended template if original has none
+            if template_result["template_id"] and not item.get("template_id"):
+                enriched_item["template_id"] = template_result["template_id"]
+
+            enriched.append(enriched_item)
 
     # Sort by priority score descending
     enriched.sort(key=lambda x: x["priority_score"], reverse=True)
 
+    if diverse:
+        return _diversify_by_firm_type(enriched, limit)
     return enriched[:limit]
 
 
@@ -160,3 +165,44 @@ def _apply_channel_rules(
                 return "email"
 
     return channel
+
+
+def _diversify_by_firm_type(items: list[dict], limit: int) -> list[dict]:
+    """Round-robin pick across firm types to ensure a diverse queue.
+
+    1. Group items by firm_type (NULL → "Unknown")
+    2. Each bucket is already sorted by priority_score DESC (from caller)
+    3. Order buckets by their top item's score
+    4. Round-robin pick from each bucket until limit reached
+    """
+    if not items:
+        return []
+
+    buckets: dict[str, list[dict]] = defaultdict(list)
+    for item in items:
+        key = item.get("firm_type") or "Unknown"
+        buckets[key].append(item)
+
+    # Order buckets by top item's score (highest first)
+    ordered_keys = sorted(
+        buckets.keys(),
+        key=lambda k: buckets[k][0]["priority_score"] if buckets[k] else 0,
+        reverse=True,
+    )
+
+    result: list[dict] = []
+    indices = {k: 0 for k in ordered_keys}
+
+    while len(result) < limit:
+        added = False
+        for key in ordered_keys:
+            if indices[key] < len(buckets[key]):
+                result.append(buckets[key][indices[key]])
+                indices[key] += 1
+                added = True
+                if len(result) >= limit:
+                    break
+        if not added:
+            break
+
+    return result

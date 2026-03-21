@@ -6,9 +6,11 @@ and unsubscribe processing.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from urllib.parse import quote
+
+from src.models.database import get_cursor
 
 
 def build_unsubscribe_url(from_email: str) -> str:
@@ -99,15 +101,15 @@ def check_gdpr_email_limit(
         True if the contact can still receive emails (count < max),
         False if the limit has been reached.
     """
-    cursor = conn.cursor()
-    cursor.execute(
-        """SELECT COUNT(*) as cnt FROM events
-           WHERE contact_id = %s AND campaign_id = %s AND event_type = 'email_sent'""",
-        (contact_id, campaign_id),
-    )
-    row = cursor.fetchone()
-    count = row["cnt"] if row else 0
-    return count < max_emails
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            """SELECT COUNT(*) as cnt FROM events
+               WHERE contact_id = %s AND campaign_id = %s AND event_type = 'email_sent'""",
+            (contact_id, campaign_id),
+        )
+        row = cursor.fetchone()
+        count = row["cnt"] if row else 0
+        return count < max_emails
 
 
 def is_contact_gdpr(conn, contact_id: int) -> bool:
@@ -123,18 +125,18 @@ def is_contact_gdpr(conn, contact_id: int) -> bool:
     Returns:
         True if the contact is under GDPR, False otherwise.
     """
-    cursor = conn.cursor()
-    cursor.execute(
-        """SELECT c.is_gdpr as contact_gdpr, co.is_gdpr as company_gdpr
-           FROM contacts c
-           LEFT JOIN companies co ON co.id = c.company_id
-           WHERE c.id = %s""",
-        (contact_id,),
-    )
-    row = cursor.fetchone()
-    if row is None:
-        return False
-    return bool(row["contact_gdpr"]) or bool(row["company_gdpr"] or 0)
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            """SELECT c.is_gdpr as contact_gdpr, co.is_gdpr as company_gdpr
+               FROM contacts c
+               LEFT JOIN companies co ON co.id = c.company_id
+               WHERE c.id = %s""",
+            (contact_id,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return False
+        return bool(row["contact_gdpr"]) or bool(row["company_gdpr"] or 0)
 
 
 def process_unsubscribe(conn, email: str) -> bool:
@@ -151,12 +153,14 @@ def process_unsubscribe(conn, email: str) -> bool:
         True if at least one contact was found and unsubscribed,
         False if no matching contact was found.
     """
-    now = datetime.utcnow().isoformat()
+    if not email or not email.strip():
+        return False
+    now = datetime.now(timezone.utc).isoformat()
     normalized = email.lower().strip()
-    cursor = conn.cursor()
-    cursor.execute(
-        "UPDATE contacts SET unsubscribed = true, unsubscribed_at = %s WHERE email_normalized = %s",
-        (now, normalized),
-    )
-    conn.commit()
-    return cursor.rowcount > 0
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            "UPDATE contacts SET unsubscribed = true, unsubscribed_at = %s WHERE email_normalized = %s",
+            (now, normalized),
+        )
+        conn.commit()
+        return cursor.rowcount > 0

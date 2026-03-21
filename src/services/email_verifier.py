@@ -7,9 +7,12 @@ reputation by keeping bounce rates below 2%.
 from __future__ import annotations
 
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 import httpx
+
+from src.constants import ZEROBOUNCE_CHUNK_SIZE as _CHUNK_SIZE
+from src.models.database import get_cursor
 
 # ---------------------------------------------------------------------------
 # Status mapping constants
@@ -30,7 +33,7 @@ HUNTER_STATUS_MAP: dict[str, str] = {
     "accept_all": "catch-all",
 }
 
-ZEROBOUNCE_CHUNK_SIZE = 100
+ZEROBOUNCE_CHUNK_SIZE = _CHUNK_SIZE
 
 
 # ---------------------------------------------------------------------------
@@ -142,19 +145,19 @@ def update_contact_email_status(
     status: str,
 ) -> None:
     """Update the ``email_status`` and ``updated_at`` for a contact by email."""
-    cursor = conn.cursor()
-    cursor.execute(
-        "UPDATE contacts SET email_status = %s, updated_at = %s WHERE email_normalized = %s",
-        (status, datetime.utcnow().isoformat(), email),
-    )
-    conn.commit()
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            "UPDATE contacts SET email_status = %s, updated_at = %s WHERE email_normalized = %s",
+            (status, datetime.now(timezone.utc).isoformat(), email),
+        )
+        conn.commit()
 
 
 def get_unverified_emails(conn) -> list[str]:
     """Return all ``email_normalized`` values where status is 'unverified' and email is not NULL."""
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT email_normalized FROM contacts "
-        "WHERE email_status = 'unverified' AND email_normalized IS NOT NULL"
-    )
-    return [row["email_normalized"] for row in cursor.fetchall()]
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            "SELECT email_normalized FROM contacts "
+            "WHERE email_status = 'unverified' AND email_normalized IS NOT NULL"
+        )
+        return [row["email_normalized"] for row in cursor.fetchall()]

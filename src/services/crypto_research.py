@@ -26,6 +26,7 @@ import threading
 
 import httpx
 
+from src.models.database import get_cursor
 from src.services.normalization_utils import normalize_company_name, split_name
 
 logger = logging.getLogger(__name__)
@@ -48,13 +49,10 @@ COST_CONTACT_DISCOVERY = 0.005
 
 def _is_cancelled(conn, job_id: int) -> bool:
     """Check if job has been cancelled. Called between each company."""
-    cur = conn.cursor()
-    try:
+    with get_cursor(conn) as cur:
         cur.execute("SELECT status FROM research_jobs WHERE id = %s", (job_id,))
         row = cur.fetchone()
         return row is not None and row["status"] in ("cancelling", "cancelled")
-    finally:
-        cur.close()
 
 
 # ---------------------------------------------------------------------------
@@ -179,8 +177,7 @@ def check_duplicate_companies(conn, company_names: list[str], user_id: int | Non
     normalized = [normalize_company_name(n) for n in company_names]
     norm_to_orig = dict(zip(normalized, company_names))
 
-    cur = conn.cursor()
-    try:
+    with get_cursor(conn) as cur:
         query = """SELECT DISTINCT regexp_replace(lower(trim(rr.company_name)), '\\s+', ' ', 'g') AS name_norm
                FROM research_results rr
                JOIN research_jobs rj ON rj.id = rr.job_id
@@ -192,8 +189,6 @@ def check_duplicate_companies(conn, company_names: list[str], user_id: int | Non
             params.append(user_id)
         cur.execute(query, params)
         existing = {row["name_norm"] for row in cur.fetchall()}
-    finally:
-        cur.close()
 
     already = [norm_to_orig[n] for n in normalized if n in existing]
     new = [norm_to_orig[n] for n in normalized if n not in existing]
@@ -404,8 +399,7 @@ def find_warm_intros(conn, company_name: str, company_id: int | None) -> dict:
     contact_ids = []
     notes_parts = []
 
-    cur = conn.cursor()
-    try:
+    with get_cursor(conn) as cur:
         if company_id:
             cur.execute(
                 """SELECT id, full_name, email, title
@@ -451,8 +445,6 @@ def find_warm_intros(conn, company_name: str, company_id: int | None) -> dict:
                 notes_parts.append(
                     f"Warm lead at similar firm: {row['full_name']} ({row['company_name']})"
                 )
-    finally:
-        cur.close()
 
     return {
         "contact_ids": contact_ids,
@@ -570,86 +562,84 @@ def batch_import_and_enroll(
         if camp:
             campaign_id = camp["id"]
 
-    cur = conn.cursor()
-    try:
-        # Batch fetch all results in one query (avoid N+1)
-        if not result_ids:
-            return {"imported_contacts": 0, "deals_created": 0, "enrolled": 0,
-                    "skipped_duplicates": 0, "results_processed": 0}
+    with get_cursor(conn) as cur:
+        try:
+            # Batch fetch all results in one query (avoid N+1)
+            if not result_ids:
+                return {"imported_contacts": 0, "deals_created": 0, "enrolled": 0,
+                        "skipped_duplicates": 0, "results_processed": 0}
 
-        cur.execute(
-            """SELECT rr.id, rr.company_id, rr.company_name, rr.crypto_score,
-                      rr.evidence_summary, rr.discovered_contacts_json
-               FROM research_results rr
-               JOIN research_jobs rj ON rj.id = rr.job_id
-               WHERE rr.id = ANY(%s) AND rj.user_id = %s""",
-            (result_ids, user_id),
-        )
-        results = [dict(row) for row in cur.fetchall()]
-
-        for result in results:
-            contacts_json = result.get("discovered_contacts_json")
-            if not contacts_json:
-                continue
-
-            discovered = (
-                contacts_json if isinstance(contacts_json, list)
-                else json.loads(contacts_json)
+            cur.execute(
+                """SELECT rr.id, rr.company_id, rr.company_name, rr.crypto_score,
+                          rr.evidence_summary, rr.discovered_contacts_json
+                   FROM research_results rr
+                   JOIN research_jobs rj ON rj.id = rr.job_id
+                   WHERE rr.id = ANY(%s) AND rj.user_id = %s""",
+                (result_ids, user_id),
             )
+            results = [dict(row) for row in cur.fetchall()]
 
-            # Resolve company
-            company_id = result["company_id"]
-            if not company_id:
-                company_id = resolve_or_create_company(cur, result["company_name"], user_id=user_id)
-                cur.execute(
-                    "UPDATE research_results SET company_id = %s WHERE id = %s",
-                    (company_id, result["id"]),
-                )
-
-            # Create deal if requested
-            if create_deals and company_id:
-                cur.execute(
-                    """INSERT INTO deals (company_id, title, stage, notes)
-                       VALUES (%s, %s, 'cold', %s) RETURNING id""",
-                    (
-                        company_id,
-                        f"Research: {result['company_name']}",
-                        f"Crypto score: {result.get('crypto_score', '?')}/100 - "
-                        f"{result.get('evidence_summary', '')}",
-                    ),
-                )
-                deal_id = cur.fetchone()["id"]
-                cur.execute(
-                    "INSERT INTO deal_stage_log (deal_id, to_stage) VALUES (%s, 'cold')",
-                    (deal_id,),
-                )
-                deals_created += 1
-
-            # Import contacts
-            for contact in discovered:
-                contact_id = import_single_contact(cur, contact, company_id)
-                if contact_id is None:
-                    skipped += 1
+            for result in results:
+                contacts_json = result.get("discovered_contacts_json")
+                if not contacts_json:
                     continue
 
-                imported_contacts += 1
+                discovered = (
+                    contacts_json if isinstance(contacts_json, list)
+                    else json.loads(contacts_json)
+                )
 
-                if campaign_id:
-                    try:
-                        enroll_contact(
-                            conn, contact_id, campaign_id,
-                            next_action_date=date.today().isoformat(),
-                        )
-                        enrolled += 1
-                    except Exception:
-                        pass
+                # Resolve company
+                company_id = result["company_id"]
+                if not company_id:
+                    company_id = resolve_or_create_company(cur, result["company_name"], user_id=user_id)
+                    cur.execute(
+                        "UPDATE research_results SET company_id = %s WHERE id = %s",
+                        (company_id, result["id"]),
+                    )
 
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        cur.close()
+                # Create deal if requested
+                if create_deals and company_id:
+                    cur.execute(
+                        """INSERT INTO deals (company_id, title, stage, notes)
+                           VALUES (%s, %s, 'cold', %s) RETURNING id""",
+                        (
+                            company_id,
+                            f"Research: {result['company_name']}",
+                            f"Crypto score: {result.get('crypto_score', '?')}/100 - "
+                            f"{result.get('evidence_summary', '')}",
+                        ),
+                    )
+                    deal_id = cur.fetchone()["id"]
+                    cur.execute(
+                        "INSERT INTO deal_stage_log (deal_id, to_stage) VALUES (%s, 'cold')",
+                        (deal_id,),
+                    )
+                    deals_created += 1
+
+                # Import contacts
+                for contact in discovered:
+                    contact_id = import_single_contact(cur, contact, company_id)
+                    if contact_id is None:
+                        skipped += 1
+                        continue
+
+                    imported_contacts += 1
+
+                    if campaign_id:
+                        try:
+                            enroll_contact(
+                                conn, contact_id, campaign_id,
+                                next_action_date=date.today().isoformat(),
+                            )
+                            enrolled += 1
+                        except Exception:
+                            pass
+
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
     return {
         "imported_contacts": imported_contacts,
@@ -681,15 +671,12 @@ def _update_job_status(conn, job_id: int, status: str, **kwargs):
         sets.append("completed_at = NOW()")
 
     vals.append(job_id)
-    cur = conn.cursor()
-    try:
+    with get_cursor(conn) as cur:
         cur.execute(
             f"UPDATE research_jobs SET {', '.join(sets)} WHERE id = %s",
             vals,
         )
         conn.commit()
-    finally:
-        cur.close()
 
 
 def cancel_research_job(conn, job_id: int) -> dict:
@@ -698,8 +685,7 @@ def cancel_research_job(conn, job_id: int) -> dict:
     Sets status to 'cancelling'. The background thread will detect this
     and stop after the current company finishes.
     """
-    cur = conn.cursor()
-    try:
+    with get_cursor(conn) as cur:
         cur.execute("SELECT status FROM research_jobs WHERE id = %s", (job_id,))
         row = cur.fetchone()
         if not row:
@@ -716,21 +702,18 @@ def cancel_research_job(conn, job_id: int) -> dict:
         )
         conn.commit()
         return {"success": True, "status": "cancelling"}
-    finally:
-        cur.close()
 
 
 def retry_failed_results(job_id: int, db_url: str, api_keys: dict | None = None) -> None:
     """Retry all errored results in a job. Runs in background thread."""
-    from src.models.database import get_connection, run_migrations
+    from src.models.database import get_connection, run_migrations, get_cursor
 
     _apply_api_keys(api_keys)
     conn = get_connection(db_url)
     try:
         run_migrations(conn)
 
-        cur = conn.cursor()
-        try:
+        with get_cursor(conn) as cur:
             cur.execute("SELECT * FROM research_jobs WHERE id = %s", (job_id,))
             job = cur.fetchone()
             if not job or job["status"] not in ("completed", "failed"):
@@ -752,8 +735,6 @@ def retry_failed_results(job_id: int, db_url: str, api_keys: dict | None = None)
                 (job_id,),
             )
             results = [dict(row) for row in cur.fetchall()]
-        finally:
-            cur.close()
 
         if not results:
             return
@@ -787,8 +768,7 @@ def retry_failed_results(job_id: int, db_url: str, api_keys: dict | None = None)
                 actual_cost += COST_CONTACT_DISCOVERY
                 warm = find_warm_intros(conn, result["company_name"], result.get("company_id"))
 
-                cur = conn.cursor()
-                try:
+                with get_cursor(conn) as cur:
                     cur.execute(
                         """UPDATE research_results
                            SET discovered_contacts_json = %s,
@@ -803,8 +783,6 @@ def retry_failed_results(job_id: int, db_url: str, api_keys: dict | None = None)
                         ),
                     )
                     conn.commit()
-                finally:
-                    cur.close()
             except Exception:
                 pass
 
@@ -816,8 +794,7 @@ def retry_failed_results(job_id: int, db_url: str, api_keys: dict | None = None)
                 time.sleep(0.5)
 
         # Recount totals
-        cur = conn.cursor()
-        try:
+        with get_cursor(conn) as cur:
             cur.execute(
                 """SELECT
                        COUNT(*) FILTER (WHERE status != 'pending') AS processed,
@@ -827,8 +804,6 @@ def retry_failed_results(job_id: int, db_url: str, api_keys: dict | None = None)
                 (job_id,),
             )
             counts = cur.fetchone()
-        finally:
-            cur.close()
 
         _update_job_status(
             conn, job_id, "completed",
@@ -882,25 +857,19 @@ def run_research_job(job_id: int, db_url: str, api_keys: dict | None = None) -> 
 
 def _execute_research_job(conn, job_id: int) -> None:
     """Run the full research pipeline for a job."""
-    cur = conn.cursor()
-    try:
+    with get_cursor(conn) as cur:
         cur.execute("SELECT * FROM research_jobs WHERE id = %s", (job_id,))
         job = cur.fetchone()
         if not job:
             return
         method = job["method"]
-    finally:
-        cur.close()
 
-    cur = conn.cursor()
-    try:
+    with get_cursor(conn) as cur:
         cur.execute(
             "SELECT * FROM research_results WHERE job_id = %s ORDER BY id",
             (job_id,),
         )
         results = [dict(row) for row in cur.fetchall()]
-    finally:
-        cur.close()
 
     if not results:
         _update_job_status(conn, job_id, "completed")
@@ -989,8 +958,7 @@ def _execute_research_job(conn, job_id: int) -> None:
 
             warm = find_warm_intros(conn, result["company_name"], result.get("company_id"))
 
-            cur = conn.cursor()
-            try:
+            with get_cursor(conn) as cur:
                 cur.execute(
                     """UPDATE research_results
                        SET discovered_contacts_json = %s,
@@ -1007,8 +975,6 @@ def _execute_research_job(conn, job_id: int) -> None:
                     ),
                 )
                 conn.commit()
-            finally:
-                cur.close()
 
             if discovered:
                 contacts_found += len(discovered)
@@ -1041,8 +1007,7 @@ def _research_single_company(conn, result: dict, method: str) -> None:
     result["web_search_raw"] = web_raw
     result["website_crawl_raw"] = crawl_raw
 
-    cur = conn.cursor()
-    try:
+    with get_cursor(conn) as cur:
         cur.execute(
             """UPDATE research_results
                SET web_search_raw = %s, website_crawl_raw = %s,
@@ -1051,8 +1016,6 @@ def _research_single_company(conn, result: dict, method: str) -> None:
             (web_raw, crawl_raw, result["id"]),
         )
         conn.commit()
-    finally:
-        cur.close()
 
 
 def _classify_single_company(conn, result: dict) -> None:
@@ -1063,8 +1026,7 @@ def _classify_single_company(conn, result: dict) -> None:
         result.get("website_crawl_raw") or "",
     )
 
-    cur = conn.cursor()
-    try:
+    with get_cursor(conn) as cur:
         cur.execute(
             """UPDATE research_results
                SET crypto_score = %s, category = %s,
@@ -1082,25 +1044,21 @@ def _classify_single_company(conn, result: dict) -> None:
             ),
         )
         conn.commit()
-    finally:
-        cur.close()
 
 
 def _mark_result_error(conn, result_id: int, error: str) -> None:
     """Mark a single result as errored."""
-    cur = conn.cursor()
-    try:
-        cur.execute(
-            """UPDATE research_results
-               SET status = 'error', classification_reasoning = %s, updated_at = NOW()
-               WHERE id = %s""",
-            (f"Error: {error}", result_id),
-        )
-        conn.commit()
-    except Exception:
-        conn.rollback()
-    finally:
-        cur.close()
+    with get_cursor(conn) as cur:
+        try:
+            cur.execute(
+                """UPDATE research_results
+                   SET status = 'error', classification_reasoning = %s, updated_at = NOW()
+                   WHERE id = %s""",
+                (f"Error: {error}", result_id),
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
 
 
 def start_research_job_background(job_id: int, db_url: str, api_keys: dict | None = None) -> None:

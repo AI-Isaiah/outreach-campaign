@@ -1,13 +1,27 @@
 """Shared normalization utilities for contact data.
 
 Provides common normalization functions used across multiple modules
-for standardizing LinkedIn URLs, company names, and contact names.
+for standardizing emails, LinkedIn URLs, company names, and contact names.
 """
 
 from __future__ import annotations
 
 import re
+from typing import Optional
 from urllib.parse import urlparse
+
+
+def normalize_email(email: Optional[str]) -> Optional[str]:
+    """Lowercase, strip whitespace, validate contains ``@``.
+
+    Returns None if the input is empty or invalid.
+    """
+    if email is None:
+        return None
+    email = email.strip().lower()
+    if not email or "@" not in email:
+        return None
+    return email
 
 
 def normalize_company_name(name: str) -> str:

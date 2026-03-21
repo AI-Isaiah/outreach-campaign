@@ -9,6 +9,7 @@ from __future__ import annotations
 import random
 from typing import Optional
 
+from src.models.database import get_cursor
 from src.services.response_analyzer import get_template_performance
 
 
@@ -36,29 +37,29 @@ def select_template(
         }
 
     # Filter out already-sent templates for this contact
-    cursor = conn.cursor()
-    cursor.execute(
-        """SELECT template_id FROM contact_template_history
-           WHERE contact_id = %s AND campaign_id = %s""",
-        (contact_id, campaign_id),
-    )
-    sent_ids = {row["template_id"] for row in cursor.fetchall()}
-    unsent = [t for t in available_templates if t["id"] not in sent_ids]
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            """SELECT template_id FROM contact_template_history
+               WHERE contact_id = %s AND campaign_id = %s""",
+            (contact_id, campaign_id),
+        )
+        sent_ids = {row["template_id"] for row in cursor.fetchall()}
+        unsent = [t for t in available_templates if t["id"] not in sent_ids]
 
-    if not unsent:
-        # All templates have been sent to this contact — reuse best performer
-        unsent = available_templates
+        if not unsent:
+            # All templates have been sent to this contact — reuse best performer
+            unsent = available_templates
 
-    # Get performance data
-    perf = get_template_performance(conn, campaign_id)
-    perf_by_id = {p["template_id"]: p for p in perf}
+        # Get performance data
+        perf = get_template_performance(conn, campaign_id)
+        perf_by_id = {p["template_id"]: p for p in perf}
 
-    # Get total campaign sends for explore rate calculation
-    cursor.execute(
-        "SELECT COUNT(*) AS cnt FROM contact_template_history WHERE campaign_id = %s",
-        (campaign_id,),
-    )
-    total_sends = cursor.fetchone()["cnt"]
+        # Get total campaign sends for explore rate calculation
+        cursor.execute(
+            "SELECT COUNT(*) AS cnt FROM contact_template_history WHERE campaign_id = %s",
+            (campaign_id,),
+        )
+        total_sends = cursor.fetchone()["cnt"]
 
     # Determine explore rate
     if total_sends < 50:

@@ -9,6 +9,9 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from typing import Optional
 
+from src.enums import ContactStatus, EventType
+from src.models.database import get_cursor
+
 
 def get_campaign_metrics(conn, campaign_id: int) -> dict:
     """Get comprehensive metrics for a campaign.
@@ -24,54 +27,47 @@ def get_campaign_metrics(conn, campaign_id: int) -> dict:
     - reply_rate: float (positive + negative / total non-queued)
     - positive_rate: float (positive / total non-queued)
     """
-    cursor = conn.cursor()
-    # Status counts
-    cursor.execute(
-        """
-        SELECT status, COUNT(*) AS cnt
-        FROM contact_campaign_status
-        WHERE campaign_id = %s
-        GROUP BY status
-        """,
-        (campaign_id,),
-    )
-    status_rows = cursor.fetchall()
+    with get_cursor(conn) as cursor:
+        # Status counts
+        cursor.execute(
+            """
+            SELECT status, COUNT(*) AS cnt
+            FROM contact_campaign_status
+            WHERE campaign_id = %s
+            GROUP BY status
+            """,
+            (campaign_id,),
+        )
+        status_rows = cursor.fetchall()
 
-    by_status = {
-        "queued": 0,
-        "in_progress": 0,
-        "replied_positive": 0,
-        "replied_negative": 0,
-        "no_response": 0,
-        "bounced": 0,
-    }
-    total_enrolled = 0
-    for row in status_rows:
-        by_status[row["status"]] = row["cnt"]
-        total_enrolled += row["cnt"]
+        by_status = {s: 0 for s in ContactStatus}
+        total_enrolled = 0
+        for row in status_rows:
+            by_status[row["status"]] = by_status.get(row["status"], 0) + row["cnt"]
+            total_enrolled += row["cnt"]
 
-    # Event counts — include both legacy expandi_* and new linkedin_* event types
-    cursor.execute(
-        """
-        SELECT event_type, COUNT(*) AS cnt
-        FROM events
-        WHERE campaign_id = %s
-          AND event_type IN (
-              'email_sent', 'call_booked',
-              'expandi_connected', 'expandi_message_sent',
-              'linkedin_connect_done', 'linkedin_message_done',
-              'linkedin_engage_done', 'linkedin_insight_done',
-              'linkedin_final_done'
-          )
-        GROUP BY event_type
-        """,
-        (campaign_id,),
-    )
-    event_rows = cursor.fetchall()
+        # Event counts — include both legacy expandi_* and new linkedin_* event types
+        cursor.execute(
+            """
+            SELECT event_type, COUNT(*) AS cnt
+            FROM events
+            WHERE campaign_id = %s
+              AND event_type IN (
+                  'email_sent', 'call_booked',
+                  'expandi_connected', 'expandi_message_sent',
+                  'linkedin_connect_done', 'linkedin_message_done',
+                  'linkedin_engage_done', 'linkedin_insight_done',
+                  'linkedin_final_done'
+              )
+            GROUP BY event_type
+            """,
+            (campaign_id,),
+        )
+        event_rows = cursor.fetchall()
 
-    event_counts = {}
-    for row in event_rows:
-        event_counts[row["event_type"]] = row["cnt"]
+        event_counts = {}
+        for row in event_rows:
+            event_counts[row["event_type"]] = row["cnt"]
 
     emails_sent = event_counts.get("email_sent", 0)
     linkedin_connects = (
@@ -114,44 +110,36 @@ def get_variant_comparison(conn, campaign_id: int) -> list[dict]:
     replied_negative, no_response, reply_rate, positive_rate.
     Only includes contacts with a non-NULL assigned_variant.
     """
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        SELECT
-            assigned_variant,
-            COUNT(*) AS total,
-            SUM(CASE WHEN status = 'replied_positive' THEN 1 ELSE 0 END)
-                AS replied_positive,
-            SUM(CASE WHEN status = 'replied_negative' THEN 1 ELSE 0 END)
-                AS replied_negative,
-            SUM(CASE WHEN status = 'no_response' THEN 1 ELSE 0 END)
-                AS no_response
-        FROM contact_campaign_status
-        WHERE campaign_id = %s
-          AND assigned_variant IS NOT NULL
-        GROUP BY assigned_variant
-        ORDER BY assigned_variant
-        """,
-        (campaign_id,),
-    )
-    rows = cursor.fetchall()
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            """
+            SELECT
+                assigned_variant,
+                COUNT(*) AS total,
+                SUM(CASE WHEN status = 'replied_positive' THEN 1 ELSE 0 END)
+                    AS replied_positive,
+                SUM(CASE WHEN status = 'replied_negative' THEN 1 ELSE 0 END)
+                    AS replied_negative,
+                SUM(CASE WHEN status = 'no_response' THEN 1 ELSE 0 END)
+                    AS no_response,
+                SUM(CASE WHEN status = 'queued' THEN 1 ELSE 0 END)
+                    AS queued
+            FROM contact_campaign_status
+            WHERE campaign_id = %s
+              AND assigned_variant IS NOT NULL
+            GROUP BY assigned_variant
+            ORDER BY assigned_variant
+            """,
+            (campaign_id,),
+        )
+        rows = cursor.fetchall()
 
     results = []
     for row in rows:
         total = row["total"]
         positive = row["replied_positive"]
         negative = row["replied_negative"]
-        # Exclude queued from denominator: compute non-queued for this variant
-        cursor.execute(
-            """
-            SELECT COUNT(*) AS cnt
-            FROM contact_campaign_status
-            WHERE campaign_id = %s AND assigned_variant = %s AND status = 'queued'
-            """,
-            (campaign_id, row["assigned_variant"]),
-        )
-        queued_row = cursor.fetchone()
-        queued = queued_row["cnt"] if queued_row else 0
+        queued = row["queued"]
         non_queued = total - queued
 
         reply_rate = (positive + negative) / non_queued if non_queued > 0 else 0.0
@@ -196,28 +184,28 @@ def get_weekly_summary(
 
     period = f"{start_str} to {today.isoformat()}"
 
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        SELECT event_type, COUNT(*) AS cnt
-        FROM events
-        WHERE campaign_id = %s
-          AND created_at >= %s
-          AND created_at < %s
-          AND event_type IN (
-              'email_sent',
-              'expandi_connected', 'expandi_message_sent',
-              'linkedin_connect_done', 'linkedin_message_done',
-              'linkedin_engage_done', 'linkedin_insight_done',
-              'linkedin_final_done',
-              'status_replied_positive', 'status_replied_negative',
-              'call_booked', 'status_no_response'
-          )
-        GROUP BY event_type
-        """,
-        (campaign_id, start_str, end_str),
-    )
-    event_rows = cursor.fetchall()
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            """
+            SELECT event_type, COUNT(*) AS cnt
+            FROM events
+            WHERE campaign_id = %s
+              AND created_at >= %s
+              AND created_at < %s
+              AND event_type IN (
+                  'email_sent',
+                  'expandi_connected', 'expandi_message_sent',
+                  'linkedin_connect_done', 'linkedin_message_done',
+                  'linkedin_engage_done', 'linkedin_insight_done',
+                  'linkedin_final_done',
+                  'status_replied_positive', 'status_replied_negative',
+                  'call_booked', 'status_no_response'
+              )
+            GROUP BY event_type
+            """,
+            (campaign_id, start_str, end_str),
+        )
+        event_rows = cursor.fetchall()
 
     counts = {}
     for row in event_rows:
@@ -254,29 +242,29 @@ def get_company_type_breakdown(
     Each dict contains: firm_type, total, replied_positive, replied_negative,
     no_response, reply_rate, positive_rate.
     """
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        SELECT
-            COALESCE(comp.firm_type, 'Unknown') AS firm_type,
-            COUNT(*) AS total,
-            SUM(CASE WHEN ccs.status = 'replied_positive' THEN 1 ELSE 0 END)
-                AS replied_positive,
-            SUM(CASE WHEN ccs.status = 'replied_negative' THEN 1 ELSE 0 END)
-                AS replied_negative,
-            SUM(CASE WHEN ccs.status = 'no_response' THEN 1 ELSE 0 END)
-                AS no_response,
-            SUM(CASE WHEN ccs.status = 'queued' THEN 1 ELSE 0 END)
-                AS queued
-        FROM contact_campaign_status ccs
-        JOIN contacts c ON c.id = ccs.contact_id
-        JOIN companies comp ON comp.id = c.company_id
-        WHERE ccs.campaign_id = %s
-        GROUP BY COALESCE(comp.firm_type, 'Unknown')
-        """,
-        (campaign_id,),
-    )
-    rows = cursor.fetchall()
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            """
+            SELECT
+                COALESCE(comp.firm_type, 'Unknown') AS firm_type,
+                COUNT(*) AS total,
+                SUM(CASE WHEN ccs.status = 'replied_positive' THEN 1 ELSE 0 END)
+                    AS replied_positive,
+                SUM(CASE WHEN ccs.status = 'replied_negative' THEN 1 ELSE 0 END)
+                    AS replied_negative,
+                SUM(CASE WHEN ccs.status = 'no_response' THEN 1 ELSE 0 END)
+                    AS no_response,
+                SUM(CASE WHEN ccs.status = 'queued' THEN 1 ELSE 0 END)
+                    AS queued
+            FROM contact_campaign_status ccs
+            JOIN contacts c ON c.id = ccs.contact_id
+            JOIN companies comp ON comp.id = c.company_id
+            WHERE ccs.campaign_id = %s
+            GROUP BY COALESCE(comp.firm_type, 'Unknown')
+            """,
+            (campaign_id,),
+        )
+        rows = cursor.fetchall()
 
     results = []
     for row in rows:

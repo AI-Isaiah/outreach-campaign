@@ -16,6 +16,7 @@ from src.models.campaigns import (
     log_event,
     update_contact_campaign_status,
 )
+from src.services.sequence_utils import find_next_step
 
 
 def complete_linkedin_action(
@@ -86,7 +87,7 @@ def complete_linkedin_action(
     log_event(conn, contact_id, event_type, campaign_id=campaign_id)
 
     # Find next step and advance
-    next_step = _find_next_step(steps, current_step_order)
+    next_step = find_next_step(steps, current_step_order)
     advanced = False
 
     if next_step:
@@ -124,11 +125,3 @@ def complete_linkedin_action(
             "next_date": None,
             "completed_sequence": True,
         }
-
-
-def _find_next_step(steps: list, current_step_order: int) -> Optional[dict]:
-    """Find the next sequence step after the given step_order."""
-    for step in steps:
-        if step["step_order"] > current_step_order:
-            return step
-    return None

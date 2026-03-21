@@ -11,6 +11,7 @@ import logging
 import re
 from datetime import datetime, timezone
 from typing import Optional
+from src.models.database import get_cursor
 
 logger = logging.getLogger(__name__)
 
@@ -96,14 +97,14 @@ class WhatsAppScanner:
         Returns:
             dict with keys: scanned, new_messages, errors
         """
-        cur = conn.cursor()
-        cur.execute(
-            """SELECT id, phone_normalized, full_name
-               FROM contacts
-               WHERE phone_normalized IS NOT NULL
-                 AND phone_normalized != ''"""
-        )
-        contacts = cur.fetchall()
+        with get_cursor(conn) as cur:
+            cur.execute(
+                """SELECT id, phone_normalized, full_name
+                   FROM contacts
+                   WHERE phone_normalized IS NOT NULL
+                     AND phone_normalized != ''"""
+            )
+            contacts = cur.fetchall()
 
         stats = {"scanned": 0, "new_messages": 0, "errors": 0}
 
@@ -214,28 +215,28 @@ def _store_message(
     whatsapp_timestamp: Optional[str] = None,
 ) -> Optional[int]:
     """Insert a WhatsApp message, ignoring duplicates."""
-    cur = conn.cursor()
-    cur.execute(
-        """INSERT INTO whatsapp_messages
-               (contact_id, phone_number, message_text, direction, whatsapp_timestamp)
-           VALUES (%s, %s, %s, %s, %s)
-           ON CONFLICT (contact_id, whatsapp_timestamp, direction, message_text)
-           DO NOTHING
-           RETURNING id""",
-        (contact_id, phone_number, message_text, direction, whatsapp_timestamp),
-    )
-    row = cur.fetchone()
-    return row["id"] if row else None
+    with get_cursor(conn) as cur:
+        cur.execute(
+            """INSERT INTO whatsapp_messages
+                   (contact_id, phone_number, message_text, direction, whatsapp_timestamp)
+               VALUES (%s, %s, %s, %s, %s)
+               ON CONFLICT (contact_id, whatsapp_timestamp, direction, message_text)
+               DO NOTHING
+               RETURNING id""",
+            (contact_id, phone_number, message_text, direction, whatsapp_timestamp),
+        )
+        row = cur.fetchone()
+        return row["id"] if row else None
 
 
 def _update_scan_state(conn, contact_id: int) -> None:
     """Update the scan state for a contact."""
-    cur = conn.cursor()
-    now = datetime.now(timezone.utc).isoformat()
-    cur.execute(
-        """INSERT INTO whatsapp_scan_state (contact_id, last_scanned_at)
-           VALUES (%s, %s)
-           ON CONFLICT (contact_id)
-           DO UPDATE SET last_scanned_at = EXCLUDED.last_scanned_at""",
-        (contact_id, now),
-    )
+    with get_cursor(conn) as cur:
+        now = datetime.now(timezone.utc).isoformat()
+        cur.execute(
+            """INSERT INTO whatsapp_scan_state (contact_id, last_scanned_at)
+               VALUES (%s, %s)
+               ON CONFLICT (contact_id)
+               DO UPDATE SET last_scanned_at = EXCLUDED.last_scanned_at""",
+            (contact_id, now),
+        )
