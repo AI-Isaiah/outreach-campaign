@@ -1,13 +1,16 @@
 import { useParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
+import type { CompanyDetailResponse } from "../types";
 import StatusBadge from "../components/StatusBadge";
+import TagPicker from "../components/TagPicker";
+import DeepResearchBrief from "../components/DeepResearchBrief";
 
 export default function CompanyDetail() {
   const { id } = useParams<{ id: string }>();
   const companyId = Number(id);
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error } = useQuery<CompanyDetailResponse>({
     queryKey: ["company", companyId],
     queryFn: () => api.getCompany(companyId),
     enabled: !!id,
@@ -77,6 +80,15 @@ export default function CompanyDetail() {
         ))}
       </div>
 
+      {/* Deep Research */}
+      <DeepResearchBrief companyId={companyId} companyName={company.name} />
+
+      {/* Tags */}
+      <div className="bg-white rounded-lg border p-5">
+        <h2 className="font-semibold text-gray-900 mb-3">Tags</h2>
+        <TagPicker entityType="company" entityId={companyId} />
+      </div>
+
       {/* Contacts at this company */}
       <div className="bg-white rounded-lg border overflow-hidden">
         <div className="px-5 py-4 border-b">
@@ -100,7 +112,7 @@ export default function CompanyDetail() {
                     to={`/contacts/${c.id}`}
                     className="font-medium text-blue-600 hover:text-blue-800"
                   >
-                    {c.full_name || `${c.first_name} ${c.last_name}`}
+                    {c.full_name || `${c.first_name || ""} ${c.last_name || ""}`.trim() || "-"}
                   </Link>
                 </td>
                 <td className="px-5 py-3 text-sm text-gray-600">{c.title || "-"}</td>
