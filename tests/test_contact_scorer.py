@@ -5,6 +5,7 @@ from __future__ import annotations
 from src.models.campaigns import create_campaign, enroll_contact
 from src.models.database import get_connection, run_migrations
 from src.services.contact_scorer import score_contacts
+from tests.conftest import TEST_USER_ID
 
 
 def _setup(conn):
@@ -13,14 +14,16 @@ def _setup(conn):
 
     # Create two companies with different AUMs
     cur.execute(
-        """INSERT INTO companies (name, name_normalized, aum_millions, firm_type, country)
-           VALUES ('Big Fund', 'big fund', 2000.0, 'Hedge Fund', 'US') RETURNING id"""
+        """INSERT INTO companies (name, name_normalized, aum_millions, firm_type, country, user_id)
+           VALUES ('Big Fund', 'big fund', 2000.0, 'Hedge Fund', 'US', %s) RETURNING id""",
+        (TEST_USER_ID,),
     )
     big_id = cur.fetchone()["id"]
 
     cur.execute(
-        """INSERT INTO companies (name, name_normalized, aum_millions, firm_type, country)
-           VALUES ('Small Fund', 'small fund', 50.0, 'Family Office', 'US') RETURNING id"""
+        """INSERT INTO companies (name, name_normalized, aum_millions, firm_type, country, user_id)
+           VALUES ('Small Fund', 'small fund', 50.0, 'Family Office', 'US', %s) RETURNING id""",
+        (TEST_USER_ID,),
     )
     small_id = cur.fetchone()["id"]
 
@@ -44,7 +47,7 @@ def _setup(conn):
     )
     bob_id = cur.fetchone()["id"]
 
-    campaign_id = create_campaign(conn, "scorer_test")
+    campaign_id = create_campaign(conn, "scorer_test", user_id=TEST_USER_ID)
 
     # Enroll both
     enroll_contact(conn, alice_id, campaign_id, next_action_date="2026-01-01")
@@ -75,7 +78,7 @@ def test_score_contacts_basic(tmp_db):
 def test_score_contacts_empty(tmp_db):
     conn = get_connection(tmp_db)
     run_migrations(conn)
-    campaign_id = create_campaign(conn, "empty_scorer")
+    campaign_id = create_campaign(conn, "empty_scorer", user_id=TEST_USER_ID)
 
     scores = score_contacts(conn, campaign_id, [])
     assert scores == []

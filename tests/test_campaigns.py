@@ -4,6 +4,7 @@ import json
 import psycopg2
 import pytest
 
+from tests.conftest import TEST_USER_ID
 from src.models.database import get_connection, run_migrations
 from src.models.campaigns import (
     create_campaign,
@@ -36,7 +37,7 @@ def conn(tmp_db):
 @pytest.fixture
 def sample_campaign(conn):
     """Create and return a sample campaign id."""
-    return create_campaign(conn, "Q1 Outreach", description="First quarter campaign")
+    return create_campaign(conn, "Q1 Outreach", description="First quarter campaign", user_id=TEST_USER_ID)
 
 
 @pytest.fixture
@@ -48,6 +49,7 @@ def sample_template(conn):
         channel="email",
         body_template="Hello {{first_name}}, we'd like to connect.",
         subject="Introduction from our fund",
+        user_id=TEST_USER_ID,
     )
 
 
@@ -85,34 +87,34 @@ def multiple_contacts(conn):
 
 class TestCreateCampaign:
     def test_basic_creation(self, conn):
-        cid = create_campaign(conn, "Test Campaign")
+        cid = create_campaign(conn, "Test Campaign", user_id=TEST_USER_ID)
         assert isinstance(cid, int)
         assert cid > 0
 
     def test_with_description(self, conn):
-        cid = create_campaign(conn, "Described Campaign", description="A description")
+        cid = create_campaign(conn, "Described Campaign", description="A description", user_id=TEST_USER_ID)
         row = get_campaign(conn, cid)
         assert row["description"] == "A description"
 
     def test_without_description(self, conn):
-        cid = create_campaign(conn, "No Desc")
+        cid = create_campaign(conn, "No Desc", user_id=TEST_USER_ID)
         row = get_campaign(conn, cid)
         assert row["description"] is None
 
     def test_default_status_is_active(self, conn):
-        cid = create_campaign(conn, "Default Status")
+        cid = create_campaign(conn, "Default Status", user_id=TEST_USER_ID)
         row = get_campaign(conn, cid)
         assert row["status"] == "active"
 
     def test_created_at_populated(self, conn):
-        cid = create_campaign(conn, "Timestamp Test")
+        cid = create_campaign(conn, "Timestamp Test", user_id=TEST_USER_ID)
         row = get_campaign(conn, cid)
         assert row["created_at"] is not None
 
     def test_duplicate_name_raises(self, conn):
-        create_campaign(conn, "Unique Name")
+        create_campaign(conn, "Unique Name", user_id=TEST_USER_ID)
         with pytest.raises(psycopg2.IntegrityError):
-            create_campaign(conn, "Unique Name")
+            create_campaign(conn, "Unique Name", user_id=TEST_USER_ID)
         conn.rollback()  # PG requires rollback after error in transaction
 
 
@@ -144,16 +146,16 @@ class TestListCampaigns:
         assert list_campaigns(conn) == []
 
     def test_returns_all(self, conn):
-        create_campaign(conn, "C1")
-        create_campaign(conn, "C2")
-        create_campaign(conn, "C3")
+        create_campaign(conn, "C1", user_id=TEST_USER_ID)
+        create_campaign(conn, "C2", user_id=TEST_USER_ID)
+        create_campaign(conn, "C3", user_id=TEST_USER_ID)
         result = list_campaigns(conn)
         assert len(result) == 3
 
     def test_filter_by_status(self, conn):
-        c1 = create_campaign(conn, "Active1")
-        c2 = create_campaign(conn, "Active2")
-        c3 = create_campaign(conn, "Paused1")
+        c1 = create_campaign(conn, "Active1", user_id=TEST_USER_ID)
+        c2 = create_campaign(conn, "Active2", user_id=TEST_USER_ID)
+        c3 = create_campaign(conn, "Paused1", user_id=TEST_USER_ID)
         update_campaign_status(conn, c3, "paused")
 
         active = list_campaigns(conn, status="active")
@@ -163,7 +165,7 @@ class TestListCampaigns:
         assert paused[0]["name"] == "Paused1"
 
     def test_filter_no_match(self, conn):
-        create_campaign(conn, "Active")
+        create_campaign(conn, "Active", user_id=TEST_USER_ID)
         result = list_campaigns(conn, status="completed")
         assert result == []
 
@@ -186,7 +188,7 @@ class TestUpdateCampaignStatus:
 
 class TestCreateTemplate:
     def test_basic(self, conn):
-        tid = create_template(conn, "Tmpl1", "email", "Body here")
+        tid = create_template(conn, "Tmpl1", "email", "Body here", user_id=TEST_USER_ID)
         assert isinstance(tid, int)
         assert tid > 0
 
@@ -199,6 +201,7 @@ class TestCreateTemplate:
             subject="Intro",
             variant_group="welcome",
             variant_label="A",
+            user_id=TEST_USER_ID,
         )
         row = get_template(conn, tid)
         assert row["name"] == "Full Template"
@@ -210,7 +213,7 @@ class TestCreateTemplate:
         assert row["is_active"] is True
 
     def test_linkedin_channel(self, conn):
-        tid = create_template(conn, "LI Connect", "linkedin_connect", "Hi, let's connect")
+        tid = create_template(conn, "LI Connect", "linkedin_connect", "Hi, let's connect", user_id=TEST_USER_ID)
         row = get_template(conn, tid)
         assert row["channel"] == "linkedin_connect"
 
@@ -231,8 +234,8 @@ class TestListTemplates:
         assert list_templates(conn) == []
 
     def test_returns_active_only_by_default(self, conn):
-        t1 = create_template(conn, "Active", "email", "body")
-        t2 = create_template(conn, "Inactive", "email", "body")
+        t1 = create_template(conn, "Active", "email", "body", user_id=TEST_USER_ID)
+        t2 = create_template(conn, "Inactive", "email", "body", user_id=TEST_USER_ID)
         # Deactivate t2
         cursor = conn.cursor()
         cursor.execute("UPDATE templates SET is_active = false WHERE id = %s", (t2,))
@@ -243,8 +246,8 @@ class TestListTemplates:
         assert result[0]["name"] == "Active"
 
     def test_list_inactive(self, conn):
-        t1 = create_template(conn, "Active", "email", "body")
-        t2 = create_template(conn, "Inactive", "email", "body")
+        t1 = create_template(conn, "Active", "email", "body", user_id=TEST_USER_ID)
+        t2 = create_template(conn, "Inactive", "email", "body", user_id=TEST_USER_ID)
         cursor = conn.cursor()
         cursor.execute("UPDATE templates SET is_active = false WHERE id = %s", (t2,))
         conn.commit()
@@ -254,9 +257,9 @@ class TestListTemplates:
         assert result[0]["name"] == "Inactive"
 
     def test_filter_by_channel(self, conn):
-        create_template(conn, "Email1", "email", "body")
-        create_template(conn, "LI1", "linkedin_connect", "body")
-        create_template(conn, "Email2", "email", "body")
+        create_template(conn, "Email1", "email", "body", user_id=TEST_USER_ID)
+        create_template(conn, "LI1", "linkedin_connect", "body", user_id=TEST_USER_ID)
+        create_template(conn, "Email2", "email", "body", user_id=TEST_USER_ID)
 
         emails = list_templates(conn, channel="email")
         assert len(emails) == 2
@@ -265,9 +268,9 @@ class TestListTemplates:
         assert len(li) == 1
 
     def test_filter_by_channel_and_active(self, conn):
-        t1 = create_template(conn, "Email Active", "email", "body")
-        t2 = create_template(conn, "Email Inactive", "email", "body")
-        t3 = create_template(conn, "LI Active", "linkedin_connect", "body")
+        t1 = create_template(conn, "Email Active", "email", "body", user_id=TEST_USER_ID)
+        t2 = create_template(conn, "Email Inactive", "email", "body", user_id=TEST_USER_ID)
+        t3 = create_template(conn, "LI Active", "linkedin_connect", "body", user_id=TEST_USER_ID)
         cursor = conn.cursor()
         cursor.execute("UPDATE templates SET is_active = false WHERE id = %s", (t2,))
         conn.commit()
@@ -314,8 +317,8 @@ class TestAddSequenceStep:
         conn.rollback()  # PG requires rollback after error in transaction
 
     def test_same_step_order_different_campaign(self, conn):
-        c1 = create_campaign(conn, "Campaign A")
-        c2 = create_campaign(conn, "Campaign B")
+        c1 = create_campaign(conn, "Campaign A", user_id=TEST_USER_ID)
+        c2 = create_campaign(conn, "Campaign B", user_id=TEST_USER_ID)
         s1 = add_sequence_step(conn, c1, 1, "email")
         s2 = add_sequence_step(conn, c2, 1, "email")
         assert s1 != s2
@@ -340,8 +343,8 @@ class TestGetSequenceSteps:
         ]
 
     def test_only_returns_for_given_campaign(self, conn):
-        c1 = create_campaign(conn, "C1")
-        c2 = create_campaign(conn, "C2")
+        c1 = create_campaign(conn, "C1", user_id=TEST_USER_ID)
+        c2 = create_campaign(conn, "C2", user_id=TEST_USER_ID)
         add_sequence_step(conn, c1, 1, "email")
         add_sequence_step(conn, c2, 1, "email")
         add_sequence_step(conn, c2, 2, "linkedin_connect")
@@ -386,8 +389,8 @@ class TestEnrollContact:
         assert eid2 is None
 
     def test_same_contact_different_campaigns(self, conn, sample_contact):
-        c1 = create_campaign(conn, "Camp1")
-        c2 = create_campaign(conn, "Camp2")
+        c1 = create_campaign(conn, "Camp1", user_id=TEST_USER_ID)
+        c2 = create_campaign(conn, "Camp2", user_id=TEST_USER_ID)
         e1 = enroll_contact(conn, sample_contact, c1)
         e2 = enroll_contact(conn, sample_contact, c2)
         assert e1 is not None
@@ -573,13 +576,14 @@ class TestIntegration:
     def test_full_campaign_workflow(self, conn, multiple_contacts):
         """Test creating a campaign, adding steps, enrolling contacts, and logging events."""
         # 1. Create campaign
-        cid = create_campaign(conn, "Full Workflow", description="End-to-end test")
+        cid = create_campaign(conn, "Full Workflow", description="End-to-end test", user_id=TEST_USER_ID)
 
         # 2. Create templates
-        t1 = create_template(conn, "LI Connect", "linkedin_connect", "Hi {{name}}")
+        t1 = create_template(conn, "LI Connect", "linkedin_connect", "Hi {{name}}", user_id=TEST_USER_ID)
         t2 = create_template(
             conn, "Follow-up Email", "email", "Following up...",
             subject="Following up",
+            user_id=TEST_USER_ID,
         )
 
         # 3. Add sequence steps

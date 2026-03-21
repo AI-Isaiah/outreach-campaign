@@ -21,6 +21,7 @@ from src.models.campaigns import (
 from src.services.ab_testing import assign_variant, get_variant_stats
 from src.services.compliance import process_unsubscribe
 from src.services.state_machine import transition_contact
+from tests.conftest import TEST_USER_ID
 
 runner = CliRunner()
 
@@ -43,9 +44,9 @@ def sample_company(conn):
     """Insert a company and return its id."""
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO companies (name, name_normalized, country, is_gdpr, aum_millions) "
-        "VALUES (%s, %s, %s, %s, %s) RETURNING id",
-        ("Acme Crypto Fund", "acme crypto fund", "United States", False, 500.0),
+        "INSERT INTO companies (name, name_normalized, country, is_gdpr, aum_millions, user_id) "
+        "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+        ("Acme Crypto Fund", "acme crypto fund", "United States", False, 500.0, TEST_USER_ID),
     )
     company_id = cursor.fetchone()["id"]
     conn.commit()
@@ -72,7 +73,7 @@ def sample_contact(conn, sample_company):
 @pytest.fixture
 def sample_campaign(conn):
     """Create a campaign and return its id."""
-    return create_campaign(conn, "Q1 Outreach", description="Test campaign")
+    return create_campaign(conn, "Q1 Outreach", description="Test campaign", user_id=TEST_USER_ID)
 
 
 @pytest.fixture
@@ -84,6 +85,7 @@ def sample_template(conn):
         channel="email",
         body_template="Hi {{ first_name }}, let's talk about {{ company_name }}.",
         subject="Quick intro",
+        user_id=TEST_USER_ID,
     )
 
 

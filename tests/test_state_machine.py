@@ -15,6 +15,7 @@ from src.services.state_machine import (
     _activate_next_contact,
     get_active_contact_for_company,
 )
+from tests.conftest import TEST_USER_ID
 
 
 # ---------------------------------------------------------------------------
@@ -32,8 +33,8 @@ def _create_company(conn, name="Acme Fund"):
     """Insert a company and return its id."""
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO companies (name, name_normalized) VALUES (%s, %s) RETURNING id",
-        (name, name.lower()),
+        "INSERT INTO companies (name, name_normalized, user_id) VALUES (%s, %s, %s) RETURNING id",
+        (name, name.lower(), TEST_USER_ID),
     )
     company_id = cursor.fetchone()["id"]
     conn.commit()
@@ -58,8 +59,8 @@ def _create_campaign(conn, name="Q1 Outreach"):
     """Insert a campaign and return its id."""
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO campaigns (name) VALUES (%s) RETURNING id",
-        (name,),
+        "INSERT INTO campaigns (name, user_id) VALUES (%s, %s) RETURNING id",
+        (name, TEST_USER_ID),
     )
     campaign_id = cursor.fetchone()["id"]
     conn.commit()

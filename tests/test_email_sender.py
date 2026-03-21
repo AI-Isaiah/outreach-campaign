@@ -18,6 +18,7 @@ from src.models.campaigns import (
     get_contact_campaign_status,
     log_event,
 )
+from tests.conftest import TEST_USER_ID
 from src.services.compliance import (
     add_compliance_footer,
     add_compliance_footer_html,
@@ -101,8 +102,8 @@ def sample_company(conn):
     """Insert a company and return its id."""
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO companies (name, name_normalized, country, is_gdpr) VALUES (%s, %s, %s, %s) RETURNING id",
-        ("Acme Crypto Fund", "acme crypto fund", "United States", False),
+        "INSERT INTO companies (name, name_normalized, country, is_gdpr, user_id) VALUES (%s, %s, %s, %s, %s) RETURNING id",
+        ("Acme Crypto Fund", "acme crypto fund", "United States", False, TEST_USER_ID),
     )
     company_id = cursor.fetchone()["id"]
     conn.commit()
@@ -114,8 +115,8 @@ def gdpr_company(conn):
     """Insert a GDPR-subject company and return its id."""
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO companies (name, name_normalized, country, is_gdpr) VALUES (%s, %s, %s, %s) RETURNING id",
-        ("Berlin Capital GmbH", "berlin capital gmbh", "Germany", True),
+        "INSERT INTO companies (name, name_normalized, country, is_gdpr, user_id) VALUES (%s, %s, %s, %s, %s) RETURNING id",
+        ("Berlin Capital GmbH", "berlin capital gmbh", "Germany", True, TEST_USER_ID),
     )
     company_id = cursor.fetchone()["id"]
     conn.commit()
@@ -153,7 +154,7 @@ def gdpr_contact(conn, gdpr_company):
 @pytest.fixture
 def sample_campaign(conn):
     """Create and return a campaign id."""
-    return create_campaign(conn, "Q1 Outreach", description="Test campaign")
+    return create_campaign(conn, "Q1 Outreach", description="Test campaign", user_id=TEST_USER_ID)
 
 
 @pytest.fixture
@@ -165,6 +166,7 @@ def sample_template(conn):
         channel="email",
         body_template="Hi {{ first_name }}, let's talk about {{ company_name }}.",
         subject="Quick intro from our team",
+        user_id=TEST_USER_ID,
     )
 
 
@@ -314,7 +316,7 @@ class TestCheckGdprEmailLimit:
         assert check_gdpr_email_limit(conn, gdpr_contact, sample_campaign) is True
 
     def test_different_campaign_not_counted(self, conn, gdpr_contact, sample_campaign):
-        other_campaign = create_campaign(conn, "Other Campaign")
+        other_campaign = create_campaign(conn, "Other Campaign", user_id=TEST_USER_ID)
         log_event(conn, gdpr_contact, "email_sent", campaign_id=other_campaign)
         log_event(conn, gdpr_contact, "email_sent", campaign_id=other_campaign)
         # Different campaign, so the original should still be under limit

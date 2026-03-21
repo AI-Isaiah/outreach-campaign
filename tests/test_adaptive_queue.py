@@ -12,6 +12,7 @@ from src.models.campaigns import (
 )
 from src.models.database import get_connection, run_migrations
 from src.services.adaptive_queue import get_adaptive_queue, _apply_channel_rules
+from tests.conftest import TEST_USER_ID
 
 
 def _full_setup(conn):
@@ -20,8 +21,9 @@ def _full_setup(conn):
 
     # Company
     cur.execute(
-        """INSERT INTO companies (name, name_normalized, aum_millions, firm_type, country)
-           VALUES ('Alpha Capital', 'alpha capital', 1500.0, 'Hedge Fund', 'US') RETURNING id"""
+        """INSERT INTO companies (name, name_normalized, aum_millions, firm_type, country, user_id)
+           VALUES ('Alpha Capital', 'alpha capital', 1500.0, 'Hedge Fund', 'US', %s) RETURNING id""",
+        (TEST_USER_ID,),
     )
     company_id = cur.fetchone()["id"]
 
@@ -38,8 +40,8 @@ def _full_setup(conn):
     conn.commit()
 
     # Campaign + template + sequence + enrollment
-    campaign_id = create_campaign(conn, "adaptive_test")
-    template_id = create_template(conn, "intro_v1", "email", "Hello {{ first_name }}", subject="Intro")
+    campaign_id = create_campaign(conn, "adaptive_test", user_id=TEST_USER_ID)
+    template_id = create_template(conn, "intro_v1", "email", "Hello {{ first_name }}", subject="Intro", user_id=TEST_USER_ID)
     add_sequence_step(conn, campaign_id, 1, "email", template_id=template_id, delay_days=0)
 
     today = date.today().isoformat()
@@ -70,7 +72,7 @@ def test_adaptive_queue_empty(tmp_db):
     """Adaptive queue with no eligible contacts returns empty."""
     conn = get_connection(tmp_db)
     run_migrations(conn)
-    campaign_id = create_campaign(conn, "empty_adaptive")
+    campaign_id = create_campaign(conn, "empty_adaptive", user_id=TEST_USER_ID)
 
     items = get_adaptive_queue(conn, campaign_id)
     assert items == []
@@ -100,9 +102,9 @@ def test_adaptive_queue_respects_limit(tmp_db):
     today = date.today().isoformat()
     for i in range(5):
         cur.execute(
-            """INSERT INTO companies (name, name_normalized, aum_millions, country)
-               VALUES (%s, %s, %s, 'US') RETURNING id""",
-            (f"Fund_{i}", f"fund_{i}", 100.0 * (i + 1)),
+            """INSERT INTO companies (name, name_normalized, aum_millions, country, user_id)
+               VALUES (%s, %s, %s, 'US', %s) RETURNING id""",
+            (f"Fund_{i}", f"fund_{i}", 100.0 * (i + 1), TEST_USER_ID),
         )
         co_id = cur.fetchone()["id"]
         cur.execute(
@@ -129,8 +131,9 @@ def test_adaptive_queue_sorted_by_score(tmp_db):
     # Add a contact with lower AUM
     cur = conn.cursor()
     cur.execute(
-        """INSERT INTO companies (name, name_normalized, aum_millions, country)
-           VALUES ('Tiny Fund', 'tiny fund', 10.0, 'US') RETURNING id"""
+        """INSERT INTO companies (name, name_normalized, aum_millions, country, user_id)
+           VALUES ('Tiny Fund', 'tiny fund', 10.0, 'US', %s) RETURNING id""",
+        (TEST_USER_ID,),
     )
     co_id = cur.fetchone()["id"]
     cur.execute(

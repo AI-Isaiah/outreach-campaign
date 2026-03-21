@@ -19,6 +19,7 @@ from src.models.campaigns import (
     log_event,
     update_contact_campaign_status,
 )
+from tests.conftest import TEST_USER_ID
 from src.services.newsletter import (
     get_newsletter_subscribers,
     auto_subscribe_eligible,
@@ -48,8 +49,8 @@ def sample_company(conn):
     """Insert a non-GDPR company and return its id."""
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO companies (name, name_normalized, country, is_gdpr) VALUES (%s, %s, %s, %s) RETURNING id",
-        ("Acme Crypto Fund", "acme crypto fund", "United States", False),
+        "INSERT INTO companies (name, name_normalized, country, is_gdpr, user_id) VALUES (%s, %s, %s, %s, %s) RETURNING id",
+        ("Acme Crypto Fund", "acme crypto fund", "United States", False, TEST_USER_ID),
     )
     company_id = cursor.fetchone()["id"]
     conn.commit()
@@ -61,8 +62,8 @@ def gdpr_company(conn):
     """Insert a GDPR-subject company and return its id."""
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO companies (name, name_normalized, country, is_gdpr) VALUES (%s, %s, %s, %s) RETURNING id",
-        ("Berlin Capital GmbH", "berlin capital gmbh", "Germany", True),
+        "INSERT INTO companies (name, name_normalized, country, is_gdpr, user_id) VALUES (%s, %s, %s, %s, %s) RETURNING id",
+        ("Berlin Capital GmbH", "berlin capital gmbh", "Germany", True, TEST_USER_ID),
     )
     company_id = cursor.fetchone()["id"]
     conn.commit()
@@ -100,7 +101,7 @@ def gdpr_contact(conn, gdpr_company):
 @pytest.fixture
 def sample_campaign(conn):
     """Create and return a campaign id."""
-    return create_campaign(conn, "Q1 Outreach", description="Test campaign")
+    return create_campaign(conn, "Q1 Outreach", description="Test campaign", user_id=TEST_USER_ID)
 
 
 @pytest.fixture

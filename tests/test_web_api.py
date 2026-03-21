@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from src.models.database import get_connection, run_migrations
 from src.web.app import app
 from src.web.dependencies import get_db
+from tests.conftest import TEST_USER_ID
 
 
 @pytest.fixture
@@ -44,9 +45,9 @@ def _seed_company(conn, name="Test Fund", aum=500.0, firm_type="Hedge Fund"):
     """Insert a test company and return its id."""
     cur = conn.cursor()
     cur.execute(
-        """INSERT INTO companies (name, name_normalized, aum_millions, firm_type, country)
-           VALUES (%s, %s, %s, %s, 'US') RETURNING id""",
-        (name, name.lower(), aum, firm_type),
+        """INSERT INTO companies (name, name_normalized, aum_millions, firm_type, country, user_id)
+           VALUES (%s, %s, %s, %s, 'US', %s) RETURNING id""",
+        (name, name.lower(), aum, firm_type, TEST_USER_ID),
     )
     conn.commit()
     return cur.fetchone()["id"]
@@ -68,7 +69,7 @@ def _seed_contact(conn, company_id, first="John", last="Doe", email="john@test.c
 def _seed_campaign(conn, name="test_campaign"):
     """Insert a test campaign and return its id."""
     from src.models.campaigns import create_campaign
-    return create_campaign(conn, name)
+    return create_campaign(conn, name, user_id=TEST_USER_ID)
 
 
 # ---------- Health ----------
@@ -95,9 +96,9 @@ def test_create_template(client):
 
 
 def test_list_templates(client, db_conn):
-    from src.models.campaigns import create_template
-    create_template(db_conn, "t1", "email", "body1", subject="subj1")
-    create_template(db_conn, "t2", "linkedin_connect", "body2")
+    from src.models.templates import create_template
+    create_template(db_conn, "t1", "email", "body1", subject="subj1", user_id=TEST_USER_ID)
+    create_template(db_conn, "t2", "linkedin_connect", "body2", user_id=TEST_USER_ID)
 
     resp = client.get("/api/templates")
     assert resp.status_code == 200
@@ -106,9 +107,9 @@ def test_list_templates(client, db_conn):
 
 
 def test_list_templates_by_channel(client, db_conn):
-    from src.models.campaigns import create_template
-    create_template(db_conn, "t1", "email", "body1")
-    create_template(db_conn, "t2", "linkedin_connect", "body2")
+    from src.models.templates import create_template
+    create_template(db_conn, "t1", "email", "body1", user_id=TEST_USER_ID)
+    create_template(db_conn, "t2", "linkedin_connect", "body2", user_id=TEST_USER_ID)
 
     resp = client.get("/api/templates?channel=email")
     data = resp.json()
@@ -117,8 +118,8 @@ def test_list_templates_by_channel(client, db_conn):
 
 
 def test_get_template(client, db_conn):
-    from src.models.campaigns import create_template
-    tid = create_template(db_conn, "test_tmpl", "email", "body", subject="subj")
+    from src.models.templates import create_template
+    tid = create_template(db_conn, "test_tmpl", "email", "body", subject="subj", user_id=TEST_USER_ID)
 
     resp = client.get(f"/api/templates/{tid}")
     assert resp.status_code == 200
@@ -131,8 +132,8 @@ def test_get_template_not_found(client):
 
 
 def test_update_template(client, db_conn):
-    from src.models.campaigns import create_template
-    tid = create_template(db_conn, "old_name", "email", "old body")
+    from src.models.templates import create_template
+    tid = create_template(db_conn, "old_name", "email", "old body", user_id=TEST_USER_ID)
 
     resp = client.put(f"/api/templates/{tid}", json={"name": "new_name"})
     assert resp.status_code == 200
@@ -142,8 +143,8 @@ def test_update_template(client, db_conn):
 
 
 def test_deactivate_template(client, db_conn):
-    from src.models.campaigns import create_template
-    tid = create_template(db_conn, "to_deactivate", "email", "body")
+    from src.models.templates import create_template
+    tid = create_template(db_conn, "to_deactivate", "email", "body", user_id=TEST_USER_ID)
 
     resp = client.patch(f"/api/templates/{tid}/deactivate")
     assert resp.status_code == 200
@@ -247,7 +248,7 @@ def test_crm_timeline_with_events(client, db_conn):
     contact_id = _seed_contact(db_conn, company_id)
     campaign_id = _seed_campaign(db_conn)
 
-    from src.models.campaigns import log_event
+    from src.models.events import log_event
     log_event(db_conn, contact_id, "email_sent", campaign_id=campaign_id)
 
     resp = client.get(f"/api/crm/contacts/{contact_id}/timeline")
@@ -336,8 +337,8 @@ def test_campaign_weekly_not_found(client):
 
 def test_queue_override(client, db_conn):
     campaign_id = _seed_campaign(db_conn, "override_test")
-    from src.models.campaigns import create_template
-    tid = create_template(db_conn, "override_tmpl", "email", "body")
+    from src.models.templates import create_template
+    tid = create_template(db_conn, "override_tmpl", "email", "body", user_id=TEST_USER_ID)
 
     company_id = _seed_company(db_conn)
     contact_id = _seed_contact(db_conn, company_id)
@@ -411,3 +412,71 @@ def test_import_dedupe(client):
     """Test the dedupe endpoint runs without error on empty DB."""
     resp = client.post("/api/import/dedupe")
     assert resp.status_code == 200
+
+
+# ---------- Queue Defer ----------
+
+def test_defer_contact(client, db_conn):
+    """Test deferring a contact moves them to tomorrow."""
+    company_id = _seed_company(db_conn)
+    contact_id = _seed_contact(db_conn, company_id)
+    campaign_id = _seed_campaign(db_conn, "defer_test")
+
+    from src.models.campaigns import enroll_contact
+    from datetime import date
+    enroll_contact(db_conn, contact_id, campaign_id, next_action_date=date.today().isoformat())
+
+    resp = client.post(f"/api/queue/{contact_id}/defer", json={
+        "campaign": "defer_test",
+        "reason": "Bad timing",
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["success"] is True
+    assert data["reason"] == "Bad timing"
+    assert data["next_action_date"] is not None
+
+
+def test_defer_contact_not_enrolled(client, db_conn):
+    """Deferring a contact not enrolled returns 404."""
+    company_id = _seed_company(db_conn)
+    contact_id = _seed_contact(db_conn, company_id)
+    _seed_campaign(db_conn, "defer_not_enrolled")
+
+    resp = client.post(f"/api/queue/{contact_id}/defer", json={
+        "campaign": "defer_not_enrolled",
+    })
+    assert resp.status_code == 404
+
+
+def test_defer_stats_empty(client):
+    """Defer stats on empty DB returns zeroes."""
+    resp = client.get("/api/queue/defer/stats")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["today_count"] == 0
+    assert data["total_count"] == 0
+
+
+def test_defer_stats_after_defer(client, db_conn):
+    """Defer stats reflect deferred contacts."""
+    company_id = _seed_company(db_conn)
+    contact_id = _seed_contact(db_conn, company_id)
+    campaign_id = _seed_campaign(db_conn, "defer_stats_test")
+
+    from src.models.campaigns import enroll_contact
+    from datetime import date
+    enroll_contact(db_conn, contact_id, campaign_id, next_action_date=date.today().isoformat())
+
+    # Defer the contact
+    client.post(f"/api/queue/{contact_id}/defer", json={
+        "campaign": "defer_stats_test",
+        "reason": "Need more research",
+    })
+
+    resp = client.get("/api/queue/defer/stats?campaign=defer_stats_test")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["today_count"] >= 1
+    assert data["total_count"] >= 1
+    assert any(r["reason"] == "Need more research" for r in data["by_reason"])

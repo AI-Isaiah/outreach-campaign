@@ -20,6 +20,7 @@ from src.services.metrics import (
     get_company_type_breakdown,
 )
 from src.commands.weekly_plan import generate_weekly_plan
+from tests.conftest import TEST_USER_ID
 
 
 # ---------------------------------------------------------------------------
@@ -37,8 +38,8 @@ def _create_company(conn, name="Acme Fund", firm_type="Hedge Fund"):
     """Insert a company and return its id."""
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO companies (name, name_normalized, firm_type) VALUES (%s, %s, %s) RETURNING id",
-        (name, name.lower(), firm_type),
+        "INSERT INTO companies (name, name_normalized, firm_type, user_id) VALUES (%s, %s, %s, %s) RETURNING id",
+        (name, name.lower(), firm_type, TEST_USER_ID),
     )
     company_id = cursor.fetchone()["id"]
     conn.commit()
@@ -64,7 +65,7 @@ def _create_contact(conn, company_id, priority_rank=1, email=None):
 
 def _create_campaign(conn, name="Q1 Outreach"):
     """Insert a campaign and return its id."""
-    return create_campaign(conn, name)
+    return create_campaign(conn, name, user_id=TEST_USER_ID)
 
 
 def _enroll(conn, contact_id, campaign_id, variant=None):
@@ -518,8 +519,8 @@ class TestGetCompanyTypeBreakdown:
         conn = _setup_db(tmp_db)
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO companies (name, name_normalized) VALUES (%s, %s) RETURNING id",
-            ("No Type Inc", "no type inc"),
+            "INSERT INTO companies (name, name_normalized, user_id) VALUES (%s, %s, %s) RETURNING id",
+            ("No Type Inc", "no type inc", TEST_USER_ID),
         )
         company_id = cursor.fetchone()["id"]
         conn.commit()

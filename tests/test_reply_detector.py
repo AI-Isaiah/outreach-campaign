@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from src.models.campaigns import create_campaign
 from src.models.database import get_connection, run_migrations
+from tests.conftest import TEST_USER_ID
 from src.services.reply_detector import (
     _classify_reply,
     _store_pending_reply,
@@ -17,8 +18,9 @@ def _setup_enrolled_contact(conn):
     """Create a company, contact, campaign, and enroll the contact."""
     cur = conn.cursor()
     cur.execute(
-        """INSERT INTO companies (name, name_normalized, firm_type, country)
-           VALUES ('Test Fund', 'test fund', 'Hedge Fund', 'US') RETURNING id"""
+        """INSERT INTO companies (name, name_normalized, firm_type, country, user_id)
+           VALUES ('Test Fund', 'test fund', 'Hedge Fund', 'US', %s) RETURNING id""",
+        (TEST_USER_ID,),
     )
     company_id = cur.fetchone()["id"]
 
@@ -32,7 +34,7 @@ def _setup_enrolled_contact(conn):
     )
     contact_id = cur.fetchone()["id"]
 
-    campaign_id = create_campaign(conn, "reply_test")
+    campaign_id = create_campaign(conn, "reply_test", user_id=TEST_USER_ID)
 
     from src.models.campaigns import enroll_contact
 
@@ -160,7 +162,7 @@ def test_scan_gmail_no_contacts(tmp_db):
     """Scanning with no enrolled contacts should return zero results."""
     conn = get_connection(tmp_db)
     run_migrations(conn)
-    create_campaign(conn, "empty_camp")
+    create_campaign(conn, "empty_camp", user_id=TEST_USER_ID)
     conn.commit()
 
     mock_drafter = MagicMock()

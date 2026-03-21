@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from src.models.database import get_connection, run_migrations
 from src.web.app import app
 from src.web.dependencies import get_db
+from tests.conftest import TEST_USER_ID
 
 
 @pytest.fixture
@@ -39,9 +40,9 @@ def client(tmp_db):
 def _seed_company(conn, name="Test Fund", aum=500.0):
     cur = conn.cursor()
     cur.execute(
-        """INSERT INTO companies (name, name_normalized, aum_millions, firm_type, country)
-           VALUES (%s, %s, %s, 'Hedge Fund', 'US') RETURNING id""",
-        (name, name.lower(), aum),
+        """INSERT INTO companies (name, name_normalized, aum_millions, firm_type, country, user_id)
+           VALUES (%s, %s, %s, 'Hedge Fund', 'US', %s) RETURNING id""",
+        (name, name.lower(), aum, TEST_USER_ID),
     )
     conn.commit()
     return cur.fetchone()["id"]
@@ -50,9 +51,9 @@ def _seed_company(conn, name="Test Fund", aum=500.0):
 def _create_job(conn, name="Test Job", total=3, status="pending"):
     cur = conn.cursor()
     cur.execute(
-        """INSERT INTO research_jobs (name, method, total_companies, cost_estimate_usd, status)
-           VALUES (%s, 'hybrid', %s, 0.033, %s) RETURNING id""",
-        (name, total, status),
+        """INSERT INTO research_jobs (name, method, total_companies, cost_estimate_usd, status, user_id)
+           VALUES (%s, 'hybrid', %s, 0.033, %s, %s) RETURNING id""",
+        (name, total, status, TEST_USER_ID),
     )
     job_id = cur.fetchone()["id"]
     conn.commit()

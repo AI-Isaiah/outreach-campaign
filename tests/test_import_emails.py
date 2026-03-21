@@ -2,6 +2,7 @@ from pathlib import Path
 
 from src.commands.import_emails import import_pasted_emails, parse_email_line
 from src.models.database import get_connection, run_migrations
+from tests.conftest import TEST_USER_ID
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -57,7 +58,7 @@ def test_import_pasted_emails(tmp_db):
     run_migrations(conn)
 
     fixture_path = str(FIXTURES_DIR / "sample_pasted_emails.txt")
-    stats = import_pasted_emails(conn, fixture_path)
+    stats = import_pasted_emails(conn, fixture_path, user_id=TEST_USER_ID)
 
     assert stats["contacts_created"] >= 7
 
@@ -75,7 +76,7 @@ def test_import_extracts_company_from_domain(tmp_db):
     run_migrations(conn)
 
     fixture_path = str(FIXTURES_DIR / "sample_pasted_emails.txt")
-    import_pasted_emails(conn, fixture_path)
+    import_pasted_emails(conn, fixture_path, user_id=TEST_USER_ID)
 
     cursor = conn.cursor()
     cursor.execute(
@@ -98,8 +99,8 @@ def test_import_skips_duplicate_emails(tmp_db):
     run_migrations(conn)
 
     fixture_path = str(FIXTURES_DIR / "sample_pasted_emails.txt")
-    stats_first = import_pasted_emails(conn, fixture_path)
-    stats_second = import_pasted_emails(conn, fixture_path)
+    stats_first = import_pasted_emails(conn, fixture_path, user_id=TEST_USER_ID)
+    stats_second = import_pasted_emails(conn, fixture_path, user_id=TEST_USER_ID)
 
     assert stats_first["contacts_created"] >= 7
     assert stats_second["contacts_created"] == 0
@@ -119,7 +120,7 @@ def test_import_sets_source(tmp_db):
     run_migrations(conn)
 
     fixture_path = str(FIXTURES_DIR / "sample_pasted_emails.txt")
-    import_pasted_emails(conn, fixture_path)
+    import_pasted_emails(conn, fixture_path, user_id=TEST_USER_ID)
 
     cursor = conn.cursor()
     cursor.execute("SELECT DISTINCT source FROM contacts")
@@ -137,7 +138,7 @@ def test_import_stats_lines_processed(tmp_db):
     run_migrations(conn)
 
     fixture_path = str(FIXTURES_DIR / "sample_pasted_emails.txt")
-    stats = import_pasted_emails(conn, fixture_path)
+    stats = import_pasted_emails(conn, fixture_path, user_id=TEST_USER_ID)
 
     assert stats["lines_processed"] >= 8
     assert "lines_skipped" in stats

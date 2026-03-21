@@ -20,6 +20,7 @@ from src.services.crypto_research import (
     research_company_web_search,
 )
 from src.models.database import get_connection, run_migrations
+from tests.conftest import TEST_USER_ID
 
 
 @pytest.fixture
@@ -124,7 +125,8 @@ def test_check_duplicates_empty_db(db_conn):
 def test_check_duplicates_finds_existing(db_conn):
     cur = db_conn.cursor()
     cur.execute(
-        "INSERT INTO research_jobs (name, total_companies) VALUES ('old', 1) RETURNING id"
+        "INSERT INTO research_jobs (name, total_companies, user_id) VALUES ('old', 1, %s) RETURNING id",
+        (TEST_USER_ID,),
     )
     job_id = cur.fetchone()["id"]
     cur.execute(
@@ -274,7 +276,8 @@ def test_find_warm_intros_no_matches(db_conn):
 def test_find_warm_intros_by_company_id(db_conn):
     cur = db_conn.cursor()
     cur.execute(
-        "INSERT INTO companies (name, name_normalized) VALUES ('Test Co', 'test co') RETURNING id"
+        "INSERT INTO companies (name, name_normalized, user_id) VALUES ('Test Co', 'test co', %s) RETURNING id",
+        (TEST_USER_ID,),
     )
     company_id = cur.fetchone()["id"]
     cur.execute(
@@ -295,7 +298,8 @@ def test_find_warm_intros_by_company_id(db_conn):
 def test_find_warm_intros_by_name(db_conn):
     cur = db_conn.cursor()
     cur.execute(
-        "INSERT INTO companies (name, name_normalized) VALUES ('Name Match LLC', 'name match llc') RETURNING id"
+        "INSERT INTO companies (name, name_normalized, user_id) VALUES ('Name Match LLC', 'name match llc', %s) RETURNING id",
+        (TEST_USER_ID,),
     )
     company_id = cur.fetchone()["id"]
     cur.execute(
@@ -315,7 +319,8 @@ def test_find_warm_intros_by_name(db_conn):
 def test_batch_import_basic(db_conn):
     cur = db_conn.cursor()
     cur.execute(
-        "INSERT INTO research_jobs (name, total_companies) VALUES ('batch_test', 1) RETURNING id"
+        "INSERT INTO research_jobs (name, total_companies, user_id) VALUES ('batch_test', 1, %s) RETURNING id",
+        (TEST_USER_ID,),
     )
     job_id = cur.fetchone()["id"]
 
@@ -332,7 +337,7 @@ def test_batch_import_basic(db_conn):
     result_id = cur.fetchone()["id"]
     db_conn.commit()
 
-    result = batch_import_and_enroll(db_conn, [result_id])
+    result = batch_import_and_enroll(db_conn, [result_id], user_id=TEST_USER_ID)
     assert result["imported_contacts"] == 1
     assert result["results_processed"] == 1
 
@@ -341,7 +346,8 @@ def test_batch_import_skips_duplicates(db_conn):
     cur = db_conn.cursor()
     # Create existing contact
     cur.execute(
-        "INSERT INTO companies (name, name_normalized) VALUES ('Dup Co', 'dup co') RETURNING id"
+        "INSERT INTO companies (name, name_normalized, user_id) VALUES ('Dup Co', 'dup co', %s) RETURNING id",
+        (TEST_USER_ID,),
     )
     company_id = cur.fetchone()["id"]
     cur.execute(
@@ -353,7 +359,8 @@ def test_batch_import_skips_duplicates(db_conn):
     )
 
     cur.execute(
-        "INSERT INTO research_jobs (name, total_companies) VALUES ('dup_test', 1) RETURNING id"
+        "INSERT INTO research_jobs (name, total_companies, user_id) VALUES ('dup_test', 1, %s) RETURNING id",
+        (TEST_USER_ID,),
     )
     job_id = cur.fetchone()["id"]
     contacts = [
@@ -369,7 +376,7 @@ def test_batch_import_skips_duplicates(db_conn):
     result_id = cur.fetchone()["id"]
     db_conn.commit()
 
-    result = batch_import_and_enroll(db_conn, [result_id])
+    result = batch_import_and_enroll(db_conn, [result_id], user_id=TEST_USER_ID)
     # import_single_contact now returns existing contact ID on conflict
     # so both contacts are "imported" (existing one found, new one created)
     assert result["imported_contacts"] == 2

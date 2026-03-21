@@ -17,7 +17,9 @@ from src.models.campaigns import (
 )
 from src.commands.queue import queue_today
 from src.commands.export_expandi import export_expandi_csv
-from src.commands.import_expandi import import_expandi_results, _normalize_linkedin_url
+from src.commands.import_expandi import import_expandi_results
+from src.services.normalization_utils import normalize_linkedin_url as _normalize_linkedin_url
+from tests.conftest import TEST_USER_ID, insert_company, insert_contact
 
 
 # ---------------------------------------------------------------------------
@@ -26,60 +28,6 @@ from src.commands.import_expandi import import_expandi_results, _normalize_linke
 
 def _today() -> str:
     return date.today().isoformat()
-
-
-def _insert_company(conn, name, aum_millions=None, country="US", is_gdpr=False):
-    """Insert a company and return its id."""
-    cursor = conn.cursor()
-    cursor.execute(
-        """INSERT INTO companies (name, name_normalized, aum_millions, country, is_gdpr)
-           VALUES (%s, %s, %s, %s, %s) RETURNING id""",
-        (name, name.lower(), aum_millions, country, is_gdpr),
-    )
-    company_id = cursor.fetchone()["id"]
-    conn.commit()
-    return company_id
-
-
-def _insert_contact(
-    conn,
-    company_id,
-    first_name="Test",
-    last_name="User",
-    email="test@example.com",
-    email_status="valid",
-    linkedin_url="https://linkedin.com/in/test",
-    priority_rank=1,
-    is_gdpr=False,
-    unsubscribed=False,
-):
-    """Insert a contact and return its id."""
-    cursor = conn.cursor()
-    cursor.execute(
-        """INSERT INTO contacts
-           (company_id, first_name, last_name, full_name,
-            email, email_normalized, email_status,
-            linkedin_url, linkedin_url_normalized,
-            priority_rank, is_gdpr, unsubscribed)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
-        (
-            company_id,
-            first_name,
-            last_name,
-            f"{first_name} {last_name}",
-            email,
-            email.lower() if email else None,
-            email_status,
-            linkedin_url,
-            linkedin_url.lower().rstrip("/") if linkedin_url else None,
-            priority_rank,
-            is_gdpr,
-            unsubscribed,
-        ),
-    )
-    contact_id = cursor.fetchone()["id"]
-    conn.commit()
-    return contact_id
 
 
 def _setup_campaign_with_steps(conn, name="test_campaign"):
@@ -92,18 +40,18 @@ def _setup_campaign_with_steps(conn, name="test_campaign"):
       4: email (delay 7, non_gdpr_only)
       5: email (delay 14, non_gdpr_only)
     """
-    campaign_id = create_campaign(conn, name)
+    campaign_id = create_campaign(conn, name, user_id=TEST_USER_ID)
 
-    t1 = create_template(conn, f"{name}_li_connect", "linkedin_connect", "Hi {{first_name}}")
-    t2 = create_template(conn, f"{name}_li_msg", "linkedin_message", "Following up...")
+    t1 = create_template(conn, f"{name}_li_connect", "linkedin_connect", "Hi {{first_name}}", user_id=TEST_USER_ID)
+    t2 = create_template(conn, f"{name}_li_msg", "linkedin_message", "Following up...", user_id=TEST_USER_ID)
     t3 = create_template(
-        conn, f"{name}_email_cold", "email", "Hello {{first_name}}", subject="Quick intro"
+        conn, f"{name}_email_cold", "email", "Hello {{first_name}}", subject="Quick intro", user_id=TEST_USER_ID,
     )
     t4 = create_template(
-        conn, f"{name}_email_followup", "email", "Following up...", subject="Following up"
+        conn, f"{name}_email_followup", "email", "Following up...", subject="Following up", user_id=TEST_USER_ID,
     )
     t5 = create_template(
-        conn, f"{name}_email_breakup", "email", "Last note...", subject="Last note"
+        conn, f"{name}_email_breakup", "email", "Last note...", subject="Last note", user_id=TEST_USER_ID,
     )
 
     add_sequence_step(conn, campaign_id, 1, "linkedin_connect", t1, delay_days=0)
@@ -147,8 +95,8 @@ class TestQueueToday:
 
     def test_returns_correct_contacts(self, conn, campaign):
         """queue_today returns contacts that are ready for action today."""
-        comp = _insert_company(conn, "Acme Corp", aum_millions=500)
-        cid = _insert_contact(conn, comp, first_name="Alice", last_name="Smith")
+        comp = insert_company(conn, "Acme Corp", aum_millions=500)
+        cid = insert_contact(conn, comp, first_name="Alice", last_name="Smith")
         enroll_contact(conn, cid, campaign, next_action_date=_today())
         update_contact_campaign_status(
             conn, cid, campaign, status="in_progress", current_step=1
@@ -170,8 +118,8 @@ class TestQueueToday:
     def test_respects_limit(self, conn, campaign):
         """queue_today respects the limit parameter."""
         for i in range(5):
-            comp = _insert_company(conn, f"Corp {i}", aum_millions=1000 - i * 100)
-            cid = _insert_contact(
+            comp = insert_company(conn, f"Corp {i}", aum_millions=1000 - i * 100)
+            cid = insert_contact(
                 conn, comp, first_name=f"C{i}", last_name="Test",
                 email=f"c{i}@example.com",
                 linkedin_url=f"https://linkedin.com/in/c{i}",
@@ -191,14 +139,14 @@ class TestQueueToday:
 
     def test_ordered_by_aum(self, conn, campaign):
         """queue_today returns contacts ordered by AUM descending."""
-        comp_small = _insert_company(conn, "Small Fund", aum_millions=100)
-        comp_big = _insert_company(conn, "Big Fund", aum_millions=5000)
+        comp_small = insert_company(conn, "Small Fund", aum_millions=100)
+        comp_big = insert_company(conn, "Big Fund", aum_millions=5000)
 
-        c_small = _insert_contact(
+        c_small = insert_contact(
             conn, comp_small, first_name="Small", last_name="Person",
             email="small@example.com", linkedin_url="https://linkedin.com/in/small",
         )
-        c_big = _insert_contact(
+        c_big = insert_contact(
             conn, comp_big, first_name="Big", last_name="Person",
             email="big@example.com", linkedin_url="https://linkedin.com/in/big",
         )
@@ -224,8 +172,8 @@ class TestExportExpandiCsv:
 
     def test_produces_valid_csv_with_correct_columns(self, conn, campaign, tmp_path):
         """Exported CSV has the correct header columns."""
-        comp = _insert_company(conn, "Export Corp", aum_millions=500)
-        cid = _insert_contact(
+        comp = insert_company(conn, "Export Corp", aum_millions=500)
+        cid = insert_contact(
             conn, comp, first_name="Alice", last_name="Smith",
             email="alice@export.com",
             linkedin_url="https://linkedin.com/in/alice",
@@ -259,11 +207,11 @@ class TestExportExpandiCsv:
 
     def test_only_includes_linkedin_step_contacts(self, conn, campaign, tmp_path):
         """Only contacts whose current step is a LinkedIn action are exported."""
-        comp_li = _insert_company(conn, "LinkedIn Corp", aum_millions=500)
-        comp_email = _insert_company(conn, "Email Corp", aum_millions=600)
+        comp_li = insert_company(conn, "LinkedIn Corp", aum_millions=500)
+        comp_email = insert_company(conn, "Email Corp", aum_millions=600)
 
         # Contact on LinkedIn step
-        c_li = _insert_contact(
+        c_li = insert_contact(
             conn, comp_li, first_name="LI", last_name="Person",
             email="li@example.com", linkedin_url="https://linkedin.com/in/li",
         )
@@ -273,7 +221,7 @@ class TestExportExpandiCsv:
         )
 
         # Contact on email step
-        c_email = _insert_contact(
+        c_email = insert_contact(
             conn, comp_email, first_name="Email", last_name="Person",
             email="email@example.com", email_status="valid",
             linkedin_url="https://linkedin.com/in/email",
@@ -298,11 +246,11 @@ class TestExportExpandiCsv:
 
     def test_includes_both_linkedin_connect_and_message(self, conn, campaign, tmp_path):
         """Both linkedin_connect and linkedin_message steps are exported."""
-        comp1 = _insert_company(conn, "Connect Corp", aum_millions=500)
-        comp2 = _insert_company(conn, "Message Corp", aum_millions=400)
+        comp1 = insert_company(conn, "Connect Corp", aum_millions=500)
+        comp2 = insert_company(conn, "Message Corp", aum_millions=400)
 
         # Contact on linkedin_connect step
-        c1 = _insert_contact(
+        c1 = insert_contact(
             conn, comp1, first_name="Connect", last_name="Person",
             email="connect@example.com",
             linkedin_url="https://linkedin.com/in/connect",
@@ -313,7 +261,7 @@ class TestExportExpandiCsv:
         )
 
         # Contact on linkedin_message step
-        c2 = _insert_contact(
+        c2 = insert_contact(
             conn, comp2, first_name="Message", last_name="Person",
             email="message@example.com",
             linkedin_url="https://linkedin.com/in/message",
@@ -379,8 +327,8 @@ class TestImportExpandiResults:
 
     def test_matches_contacts_by_linkedin_url(self, conn, campaign, tmp_path):
         """Contacts are matched by normalized LinkedIn URL."""
-        comp = _insert_company(conn, "Match Corp", aum_millions=500)
-        cid = _insert_contact(
+        comp = insert_company(conn, "Match Corp", aum_millions=500)
+        cid = insert_contact(
             conn, comp, first_name="Match", last_name="Person",
             linkedin_url="https://linkedin.com/in/matchperson",
         )
@@ -400,8 +348,8 @@ class TestImportExpandiResults:
 
     def test_advances_contacts_on_connected_status(self, conn, campaign, tmp_path):
         """When status is 'connected' and step is linkedin_connect, contact is advanced."""
-        comp = _insert_company(conn, "Advance Corp", aum_millions=500)
-        cid = _insert_contact(
+        comp = insert_company(conn, "Advance Corp", aum_millions=500)
+        cid = insert_contact(
             conn, comp, first_name="Advance", last_name="Person",
             linkedin_url="https://linkedin.com/in/advanceperson",
         )
@@ -428,8 +376,8 @@ class TestImportExpandiResults:
 
     def test_advances_on_message_sent_for_linkedin_message(self, conn, campaign, tmp_path):
         """When status is 'message_sent' and step is linkedin_message, contact is advanced."""
-        comp = _insert_company(conn, "Msg Corp", aum_millions=500)
-        cid = _insert_contact(
+        comp = insert_company(conn, "Msg Corp", aum_millions=500)
+        cid = insert_contact(
             conn, comp, first_name="Msg", last_name="Person",
             linkedin_url="https://linkedin.com/in/msgperson",
         )
@@ -467,8 +415,8 @@ class TestImportExpandiResults:
 
     def test_does_not_advance_on_pending_status(self, conn, campaign, tmp_path):
         """Status 'pending' should not advance the contact."""
-        comp = _insert_company(conn, "Pending Corp", aum_millions=500)
-        cid = _insert_contact(
+        comp = insert_company(conn, "Pending Corp", aum_millions=500)
+        cid = insert_contact(
             conn, comp, first_name="Pending", last_name="Person",
             linkedin_url="https://linkedin.com/in/pendingperson",
         )
@@ -492,8 +440,8 @@ class TestImportExpandiResults:
 
     def test_does_not_advance_connected_on_email_step(self, conn, campaign, tmp_path):
         """'connected' status on an email step should not advance the contact."""
-        comp = _insert_company(conn, "Email Step Corp", aum_millions=500)
-        cid = _insert_contact(
+        comp = insert_company(conn, "Email Step Corp", aum_millions=500)
+        cid = insert_contact(
             conn, comp, first_name="EmailStep", last_name="Person",
             email="emailstep@example.com", email_status="valid",
             linkedin_url="https://linkedin.com/in/emailstep",
@@ -520,8 +468,8 @@ class TestImportExpandiResults:
 
     def test_mixed_matched_and_unmatched(self, conn, campaign, tmp_path):
         """Mix of matched and unmatched rows produces correct counts."""
-        comp = _insert_company(conn, "Mixed Corp", aum_millions=500)
-        cid = _insert_contact(
+        comp = insert_company(conn, "Mixed Corp", aum_millions=500)
+        cid = insert_contact(
             conn, comp, first_name="Known", last_name="Person",
             linkedin_url="https://linkedin.com/in/knownperson",
         )
@@ -543,8 +491,8 @@ class TestImportExpandiResults:
 
     def test_url_normalization_case_insensitive(self, conn, campaign, tmp_path):
         """LinkedIn URL matching is case-insensitive."""
-        comp = _insert_company(conn, "Case Corp", aum_millions=500)
-        cid = _insert_contact(
+        comp = insert_company(conn, "Case Corp", aum_millions=500)
+        cid = insert_contact(
             conn, comp, first_name="Case", last_name="Person",
             linkedin_url="https://linkedin.com/in/CasePerson",
         )
@@ -562,8 +510,8 @@ class TestImportExpandiResults:
 
     def test_url_normalization_strips_trailing_slash(self, conn, campaign, tmp_path):
         """LinkedIn URL matching strips trailing slashes."""
-        comp = _insert_company(conn, "Slash Corp", aum_millions=500)
-        cid = _insert_contact(
+        comp = insert_company(conn, "Slash Corp", aum_millions=500)
+        cid = insert_contact(
             conn, comp, first_name="Slash", last_name="Person",
             linkedin_url="https://linkedin.com/in/slashperson",
         )
@@ -581,8 +529,8 @@ class TestImportExpandiResults:
 
     def test_url_normalization_strips_query_params(self, conn, campaign, tmp_path):
         """LinkedIn URL matching strips query parameters."""
-        comp = _insert_company(conn, "Query Corp", aum_millions=500)
-        cid = _insert_contact(
+        comp = insert_company(conn, "Query Corp", aum_millions=500)
+        cid = insert_contact(
             conn, comp, first_name="Query", last_name="Person",
             linkedin_url="https://linkedin.com/in/queryperson",
         )
