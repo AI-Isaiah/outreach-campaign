@@ -11,6 +11,7 @@ from typing import Optional
 
 from jinja2 import Environment, FileSystemLoader
 
+from src.models.database import get_cursor
 from src.services.compliance import build_unsubscribe_url
 
 # Resolve the templates directory relative to this file's location.
@@ -80,15 +81,16 @@ def get_template_context(
     Raises:
         ValueError: if the contact is not found.
     """
-    cursor = conn.cursor()
-    cursor.execute(
-        """SELECT c.first_name, c.last_name, c.full_name, co.name as company_name
-           FROM contacts c
-           LEFT JOIN companies co ON co.id = c.company_id
-           WHERE c.id = %s""",
-        (contact_id,),
-    )
-    row = cursor.fetchone()
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            """SELECT c.first_name, c.last_name, c.full_name,
+                      c.company_id, co.name as company_name
+               FROM contacts c
+               LEFT JOIN companies co ON co.id = c.company_id
+               WHERE c.id = %s""",
+            (contact_id,),
+        )
+        row = cursor.fetchone()
 
     if row is None:
         raise ValueError(f"Contact {contact_id} not found")
@@ -97,6 +99,24 @@ def get_template_context(
     last_name = row["last_name"] or ""
     full_name = row["full_name"] or f"{first_name} {last_name}".strip()
     company_name = row["company_name"] or ""
+
+    # Load latest completed deep research for the contact's company
+    deep_research = None
+    company_id = row.get("company_id")
+    if company_id:
+        with get_cursor(conn) as cursor:
+            cursor.execute(
+                """SELECT company_overview, crypto_signals, key_people,
+                          talking_points, risk_factors,
+                          updated_crypto_score, confidence
+                   FROM deep_research
+                   WHERE company_id = %s AND status = 'completed'
+                   ORDER BY created_at DESC LIMIT 1""",
+                (company_id,),
+            )
+            dr_row = cursor.fetchone()
+            if dr_row:
+                deep_research = dict(dr_row)
 
     # Derive from_email for the unsubscribe link
     smtp_config = config.get("smtp", {})
@@ -111,4 +131,5 @@ def get_template_context(
         "calendly_url": config.get("calendly_url", ""),
         "unsubscribe_url": unsubscribe_url,
         "physical_address": config.get("physical_address", ""),
+        "deep_research": deep_research,
     }
