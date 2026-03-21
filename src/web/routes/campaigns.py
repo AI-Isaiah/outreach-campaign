@@ -6,14 +6,14 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from src.models.campaigns import get_campaign_by_name, list_campaigns
 from src.services.metrics import (
     get_campaign_metrics,
     get_company_type_breakdown,
     get_variant_comparison,
     get_weekly_summary,
 )
-from src.web.dependencies import get_db
+from src.web.dependencies import get_current_user, get_db
+from src.models.database import get_cursor
 
 router = APIRouter(tags=["campaigns"])
 
@@ -27,19 +27,41 @@ def _row_to_dict(row) -> dict:
 def list_all_campaigns(
     status: Optional[str] = None,
     conn=Depends(get_db),
+    user=Depends(get_current_user),
 ):
     """List all campaigns."""
-    rows = list_campaigns(conn, status=status)
-    return [_row_to_dict(r) for r in rows]
+    with get_cursor(conn) as cur:
+        if status:
+            cur.execute(
+                "SELECT * FROM campaigns WHERE user_id = %s AND status = %s ORDER BY created_at DESC",
+                (user["id"], status),
+            )
+        else:
+            cur.execute(
+                "SELECT * FROM campaigns WHERE user_id = %s ORDER BY created_at DESC",
+                (user["id"],),
+            )
+        return [_row_to_dict(r) for r in cur.fetchall()]
+
+
+def _get_campaign_by_name_scoped(conn, name: str, user_id):
+    """Fetch a campaign by name scoped to user_id."""
+    with get_cursor(conn) as cur:
+        cur.execute(
+            "SELECT * FROM campaigns WHERE name = %s AND user_id = %s",
+            (name, user_id),
+        )
+        return cur.fetchone()
 
 
 @router.get("/campaigns/{name}")
 def get_campaign(
     name: str,
     conn=Depends(get_db),
+    user=Depends(get_current_user),
 ):
     """Get campaign details by name."""
-    camp = get_campaign_by_name(conn, name)
+    camp = _get_campaign_by_name_scoped(conn, name, user["id"])
     if not camp:
         raise HTTPException(404, f"Campaign '{name}' not found")
     return _row_to_dict(camp)
@@ -49,9 +71,10 @@ def get_campaign(
 def get_metrics(
     name: str,
     conn=Depends(get_db),
+    user=Depends(get_current_user),
 ):
     """Get campaign metrics."""
-    camp = get_campaign_by_name(conn, name)
+    camp = _get_campaign_by_name_scoped(conn, name, user["id"])
     if not camp:
         raise HTTPException(404, f"Campaign '{name}' not found")
 
@@ -75,9 +98,10 @@ def get_campaign_weekly(
     name: str,
     weeks_back: int = 1,
     conn=Depends(get_db),
+    user=Depends(get_current_user),
 ):
     """Get weekly summary for a campaign."""
-    camp = get_campaign_by_name(conn, name)
+    camp = _get_campaign_by_name_scoped(conn, name, user["id"])
     if not camp:
         raise HTTPException(404, f"Campaign '{name}' not found")
 
@@ -89,9 +113,10 @@ def get_campaign_weekly(
 def get_campaign_report(
     name: str,
     conn=Depends(get_db),
+    user=Depends(get_current_user),
 ):
     """Get full campaign report with metrics, variants, and breakdown."""
-    camp = get_campaign_by_name(conn, name)
+    camp = _get_campaign_by_name_scoped(conn, name, user["id"])
     if not camp:
         raise HTTPException(404, f"Campaign '{name}' not found")
 

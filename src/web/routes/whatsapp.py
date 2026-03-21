@@ -4,15 +4,21 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
-from src.web.dependencies import get_db
+from src.web.dependencies import get_current_user, get_db
+from src.models.database import get_cursor
+
+_limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(tags=["whatsapp"])
 
 
 @router.post("/whatsapp/setup")
-def whatsapp_setup(conn=Depends(get_db)):
+@_limiter.limit("3/minute")
+def whatsapp_setup(request: Request, conn=Depends(get_db), user=Depends(get_current_user)):
     """Start a WhatsApp Web session for QR code scanning."""
     try:
         from src.services.whatsapp_scanner import WhatsAppScanner
@@ -30,7 +36,8 @@ def whatsapp_setup(conn=Depends(get_db)):
 
 
 @router.post("/whatsapp/scan")
-def whatsapp_scan(conn=Depends(get_db)):
+@_limiter.limit("2/minute")
+def whatsapp_scan(request: Request, conn=Depends(get_db), user=Depends(get_current_user)):
     """Trigger a WhatsApp message scan for all contacts with phone numbers."""
     try:
         from src.services.whatsapp_scanner import WhatsAppScanner
@@ -50,47 +57,48 @@ def whatsapp_scan(conn=Depends(get_db)):
 
 
 @router.get("/whatsapp/scan/status")
-def whatsapp_scan_status(conn=Depends(get_db)):
+def whatsapp_scan_status(conn=Depends(get_db), user=Depends(get_current_user)):
     """Get the last scan time and message counts."""
-    cur = conn.cursor()
+    with get_cursor(conn) as cur:
+        # Last scan time
+        cur.execute(
+            "SELECT MAX(last_scanned_at) AS last_scan FROM whatsapp_scan_state"
+        )
+        row = cur.fetchone()
+        last_scan = row["last_scan"] if row else None
 
-    # Last scan time
-    cur.execute(
-        "SELECT MAX(last_scanned_at) AS last_scan FROM whatsapp_scan_state"
-    )
-    row = cur.fetchone()
-    last_scan = row["last_scan"] if row else None
+        # Total message count
+        cur.execute("SELECT COUNT(*) AS count FROM whatsapp_messages")
+        msg_count = cur.fetchone()["count"]
 
-    # Total message count
-    cur.execute("SELECT COUNT(*) AS count FROM whatsapp_messages")
-    msg_count = cur.fetchone()["count"]
+        # Contacts with messages
+        cur.execute(
+            "SELECT COUNT(DISTINCT contact_id) AS count FROM whatsapp_messages"
+        )
+        contacts_with_messages = cur.fetchone()["count"]
 
-    # Contacts with messages
-    cur.execute(
-        "SELECT COUNT(DISTINCT contact_id) AS count FROM whatsapp_messages"
-    )
-    contacts_with_messages = cur.fetchone()["count"]
-
-    return {
-        "last_scan": last_scan,
-        "total_messages": msg_count,
-        "contacts_with_messages": contacts_with_messages,
-    }
+        return {
+            "last_scan": last_scan,
+            "total_messages": msg_count,
+            "contacts_with_messages": contacts_with_messages,
+        }
 
 
 @router.get("/whatsapp/messages")
 def whatsapp_messages(
     contact_id: int = Query(...),
     conn=Depends(get_db),
+    user=Depends(get_current_user),
 ):
     """Get WhatsApp messages for a specific contact."""
-    cur = conn.cursor()
-    cur.execute(
-        """SELECT wm.*, c.full_name AS contact_name
-           FROM whatsapp_messages wm
-           JOIN contacts c ON c.id = wm.contact_id
-           WHERE wm.contact_id = %s
-           ORDER BY wm.whatsapp_timestamp DESC, wm.captured_at DESC""",
-        (contact_id,),
-    )
-    return [dict(r) for r in cur.fetchall()]
+    with get_cursor(conn) as cur:
+        cur.execute(
+            """SELECT wm.*, c.full_name AS contact_name
+               FROM whatsapp_messages wm
+               JOIN contacts c ON c.id = wm.contact_id
+               JOIN companies co ON co.id = c.company_id
+               WHERE wm.contact_id = %s AND co.user_id = %s
+               ORDER BY wm.whatsapp_timestamp DESC, wm.captured_at DESC""",
+            (contact_id, user["id"]),
+        )
+        return [dict(r) for r in cur.fetchall()]

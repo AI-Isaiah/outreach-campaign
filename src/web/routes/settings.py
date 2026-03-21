@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from src.web.dependencies import get_current_user, get_db
+from src.models.database import get_cursor
 
 router = APIRouter(tags=["settings"])
 
@@ -32,14 +33,11 @@ def get_settings(
     user=Depends(get_current_user),
 ):
     """Get engine config and service status."""
-    cur = conn.cursor()
-    try:
+    with get_cursor(conn) as cur:
         # Engine config
         cur.execute("SELECT key, value, updated_at FROM engine_config ORDER BY key")
         config_rows = cur.fetchall()
         config = {row["key"]: row["value"] for row in config_rows}
-    finally:
-        cur.close()
 
     # Gmail status
     try:
@@ -65,8 +63,7 @@ def update_settings(
     user=Depends(get_current_user),
 ):
     """Upsert engine config key-value pairs."""
-    cur = conn.cursor()
-    try:
+    with get_cursor(conn) as cur:
         for key, value in body.settings.items():
             cur.execute(
                 """INSERT INTO engine_config (key, value, updated_at)
@@ -77,8 +74,6 @@ def update_settings(
         conn.commit()
 
         return {"success": True, "updated": list(body.settings.keys())}
-    finally:
-        cur.close()
 
 
 # ---------------------------------------------------------------------------
@@ -96,15 +91,12 @@ def get_api_keys(
     user=Depends(get_current_user),
 ):
     """Return masked API keys and configuration status for the current user."""
-    cur = conn.cursor()
-    try:
+    with get_cursor(conn) as cur:
         cur.execute(
             "SELECT email, anthropic_api_key, perplexity_api_key FROM users WHERE id = %s",
             (user["id"],),
         )
         row = cur.fetchone()
-    finally:
-        cur.close()
 
     db_anthropic = (row or {}).get("anthropic_api_key") or ""
     db_perplexity = (row or {}).get("perplexity_api_key") or ""
@@ -147,30 +139,24 @@ def update_api_keys(
         return {"success": True, "updated": []}
 
     params.append(user["id"])
-    cur = conn.cursor()
-    try:
+    with get_cursor(conn) as cur:
         cur.execute(
             f"UPDATE users SET {', '.join(updates)} WHERE id = %s",
             params,
         )
         conn.commit()
-    finally:
-        cur.close()
 
     return {"success": True, "updated": [k for k, v in body.model_dump().items() if v is not None]}
 
 
 def get_user_api_keys(conn, user_id: int) -> dict[str, str]:
     """Resolve API keys for a user: DB first, then env-var fallback for founder."""
-    cur = conn.cursor()
-    try:
+    with get_cursor(conn) as cur:
         cur.execute(
             "SELECT email, anthropic_api_key, perplexity_api_key FROM users WHERE id = %s",
             (user_id,),
         )
         row = cur.fetchone()
-    finally:
-        cur.close()
 
     if not row:
         return {"anthropic": "", "perplexity": ""}

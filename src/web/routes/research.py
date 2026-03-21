@@ -47,6 +47,7 @@ from src.services.crypto_research import (
 from src.services.normalization_utils import normalize_company_name
 from src.web.dependencies import get_current_user, get_db
 from src.web.routes.settings import get_user_api_keys
+from src.models.database import get_cursor
 
 _logger = logging.getLogger(__name__)
 _SUPABASE_URL = os.getenv("SUPABASE_URL", "")
@@ -143,8 +144,7 @@ def create_research_job(
         raise HTTPException(400, "method must be web_search, website_crawl, or hybrid")
 
     # Enforce max 1 running job for this user
-    cur = conn.cursor()
-    try:
+    with get_cursor(conn) as cur:
         cur.execute(
             """SELECT id, name FROM research_jobs
                WHERE status IN ('pending', 'researching', 'classifying')
@@ -159,8 +159,6 @@ def create_research_job(
                 f"Job '{running['name']}' (#{running['id']}) is still running. "
                 f"Wait for it to complete or cancel it first.",
             )
-    finally:
-        cur.close()
 
     raw = file.file.read(MAX_UPLOAD_BYTES + 1)
     if len(raw) > MAX_UPLOAD_BYTES:
@@ -199,42 +197,40 @@ def create_research_job(
     cost = estimate_job_cost(len(companies), method)
 
     # Create job
-    cur = conn.cursor()
-    try:
-        cur.execute(
-            """INSERT INTO research_jobs (name, method, total_companies, cost_estimate_usd, user_id)
-               VALUES (%s, %s, %s, %s, %s) RETURNING id""",
-            (name, method, len(companies), cost["total"], user["id"]),
-        )
-        job_id = cur.fetchone()["id"]
-
-        # Batch lookup existing companies (avoid N+1)
-        all_norms = [normalize_company_name(c["company_name"]) for c in companies]
-        cur.execute(
-            "SELECT id, name_normalized FROM companies WHERE name_normalized = ANY(%s)",
-            (all_norms,),
-        )
-        company_map = {row["name_normalized"]: row["id"] for row in cur.fetchall()}
-
-        for company in companies:
-            name_norm = normalize_company_name(company["company_name"])
-            company_id = company_map.get(name_norm)
-
+    with get_cursor(conn) as cur:
+        try:
             cur.execute(
-                """INSERT INTO research_results
-                       (job_id, company_id, company_name, company_website)
-                   VALUES (%s, %s, %s, %s)""",
-                (job_id, company_id, company["company_name"], company.get("website")),
+                """INSERT INTO research_jobs (name, method, total_companies, cost_estimate_usd, user_id)
+                   VALUES (%s, %s, %s, %s, %s) RETURNING id""",
+                (name, method, len(companies), cost["total"], user["id"]),
             )
+            job_id = cur.fetchone()["id"]
 
-        conn.commit()
-    except HTTPException:
-        raise
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        cur.close()
+            # Batch lookup existing companies (avoid N+1)
+            all_norms = [normalize_company_name(c["company_name"]) for c in companies]
+            cur.execute(
+                "SELECT id, name_normalized FROM companies WHERE name_normalized = ANY(%s)",
+                (all_norms,),
+            )
+            company_map = {row["name_normalized"]: row["id"] for row in cur.fetchall()}
+
+            for company in companies:
+                name_norm = normalize_company_name(company["company_name"])
+                company_id = company_map.get(name_norm)
+
+                cur.execute(
+                    """INSERT INTO research_results
+                           (job_id, company_id, company_name, company_website)
+                       VALUES (%s, %s, %s, %s)""",
+                    (job_id, company_id, company["company_name"], company.get("website")),
+                )
+
+            conn.commit()
+        except HTTPException:
+            raise
+        except Exception:
+            conn.rollback()
+            raise
 
     api_keys = get_user_api_keys(conn, user["id"])
     _trigger_research("research-job", {"job_id": job_id, "api_keys": api_keys})
@@ -265,8 +261,7 @@ def list_research_jobs(
         params.append(status)
     where = "WHERE " + " AND ".join(conditions)
 
-    cur = conn.cursor()
-    try:
+    with get_cursor(conn) as cur:
         cur.execute(f"SELECT COUNT(*) AS cnt FROM research_jobs {where}", params)
         total = cur.fetchone()["cnt"]
 
@@ -277,8 +272,6 @@ def list_research_jobs(
             [*params, per_page, offset],
         )
         jobs = [dict(row) for row in cur.fetchall()]
-    finally:
-        cur.close()
 
     return {
         "jobs": jobs,
@@ -292,8 +285,7 @@ def list_research_jobs(
 @router.get("/jobs/{job_id}")
 def get_research_job(job_id: int, conn=Depends(get_db), user=Depends(get_current_user)):
     """Get job detail with progress, category summary, and score distribution."""
-    cur = conn.cursor()
-    try:
+    with get_cursor(conn) as cur:
         cur.execute("SELECT * FROM research_jobs WHERE id = %s AND user_id = %s", (job_id, user["id"]))
         job = cur.fetchone()
         if not job:
@@ -340,8 +332,6 @@ def get_research_job(job_id: int, conn=Depends(get_db), user=Depends(get_current
             for r in ("80-100", "60-79", "40-59", "20-39", "0-19")
             if (stats[f"bucket_{r.replace('-', '_')}"] or 0) > 0
         ]
-    finally:
-        cur.close()
 
     return {
         "job": dict(job),
@@ -371,13 +361,10 @@ def get_research_results(
     user=Depends(get_current_user),
 ):
     """Get paginated results for a job with filtering."""
-    cur = conn.cursor()
-    try:
+    with get_cursor(conn) as cur:
         cur.execute("SELECT id FROM research_jobs WHERE id = %s AND user_id = %s", (job_id, user["id"]))
         if not cur.fetchone():
             raise HTTPException(404, "Research job not found")
-    finally:
-        cur.close()
 
     where_parts = ["job_id = %s"]
     params: list = [job_id]
@@ -416,16 +403,13 @@ def get_research_results(
                 ORDER BY {safe_sort} {safe_dir} NULLS LAST
                 LIMIT %s OFFSET %s"""
 
-    cur = conn.cursor()
-    try:
+    with get_cursor(conn) as cur:
         cur.execute(count_sql, params)
         total = cur.fetchone()["cnt"]
 
         offset = (page - 1) * per_page
         cur.execute(select_sql, [*params, per_page, offset])
         results = [dict(row) for row in cur.fetchall()]
-    finally:
-        cur.close()
 
     return {
         "results": results,
@@ -439,8 +423,7 @@ def get_research_results(
 @router.get("/results/{result_id}")
 def get_research_result(result_id: int, conn=Depends(get_db), user=Depends(get_current_user)):
     """Get full detail for a single research result."""
-    cur = conn.cursor()
-    try:
+    with get_cursor(conn) as cur:
         cur.execute(
             """SELECT rr.* FROM research_results rr
                JOIN research_jobs rj ON rj.id = rr.job_id
@@ -450,8 +433,6 @@ def get_research_result(result_id: int, conn=Depends(get_db), user=Depends(get_c
         result = cur.fetchone()
         if not result:
             raise HTTPException(404, "Research result not found")
-    finally:
-        cur.close()
 
     return dict(result)
 
@@ -464,13 +445,10 @@ def get_research_result(result_id: int, conn=Depends(get_db), user=Depends(get_c
 def cancel_job(job_id: int, conn=Depends(get_db), user=Depends(get_current_user)):
     """Cancel a running research job. Stops after current company."""
     # Verify ownership
-    cur = conn.cursor()
-    try:
+    with get_cursor(conn) as cur:
         cur.execute("SELECT id FROM research_jobs WHERE id = %s AND user_id = %s", (job_id, user["id"]))
         if not cur.fetchone():
             raise HTTPException(404, "Research job not found")
-    finally:
-        cur.close()
 
     result = cancel_research_job(conn, job_id)
     if not result["success"]:
@@ -481,8 +459,7 @@ def cancel_job(job_id: int, conn=Depends(get_db), user=Depends(get_current_user)
 @router.post("/jobs/{job_id}/retry")
 def retry_job(job_id: int, conn=Depends(get_db), user=Depends(get_current_user)):
     """Retry all failed/errored results in a completed or failed job."""
-    cur = conn.cursor()
-    try:
+    with get_cursor(conn) as cur:
         cur.execute("SELECT status FROM research_jobs WHERE id = %s AND user_id = %s", (job_id, user["id"]))
         job = cur.fetchone()
         if not job:
@@ -498,8 +475,6 @@ def retry_job(job_id: int, conn=Depends(get_db), user=Depends(get_current_user))
         error_count = cur.fetchone()["cnt"]
         if error_count == 0:
             raise HTTPException(400, "No failed results to retry")
-    finally:
-        cur.close()
 
     api_keys = get_user_api_keys(conn, user["id"])
     _trigger_research("research-retry", {"job_id": job_id, "api_keys": api_keys})
@@ -519,48 +494,46 @@ def import_discovered_contacts(
     user=Depends(get_current_user),
 ):
     """Import discovered contacts from a single research result."""
-    cur = conn.cursor()
-    try:
-        cur.execute(
-            """SELECT rr.* FROM research_results rr
-               JOIN research_jobs rj ON rj.id = rr.job_id
-               WHERE rr.id = %s AND rj.user_id = %s""",
-            (result_id, user["id"]),
-        )
-        result = cur.fetchone()
-        if not result:
-            raise HTTPException(404, "Research result not found")
+    with get_cursor(conn) as cur:
+        try:
+            cur.execute(
+                """SELECT rr.* FROM research_results rr
+                   JOIN research_jobs rj ON rj.id = rr.job_id
+                   WHERE rr.id = %s AND rj.user_id = %s""",
+                (result_id, user["id"]),
+            )
+            result = cur.fetchone()
+            if not result:
+                raise HTTPException(404, "Research result not found")
 
-        contacts_json = result.get("discovered_contacts_json")
-        if not contacts_json:
-            raise HTTPException(400, "No discovered contacts to import")
+            contacts_json = result.get("discovered_contacts_json")
+            if not contacts_json:
+                raise HTTPException(400, "No discovered contacts to import")
 
-        discovered = contacts_json if isinstance(contacts_json, list) else json.loads(contacts_json)
+            discovered = contacts_json if isinstance(contacts_json, list) else json.loads(contacts_json)
 
-        if indices:
-            discovered = [c for i, c in enumerate(discovered) if i in indices]
+            if indices:
+                discovered = [c for i, c in enumerate(discovered) if i in indices]
 
-        if not discovered:
-            raise HTTPException(400, "No contacts selected for import")
+            if not discovered:
+                raise HTTPException(400, "No contacts selected for import")
 
-        company_id = result["company_id"]
-        if not company_id:
-            company_id = resolve_or_create_company(cur, result["company_name"], user_id=user["id"])
+            company_id = result["company_id"]
+            if not company_id:
+                company_id = resolve_or_create_company(cur, result["company_name"], user_id=user["id"])
 
-        imported = 0
-        for contact in discovered:
-            contact_id = import_single_contact(cur, contact, company_id)
-            if contact_id is not None:
-                imported += 1
+            imported = 0
+            for contact in discovered:
+                contact_id = import_single_contact(cur, contact, company_id)
+                if contact_id is not None:
+                    imported += 1
 
-        conn.commit()
-    except HTTPException:
-        raise
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        cur.close()
+            conn.commit()
+        except HTTPException:
+            raise
+        except Exception:
+            conn.rollback()
+            raise
 
     return {"success": True, "imported": imported, "company_id": company_id}
 
@@ -602,8 +575,7 @@ def export_research_results(
     user=Depends(get_current_user),
 ):
     """Export research results as CSV download."""
-    cur = conn.cursor()
-    try:
+    with get_cursor(conn) as cur:
         cur.execute("SELECT id FROM research_jobs WHERE id = %s AND user_id = %s", (job_id, user["id"]))
         if not cur.fetchone():
             raise HTTPException(404, "Research job not found")
@@ -629,8 +601,6 @@ def export_research_results(
             params,
         )
         rows = cur.fetchall()
-    finally:
-        cur.close()
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -680,22 +650,20 @@ def export_research_results(
 @router.delete("/jobs/{job_id}")
 def delete_research_job(job_id: int, conn=Depends(get_db), user=Depends(get_current_user)):
     """Delete a research job and all its results (CASCADE)."""
-    cur = conn.cursor()
-    try:
-        cur.execute(
-            "DELETE FROM research_jobs WHERE id = %s AND user_id = %s RETURNING id",
-            (job_id, user["id"]),
-        )
-        deleted = cur.fetchone()
-        if not deleted:
-            raise HTTPException(404, "Research job not found")
-        conn.commit()
-    except HTTPException:
-        raise
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        cur.close()
+    with get_cursor(conn) as cur:
+        try:
+            cur.execute(
+                "DELETE FROM research_jobs WHERE id = %s AND user_id = %s RETURNING id",
+                (job_id, user["id"]),
+            )
+            deleted = cur.fetchone()
+            if not deleted:
+                raise HTTPException(404, "Research job not found")
+            conn.commit()
+        except HTTPException:
+            raise
+        except Exception:
+            conn.rollback()
+            raise
 
     return {"success": True}

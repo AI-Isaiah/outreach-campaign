@@ -74,6 +74,7 @@ def get_db() -> Generator:
         try:
             yield conn
         finally:
+            conn.rollback()
             put_pool_connection(conn)
     else:
         conn = get_connection(SUPABASE_DB_URL)
