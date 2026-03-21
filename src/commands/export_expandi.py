@@ -7,6 +7,8 @@ import os
 from datetime import date
 from typing import Optional
 
+from src.models.database import get_cursor
+
 
 def export_expandi_csv(
     conn,
@@ -66,12 +68,12 @@ def export_expandi_csv(
 
         for item in linkedin_items:
             contact_id = item["contact_id"]
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT first_name, last_name, email FROM contacts WHERE id = %s",
-                (contact_id,),
-            )
-            row = cursor.fetchone()
+            with get_cursor(conn) as cursor:
+                cursor.execute(
+                    "SELECT first_name, last_name, email FROM contacts WHERE id = %s",
+                    (contact_id,),
+                )
+                row = cursor.fetchone()
 
             if row is None:
                 continue

@@ -5,12 +5,18 @@ normalises data, detects GDPR countries, and inserts companies + contacts.
 """
 
 import csv
-import re
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
-from urllib.parse import urlparse, urlunparse
 
 import yaml
+
+from src.models.database import get_cursor
+from src.services.normalization_utils import (
+    normalize_company_name as _normalize_company_name,
+    normalize_email as _normalize_email,
+    normalize_linkedin_url as _normalize_linkedin,
+    split_name as _split_name,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -20,7 +26,7 @@ _PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 
 # ---------------------------------------------------------------------------
-# Helper functions (all prefixed with _)
+# Helper functions
 # ---------------------------------------------------------------------------
 
 
@@ -54,63 +60,6 @@ def _parse_aum(raw: str) -> Optional[float]:
         return float(cleaned)
     except ValueError:
         return None
-
-
-def _normalize_email(email: Optional[str]) -> Optional[str]:
-    """Lowercase, strip whitespace, validate contains ``@``.
-
-    Returns None if the input is empty or invalid.
-    """
-    if email is None:
-        return None
-    email = email.strip().lower()
-    if not email or "@" not in email:
-        return None
-    return email
-
-
-def _normalize_linkedin(url: Optional[str]) -> Optional[str]:
-    """Strip query params, trailing slashes, and lowercase the URL.
-
-    Returns None if the input is empty or not a LinkedIn URL.
-    """
-    if url is None:
-        return None
-    url = url.strip()
-    if not url:
-        return None
-
-    # Parse URL, drop query and fragment, lowercase
-    parsed = urlparse(url)
-    cleaned = urlunparse((
-        parsed.scheme.lower(),
-        parsed.netloc.lower(),
-        parsed.path.rstrip("/"),
-        "",  # params
-        "",  # query
-        "",  # fragment
-    ))
-    return cleaned if cleaned else None
-
-
-def _normalize_company_name(name: str) -> str:
-    """Lowercase and collapse multiple whitespace characters."""
-    return re.sub(r"\s+", " ", name.strip().lower())
-
-
-def _split_name(full_name: str) -> Tuple[str, str]:
-    """Split a full name into (first_name, last_name).
-
-    Simple heuristic: everything before the last space is first name,
-    everything after is last name.  If only one token, it becomes the
-    first name with an empty last name.
-    """
-    parts = full_name.strip().split()
-    if len(parts) == 0:
-        return ("", "")
-    if len(parts) == 1:
-        return (parts[0], "")
-    return (" ".join(parts[:-1]), parts[-1])
 
 
 # ---------------------------------------------------------------------------
@@ -154,7 +103,7 @@ _CONTACT_SLOTS = [
 # ---------------------------------------------------------------------------
 
 
-def import_fund_csv(conn, csv_path: str) -> Dict[str, int]:
+def import_fund_csv(conn, csv_path: str, *, user_id: Optional[str] = None) -> Dict[str, int]:
     """Import a crypto-fund CSV into the database.
 
     Parameters
@@ -163,6 +112,9 @@ def import_fund_csv(conn, csv_path: str) -> Dict[str, int]:
         An open database connection (migrations must already be applied).
     csv_path : str
         Path to the CSV file.
+    user_id : str, optional
+        Owner user ID for multi-tenant scoping. When provided, inserted
+        companies are associated with this user.
 
     Returns
     -------
@@ -210,65 +162,66 @@ def import_fund_csv(conn, csv_path: str) -> Dict[str, int]:
             website = (row.get("URL") or "").strip() or None
             company_linkedin = (row.get("Company LinkedIn") or "").strip() or None
 
-            cursor = conn.cursor()
-            cursor.execute(
-                """INSERT INTO companies
-                   (name, name_normalized, address, city, country, aum_millions,
-                    firm_type, website, linkedin_url, is_gdpr)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
-                (
-                    firm_name,
-                    name_normalized,
-                    address,
-                    city,
-                    country or None,
-                    aum,
-                    firm_type_str,
-                    website,
-                    company_linkedin,
-                    is_gdpr,
-                ),
-            )
-            company_id = cursor.fetchone()["id"]
-            companies_created += 1
-
-            # ------ Contacts -------------------------------------------------
-            for slot in _CONTACT_SLOTS:
-                full_name = (row.get(slot["name_col"]) or "").strip()
-                email_raw = (row.get(slot["email_col"]) or "").strip() or None
-                linkedin_raw = (row.get(slot["linkedin_col"]) or "").strip() or None
-                title = (row.get(slot["title_col"]) or "").strip() or None
-
-                # Skip slot if no name, no email, AND no LinkedIn
-                if not full_name and not email_raw and not linkedin_raw:
-                    continue
-
-                first_name, last_name = _split_name(full_name)
-                email_normalized = _normalize_email(email_raw)
-                linkedin_normalized = _normalize_linkedin(linkedin_raw)
-
+            with get_cursor(conn) as cursor:
                 cursor.execute(
-                    """INSERT INTO contacts
-                       (company_id, first_name, last_name, full_name,
-                        email, email_normalized, linkedin_url,
-                        linkedin_url_normalized, title, priority_rank,
-                        source, is_gdpr)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'csv', %s)""",
+                    """INSERT INTO companies
+                       (name, name_normalized, address, city, country, aum_millions,
+                        firm_type, website, linkedin_url, is_gdpr, user_id)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
                     (
-                        company_id,
-                        first_name or None,
-                        last_name or None,
-                        full_name or None,
-                        email_raw,
-                        email_normalized,
-                        linkedin_raw,
-                        linkedin_normalized,
-                        title,
-                        slot["rank"],
+                        firm_name,
+                        name_normalized,
+                        address,
+                        city,
+                        country or None,
+                        aum,
+                        firm_type_str,
+                        website,
+                        company_linkedin,
                         is_gdpr,
+                        user_id,
                     ),
                 )
-                contacts_created += 1
+                company_id = cursor.fetchone()["id"]
+                companies_created += 1
+
+                # ------ Contacts -------------------------------------------------
+                for slot in _CONTACT_SLOTS:
+                    full_name = (row.get(slot["name_col"]) or "").strip()
+                    email_raw = (row.get(slot["email_col"]) or "").strip() or None
+                    linkedin_raw = (row.get(slot["linkedin_col"]) or "").strip() or None
+                    title = (row.get(slot["title_col"]) or "").strip() or None
+
+                    # Skip slot if no name, no email, AND no LinkedIn
+                    if not full_name and not email_raw and not linkedin_raw:
+                        continue
+
+                    first_name, last_name = _split_name(full_name)
+                    email_normalized = _normalize_email(email_raw)
+                    linkedin_normalized = _normalize_linkedin(linkedin_raw) or None
+
+                    cursor.execute(
+                        """INSERT INTO contacts
+                           (company_id, first_name, last_name, full_name,
+                            email, email_normalized, linkedin_url,
+                            linkedin_url_normalized, title, priority_rank,
+                            source, is_gdpr)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'csv', %s)""",
+                        (
+                            company_id,
+                            first_name or None,
+                            last_name or None,
+                            full_name or None,
+                            email_raw,
+                            email_normalized,
+                            linkedin_raw,
+                            linkedin_normalized,
+                            title,
+                            slot["rank"],
+                            is_gdpr,
+                        ),
+                    )
+                    contacts_created += 1
 
     conn.commit()
     return {

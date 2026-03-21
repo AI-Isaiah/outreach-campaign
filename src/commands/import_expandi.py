@@ -13,27 +13,10 @@ from __future__ import annotations
 import csv
 from datetime import date, timedelta
 from typing import Optional
-from urllib.parse import urlparse
 
-
-def _normalize_linkedin_url(url: str) -> str:
-    """Normalize a LinkedIn URL for matching.
-
-    Lowercases the URL, strips trailing slashes, and removes query parameters.
-    """
-    if not url or not url.strip():
-        return ""
-    url = url.lower().strip()
-    # Parse and reconstruct without query params / fragment
-    parsed = urlparse(url)
-    # If there's no scheme or netloc, this isn't a valid URL
-    if not parsed.scheme or not parsed.netloc:
-        return ""
-    # Reconstruct with just scheme + netloc + path
-    normalized = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
-    # Strip trailing slashes
-    normalized = normalized.rstrip("/")
-    return normalized
+from src.services.normalization_utils import normalize_linkedin_url
+from src.services.sequence_utils import find_next_step
+from src.models.database import get_cursor
 
 
 def _detect_csv_format(fieldnames: list[str]) -> dict:
@@ -175,15 +158,15 @@ def import_expandi_results(
                 result["unmatched"] += 1
                 continue
 
-            normalized_url = _normalize_linkedin_url(profile_link)
+            normalized_url = normalize_linkedin_url(profile_link)
 
             # Find the contact by normalized LinkedIn URL
-            cur = conn.cursor()
-            cur.execute(
-                "SELECT id FROM contacts WHERE linkedin_url_normalized = %s",
-                (normalized_url,),
-            )
-            contact_row = cur.fetchone()
+            with get_cursor(conn) as cur:
+                cur.execute(
+                    "SELECT id FROM contacts WHERE linkedin_url_normalized = %s",
+                    (normalized_url,),
+                )
+                contact_row = cur.fetchone()
 
             if contact_row is None:
                 result["unmatched"] += 1
@@ -226,7 +209,7 @@ def import_expandi_results(
 
             if should_advance:
                 # Find the next step_order
-                next_step = _find_next_step(steps, current_step_order)
+                next_step = find_next_step(steps, current_step_order)
                 if next_step:
                     next_date = (
                         date.today() + timedelta(days=next_step["delay_days"])
@@ -250,19 +233,3 @@ def import_expandi_results(
                 result["advanced"] += 1
 
     return result
-
-
-def _find_next_step(steps: list, current_step_order: int) -> Optional[dict]:
-    """Find the next sequence step after the given step_order.
-
-    Args:
-        steps: list of step rows, sorted by step_order
-        current_step_order: the current step_order value
-
-    Returns:
-        The next step dict, or None if there is no next step.
-    """
-    for step in steps:
-        if step["step_order"] > current_step_order:
-            return step
-    return None

@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from pathlib import Path
 
@@ -9,6 +10,13 @@ from rich.console import Console
 load_dotenv()
 
 from src.config import load_config, SUPABASE_DB_URL  # noqa: E402
+
+# Configure logging for all modules
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 
 app = typer.Typer(name="outreach", help="Multi-channel outreach campaign manager")
 console = Console()
@@ -26,7 +34,7 @@ def _load_config() -> dict:
 @app.command()
 def import_csv(csv_path: str = typer.Argument(..., help="Path to Crypto Fund List CSV")):
     """Import contacts from the crypto fund CSV file."""
-    from src.models.database import get_connection, run_migrations
+    from src.models.database import get_connection, run_migrations, get_cursor
     from src.commands.import_contacts import import_fund_csv
 
     conn = get_connection(SUPABASE_DB_URL)
@@ -119,23 +127,23 @@ def stats():
     try:
         run_migrations(conn)
 
-        cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) AS cnt FROM companies")
-        companies = cur.fetchone()["cnt"]
-        cur.execute("SELECT COUNT(*) AS cnt FROM contacts")
-        contacts = cur.fetchone()["cnt"]
-        cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE is_gdpr = true")
-        gdpr = cur.fetchone()["cnt"]
-        cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE email_status = 'valid'")
-        verified = cur.fetchone()["cnt"]
-        cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE email_status = 'invalid'")
-        invalid = cur.fetchone()["cnt"]
-        cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE email_status = 'unverified'")
-        unverified = cur.fetchone()["cnt"]
-        cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE email_normalized IS NOT NULL")
-        with_email = cur.fetchone()["cnt"]
-        cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE linkedin_url IS NOT NULL AND linkedin_url != ''")
-        with_linkedin = cur.fetchone()["cnt"]
+        with get_cursor(conn) as cur:
+            cur.execute("SELECT COUNT(*) AS cnt FROM companies")
+            companies = cur.fetchone()["cnt"]
+            cur.execute("SELECT COUNT(*) AS cnt FROM contacts")
+            contacts = cur.fetchone()["cnt"]
+            cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE is_gdpr = true")
+            gdpr = cur.fetchone()["cnt"]
+            cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE email_status = 'valid'")
+            verified = cur.fetchone()["cnt"]
+            cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE email_status = 'invalid'")
+            invalid = cur.fetchone()["cnt"]
+            cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE email_status = 'unverified'")
+            unverified = cur.fetchone()["cnt"]
+            cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE email_normalized IS NOT NULL")
+            with_email = cur.fetchone()["cnt"]
+            cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE linkedin_url IS NOT NULL AND linkedin_url != ''")
+            with_linkedin = cur.fetchone()["cnt"]
 
         console.print("[bold]Database Statistics[/bold]")
         console.print(f"  Companies:      {companies}")
@@ -267,7 +275,7 @@ def create_campaign_cmd(
     run_migrations(conn)
 
     try:
-        campaign_id = create_campaign(conn, name, description=description)
+        campaign_id = create_campaign(conn, name, description=description, user_id=1)
         console.print(f"[green]Created campaign '{name}' (id={campaign_id})[/green]")
     except Exception as e:
         console.print(f"[red]ERROR: {e}[/red]")
@@ -311,15 +319,17 @@ def setup_sequence(
         t_li_connect = create_template(
             conn, f"{campaign}_li_connect", "linkedin_connect",
             "Hi {{first_name}}, I'd like to connect regarding {{company_name}}.",
+            user_id=1,
         )
         t_li_message = create_template(
             conn, f"{campaign}_li_message", "linkedin_message",
             "Hi {{first_name}}, following up on my connection request.",
+            user_id=1,
         )
         t_email_cold = create_template(
             conn, f"{campaign}_email_cold", "email",
             "Hello {{first_name}},\n\nI wanted to reach out regarding...",
-            subject="Quick introduction",
+            subject="Quick introduction", user_id=1,
         )
 
         # Step 1: LinkedIn connect (day 0)
@@ -334,7 +344,7 @@ def setup_sequence(
             t_email_final = create_template(
                 conn, f"{campaign}_email_final", "email",
                 "Hi {{first_name}},\n\nJust a final note...",
-                subject="Final note",
+                subject="Final note", user_id=1,
             )
             add_sequence_step(conn, campaign_id, 4, "email", t_email_final, delay_days=7)
             console.print(f"[green]Set up GDPR sequence for '{campaign}' (4 steps, max 2 emails)[/green]")
@@ -343,12 +353,12 @@ def setup_sequence(
             t_email_followup = create_template(
                 conn, f"{campaign}_email_followup", "email",
                 "Hi {{first_name}},\n\nFollowing up on my previous email...",
-                subject="Following up",
+                subject="Following up", user_id=1,
             )
             t_email_breakup = create_template(
                 conn, f"{campaign}_email_breakup", "email",
                 "Hi {{first_name}},\n\nI understand you're busy...",
-                subject="Last note",
+                subject="Last note", user_id=1,
             )
             add_sequence_step(
                 conn, campaign_id, 4, "email", t_email_followup,
@@ -427,9 +437,9 @@ def enroll(
         query += " LIMIT %s"
         params.append(limit)
 
-    cur = conn.cursor()
-    cur.execute(query, params)
-    rows = cur.fetchall()
+    with get_cursor(conn) as cur:
+        cur.execute(query, params)
+        rows = cur.fetchall()
 
     enrolled_count = 0
     today = date_mod.today().isoformat()
@@ -557,13 +567,13 @@ def status(
         outreach status reply john@fund.com negative
         outreach status reply john@fund.com call-booked
     """
-    from src.models.database import get_connection, run_migrations
+    from src.models.database import get_connection, get_cursor, run_migrations
     from src.models.campaigns import (
         get_campaign_by_name,
         get_contact_campaign_status,
-        log_event,
         list_campaigns,
     )
+    from src.models.events import log_event
     from src.services.state_machine import transition_contact, InvalidTransition
 
     conn = get_connection(SUPABASE_DB_URL)
@@ -586,47 +596,47 @@ def status(
             raise typer.Exit(1)
 
         # Find the contact
-        cur = conn.cursor()
-        if identifier.isdigit():
-            cur.execute(
-                "SELECT id, email, full_name FROM contacts WHERE id = %s",
-                (int(identifier),),
-            )
-            contact_row = cur.fetchone()
-        else:
-            cur.execute(
-                "SELECT id, email, full_name FROM contacts WHERE email = %s OR email_normalized = %s",
-                (identifier, identifier.lower().strip()),
-            )
-            contact_row = cur.fetchone()
+        with get_cursor(conn) as cur:
+            if identifier.isdigit():
+                cur.execute(
+                    "SELECT id, email, full_name FROM contacts WHERE id = %s",
+                    (int(identifier),),
+                )
+                contact_row = cur.fetchone()
+            else:
+                cur.execute(
+                    "SELECT id, email, full_name FROM contacts WHERE email = %s OR email_normalized = %s",
+                    (identifier, identifier.lower().strip()),
+                )
+                contact_row = cur.fetchone()
 
-        if contact_row is None:
-            console.print(f"[red]ERROR: Contact '{identifier}' not found[/red]")
-            raise typer.Exit(1)
-
-        contact_id = contact_row["id"]
-
-        # Find the campaign
-        if campaign:
-            camp = get_campaign_by_name(conn, campaign)
-            if not camp:
-                console.print(f"[red]ERROR: Campaign '{campaign}' not found[/red]")
+            if contact_row is None:
+                console.print(f"[red]ERROR: Contact '{identifier}' not found[/red]")
                 raise typer.Exit(1)
-            campaign_id = camp["id"]
-        else:
-            # Use first active campaign this contact is enrolled in
-            cur.execute(
-                """SELECT ccs.campaign_id FROM contact_campaign_status ccs
-                   JOIN campaigns c ON c.id = ccs.campaign_id
-                   WHERE ccs.contact_id = %s AND c.status = 'active'
-                   ORDER BY ccs.id DESC LIMIT 1""",
-                (contact_id,),
-            )
-            row = cur.fetchone()
-            if row is None:
-                console.print(f"[red]ERROR: Contact is not enrolled in any active campaign[/red]")
-                raise typer.Exit(1)
-            campaign_id = row["campaign_id"]
+
+            contact_id = contact_row["id"]
+
+            # Find the campaign
+            if campaign:
+                camp = get_campaign_by_name(conn, campaign)
+                if not camp:
+                    console.print(f"[red]ERROR: Campaign '{campaign}' not found[/red]")
+                    raise typer.Exit(1)
+                campaign_id = camp["id"]
+            else:
+                # Use first active campaign this contact is enrolled in
+                cur.execute(
+                    """SELECT ccs.campaign_id FROM contact_campaign_status ccs
+                       JOIN campaigns c ON c.id = ccs.campaign_id
+                       WHERE ccs.contact_id = %s AND c.status = 'active'
+                       ORDER BY ccs.id DESC LIMIT 1""",
+                    (contact_id,),
+                )
+                row = cur.fetchone()
+                if row is None:
+                    console.print(f"[red]ERROR: Contact is not enrolled in any active campaign[/red]")
+                    raise typer.Exit(1)
+                campaign_id = row["campaign_id"]
 
         # Ensure contact is in_progress before transitioning
         ccs = get_contact_campaign_status(conn, contact_id, campaign_id)
@@ -983,7 +993,7 @@ def newsletter_subscribers(
 ):
     """Manage newsletter subscribers."""
     from rich.table import Table
-    from src.models.database import get_connection, run_migrations
+    from src.models.database import get_connection, get_cursor, run_migrations
     from src.services.newsletter import (
         get_newsletter_subscribers,
         auto_subscribe_eligible,
@@ -1036,12 +1046,12 @@ def newsletter_subscribers(
                 console.print("[red]ERROR: --email is required for subscribe[/red]")
                 raise typer.Exit(1)
 
-            cur = conn.cursor()
-            cur.execute(
-                "SELECT id FROM contacts WHERE email = %s OR email_normalized = %s",
-                (email, email.lower().strip()),
-            )
-            contact = cur.fetchone()
+            with get_cursor(conn) as cur:
+                cur.execute(
+                    "SELECT id FROM contacts WHERE email = %s OR email_normalized = %s",
+                    (email, email.lower().strip()),
+                )
+                contact = cur.fetchone()
 
             if not contact:
                 console.print(f"[red]ERROR: Contact not found with email: {email}[/red]")
@@ -1057,12 +1067,12 @@ def newsletter_subscribers(
                 console.print("[red]ERROR: --email is required for unsubscribe[/red]")
                 raise typer.Exit(1)
 
-            cur = conn.cursor()
-            cur.execute(
-                "SELECT id FROM contacts WHERE email = %s OR email_normalized = %s",
-                (email, email.lower().strip()),
-            )
-            contact = cur.fetchone()
+            with get_cursor(conn) as cur:
+                cur.execute(
+                    "SELECT id FROM contacts WHERE email = %s OR email_normalized = %s",
+                    (email, email.lower().strip()),
+                )
+                contact = cur.fetchone()
 
             if not contact:
                 console.print(f"[red]ERROR: Contact not found with email: {email}[/red]")
