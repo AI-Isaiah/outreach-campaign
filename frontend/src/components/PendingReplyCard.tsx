@@ -1,3 +1,4 @@
+import React from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
@@ -9,7 +10,7 @@ const CLASSIFICATION_COLORS: Record<string, string> = {
   neutral: "bg-gray-100 text-gray-700",
 };
 
-export default function PendingReplyCard({ reply }: { reply: PendingReply }) {
+function PendingReplyCard({ reply }: { reply: PendingReply }) {
   const queryClient = useQueryClient();
 
   const confirmMutation = useMutation({
@@ -94,3 +95,5 @@ export default function PendingReplyCard({ reply }: { reply: PendingReply }) {
     </div>
   );
 }
+
+export default React.memo(PendingReplyCard);

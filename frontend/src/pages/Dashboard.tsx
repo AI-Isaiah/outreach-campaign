@@ -1,35 +1,67 @@
+import { useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
+import { Inbox, ListTodo, Users, FileText } from "lucide-react";
 import { api } from "../api/client";
+import type { StatsResponse, Campaign, PendingReply, ReplyScanResponse, LinkedInScanResponse } from "../types";
 import MetricCard from "../components/MetricCard";
 import PendingReplyCard from "../components/PendingReplyCard";
+import { SkeletonMetricCard, SkeletonCard } from "../components/Skeleton";
+import EmptyState from "../components/EmptyState";
+import ErrorCard from "../components/ui/ErrorCard";
+import Card from "../components/ui/Card";
+import Button from "../components/ui/Button";
+import StatusBadge from "../components/StatusBadge";
 
 export default function Dashboard() {
   const queryClient = useQueryClient();
-  const stats = useQuery({ queryKey: ["stats"], queryFn: api.getStats });
-  const campaigns = useQuery({
+  const stats = useQuery<StatsResponse>({ queryKey: ["stats"], queryFn: api.getStats });
+  const campaigns = useQuery<Campaign[]>({
     queryKey: ["campaigns"],
     queryFn: api.listCampaigns,
   });
-  const pendingReplies = useQuery({
+  const pendingReplies = useQuery<PendingReply[]>({
     queryKey: ["pending-replies"],
     queryFn: api.listPendingReplies,
   });
-  const scanReplies = useMutation({
+  const scanReplies = useMutation<ReplyScanResponse, Error>({
     mutationFn: api.scanReplies,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["pending-replies"] });
     },
   });
+  const scanLinkedIn = useMutation<LinkedInScanResponse, Error>({
+    mutationFn: api.scanLinkedInAcceptances,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["stats"] });
+      queryClient.invalidateQueries({ queryKey: ["queue"] });
+    },
+  });
+
+  // F006: Reset scan mutations on unmount to prevent stale data on re-navigation
+  useEffect(() => () => { scanReplies.reset(); scanLinkedIn.reset(); }, []);
 
   return (
     <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <p className="text-gray-500 mt-1">Overview of your outreach campaigns</p>
+        <p className="text-sm text-gray-500 mt-1">Overview of your outreach campaigns</p>
       </div>
 
       {/* Stats cards */}
+      {stats.isLoading && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <SkeletonMetricCard key={i} />
+          ))}
+        </div>
+      )}
+      {stats.isError && (
+        <ErrorCard
+          message={(stats.error as Error).message}
+          onRetry={() => stats.refetch()}
+        />
+      )}
       {stats.data && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <MetricCard label="Companies" value={stats.data.companies} />
@@ -56,32 +88,54 @@ export default function Dashboard() {
       )}
 
       {/* Pending Replies */}
-      {pendingReplies.data && pendingReplies.data.length > 0 && (
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">
-              Pending Replies ({pendingReplies.data.length})
-            </h2>
-            <button
-              onClick={() => scanReplies.mutate()}
-              disabled={scanReplies.isPending}
-              className="px-3 py-1.5 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-            >
-              {scanReplies.isPending ? "Scanning..." : "Scan for Replies"}
-            </button>
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">
+            Pending Replies
+            {pendingReplies.data && pendingReplies.data.length > 0 && (
+              <span className="ml-2 text-sm font-normal text-gray-500">
+                ({pendingReplies.data.length})
+              </span>
+            )}
+          </h2>
+          <Button
+            variant="accent"
+            size="sm"
+            onClick={() => scanReplies.mutate()}
+            loading={scanReplies.isPending}
+          >
+            Scan for Replies
+          </Button>
+        </div>
+
+        {scanReplies.isError && (
+          <div className="mb-3">
+            <ErrorCard message={(scanReplies.error as Error).message} />
           </div>
-          {scanReplies.isError && (
-            <p className="text-red-500 text-sm mb-3">
-              {(scanReplies.error as Error).message}
-            </p>
-          )}
-          {scanReplies.data && (
-            <p className="text-green-600 text-sm mb-3">
-              Scanned {scanReplies.data.scanned} contacts, found {scanReplies.data.new_replies} new replies
-            </p>
-          )}
+        )}
+        {scanReplies.data && (
+          <p className="text-green-600 text-sm mb-3">
+            Scanned {scanReplies.data.scanned} contacts, found {scanReplies.data.new_replies} new replies
+          </p>
+        )}
+
+        {pendingReplies.isLoading && (
           <div className="space-y-3">
-            {pendingReplies.data.slice(0, 5).map((reply: any) => (
+            <SkeletonCard />
+            <SkeletonCard />
+          </div>
+        )}
+
+        {pendingReplies.isError && (
+          <ErrorCard
+            message={(pendingReplies.error as Error).message}
+            onRetry={() => pendingReplies.refetch()}
+          />
+        )}
+
+        {pendingReplies.data && pendingReplies.data.length > 0 && (
+          <div className="space-y-3">
+            {pendingReplies.data.slice(0, 5).map((reply) => (
               <PendingReplyCard key={reply.id} reply={reply} />
             ))}
             {pendingReplies.data.length > 5 && (
@@ -90,29 +144,77 @@ export default function Dashboard() {
               </p>
             )}
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Scan for Replies (when no pending) */}
-      {pendingReplies.data && pendingReplies.data.length === 0 && (
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => scanReplies.mutate()}
-            disabled={scanReplies.isPending}
-            className="px-3 py-1.5 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+        {pendingReplies.data && pendingReplies.data.length === 0 && (
+          <EmptyState
+            icon={<Inbox size={40} />}
+            title="All caught up"
+            description="No replies waiting for review"
+          />
+        )}
+      </div>
+
+      {/* LinkedIn Sync */}
+      <Card padding="md">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">LinkedIn Connections</h2>
+            <p className="text-sm text-gray-500 mt-0.5">
+              Scan Gmail for LinkedIn acceptance notifications and auto-advance sequences
+            </p>
+          </div>
+          <Button
+            variant="accent"
+            size="md"
+            onClick={() => scanLinkedIn.mutate()}
+            loading={scanLinkedIn.isPending}
           >
-            {scanReplies.isPending ? "Scanning..." : "Scan for Replies"}
-          </button>
-          {scanReplies.data && (
-            <span className="text-green-600 text-sm">
-              Scanned {scanReplies.data.scanned} contacts, found {scanReplies.data.new_replies} new replies
-            </span>
-          )}
-          {scanReplies.isError && (
-            <span className="text-red-500 text-sm">{(scanReplies.error as Error).message}</span>
-          )}
+            Sync LinkedIn
+          </Button>
         </div>
-      )}
+        {scanLinkedIn.isError && (
+          <div className="mt-3">
+            <ErrorCard message={(scanLinkedIn.error as Error).message} />
+          </div>
+        )}
+        {scanLinkedIn.data && (
+          <div className="mt-3 space-y-2">
+            <div className="flex gap-4 text-sm">
+              <span className="text-gray-500">
+                Scanned: <span className="font-medium text-gray-900">{scanLinkedIn.data.scanned}</span>
+              </span>
+              <span className="text-gray-500">
+                Matched: <span className="font-medium text-green-600">{scanLinkedIn.data.matched}</span>
+              </span>
+              <span className="text-gray-500">
+                Advanced: <span className="font-medium text-blue-600">{scanLinkedIn.data.advanced}</span>
+              </span>
+              {scanLinkedIn.data.already_processed > 0 && (
+                <span className="text-gray-400">
+                  Already processed: {scanLinkedIn.data.already_processed}
+                </span>
+              )}
+            </div>
+            {scanLinkedIn.data.details && scanLinkedIn.data.details.length > 0 && (
+              <div className="border-t border-gray-100 pt-2 space-y-1">
+                {scanLinkedIn.data.details.map((d, i) => (
+                  <div key={i} className="flex items-center gap-2 text-sm">
+                    <span className={`w-2 h-2 rounded-full ${d.advanced ? "bg-green-500" : "bg-gray-300"}`} />
+                    <span className="text-gray-700">{d.contact_name}</span>
+                    <span className="text-gray-400 text-xs">
+                      via {d.match_method === "linkedin_url" ? "profile URL" : "name"}
+                    </span>
+                    {d.advanced && (
+                      <span className="text-green-600 text-xs font-medium">sequence advanced</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </Card>
 
       {/* Campaigns */}
       <div>
@@ -120,43 +222,56 @@ export default function Dashboard() {
           <h2 className="text-lg font-semibold text-gray-900">Campaigns</h2>
           <Link
             to="/campaigns"
-            className="text-sm text-blue-600 hover:text-blue-800"
+            className="text-sm text-blue-600 hover:text-blue-800 font-medium"
           >
             View all
           </Link>
         </div>
-        {campaigns.data && campaigns.data.length > 0 ? (
-          <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
-            {campaigns.data.map((c: any) => (
-              <Link
-                key={c.id}
-                to={`/campaigns/${c.name}`}
-                className="flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors"
-              >
-                <div>
-                  <span className="font-medium text-gray-900">{c.name}</span>
-                  {c.description && (
-                    <span className="text-gray-400 ml-2 text-sm">
-                      {c.description}
-                    </span>
-                  )}
-                </div>
-                <span
-                  className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                    c.status === "active"
-                      ? "bg-green-100 text-green-800"
-                      : "bg-gray-100 text-gray-600"
-                  }`}
-                >
-                  {c.status}
-                </span>
-              </Link>
-            ))}
+
+        {campaigns.isLoading && (
+          <div className="space-y-2">
+            <SkeletonCard />
+            <SkeletonCard />
           </div>
-        ) : campaigns.isLoading ? (
-          <p className="text-gray-400">Loading...</p>
+        )}
+
+        {campaigns.isError && (
+          <ErrorCard
+            message={(campaigns.error as Error).message}
+            onRetry={() => campaigns.refetch()}
+          />
+        )}
+
+        {campaigns.data && campaigns.data.length > 0 ? (
+          <Card padding="none">
+            <div className="divide-y divide-gray-100">
+              {campaigns.data.map((c) => (
+                <Link
+                  key={c.id}
+                  to={`/campaigns/${c.name}`}
+                  className="flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors"
+                >
+                  <div>
+                    <span className="font-medium text-gray-900">{c.name}</span>
+                    {c.description && (
+                      <span className="text-gray-400 ml-2 text-sm">
+                        {c.description}
+                      </span>
+                    )}
+                  </div>
+                  <StatusBadge status={c.status} />
+                </Link>
+              ))}
+            </div>
+          </Card>
         ) : (
-          <p className="text-gray-400">No campaigns found.</p>
+          campaigns.data && (
+            <EmptyState
+              icon={<FileText size={40} />}
+              title="No campaigns yet"
+              description="Create your first campaign to start outreach"
+            />
+          )
         )}
       </div>
 
@@ -166,23 +281,20 @@ export default function Dashboard() {
           Quick Actions
         </h2>
         <div className="flex gap-3">
-          <Link
-            to="/queue"
-            className="px-4 py-2.5 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors"
-          >
-            Open Today's Queue
+          <Link to="/queue">
+            <Button variant="primary" size="lg" leftIcon={<ListTodo size={16} />}>
+              Open Today's Queue
+            </Button>
           </Link>
-          <Link
-            to="/contacts"
-            className="px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
-          >
-            Browse Contacts
+          <Link to="/contacts">
+            <Button variant="secondary" size="lg" leftIcon={<Users size={16} />}>
+              Browse Contacts
+            </Button>
           </Link>
-          <Link
-            to="/templates"
-            className="px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
-          >
-            Manage Templates
+          <Link to="/templates">
+            <Button variant="secondary" size="lg" leftIcon={<FileText size={16} />}>
+              Manage Templates
+            </Button>
           </Link>
         </div>
       </div>

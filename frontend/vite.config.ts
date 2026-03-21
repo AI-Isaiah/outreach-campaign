@@ -10,5 +10,8 @@ export default defineConfig({
         changeOrigin: true,
       },
     },
+    watch: {
+      ignored: ["**/tsconfig.tsbuildinfo", "**/node_modules/**"],
+    },
   },
 });

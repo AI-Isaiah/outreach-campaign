@@ -1,8 +1,15 @@
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import ErrorBoundary from "./components/ErrorBoundary";
+import RequireAuth from "./components/RequireAuth";
 import Layout from "./components/Layout";
 import { SkeletonCard } from "./components/Skeleton";
+
+// Auth pages (eager-loaded — tiny)
+import Login from "./pages/Login";
+import Register from "./pages/Register";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 
 // Eager-load the dashboard (most common landing page)
 import Dashboard from "./pages/Dashboard";
@@ -54,7 +61,20 @@ export default function App() {
       <ErrorBoundary>
         <Suspense fallback={<PageFallback />}>
           <Routes>
-            <Route element={<Layout />}>
+            {/* Public auth routes */}
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
+
+            {/* Protected app routes */}
+            <Route
+              element={
+                <RequireAuth>
+                  <Layout />
+                </RequireAuth>
+              }
+            >
               <Route path="/" element={<Page><Dashboard /></Page>} />
               <Route path="/queue" element={<Page><Queue /></Page>} />
               <Route path="/campaigns" element={<Page><CampaignList /></Page>} />

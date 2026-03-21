@@ -9,7 +9,21 @@ export default function GlobalSearchBar() {
   const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
   const ref = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  const abortControllerRef = useRef<AbortController>();
+
+  // Cmd+K / Ctrl+K keyboard shortcut
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        inputRef.current?.focus();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   useEffect(() => {
     if (query.length < 2) {
@@ -19,6 +33,9 @@ export default function GlobalSearchBar() {
     }
 
     clearTimeout(timerRef.current);
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = new AbortController();
+
     timerRef.current = setTimeout(async () => {
       try {
         const data = await api.globalSearch(query);
@@ -29,7 +46,10 @@ export default function GlobalSearchBar() {
       }
     }, 300);
 
-    return () => clearTimeout(timerRef.current);
+    return () => {
+      clearTimeout(timerRef.current);
+      abortControllerRef.current?.abort();
+    };
   }, [query]);
 
   useEffect(() => {
@@ -52,13 +72,19 @@ export default function GlobalSearchBar() {
 
   return (
     <div ref={ref} className="relative">
-      <input
-        type="text"
-        placeholder="Search..."
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-md text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-      />
+      <div className="relative">
+        <input
+          ref={inputRef}
+          type="text"
+          placeholder="Search..."
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          className="w-full px-3 py-1.5 pr-12 bg-gray-800 border border-gray-700 rounded-md text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        />
+        <kbd className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-[10px] text-gray-500 bg-gray-700 px-1.5 py-0.5 rounded">
+          {"\u2318"}K
+        </kbd>
+      </div>
 
       {isOpen && results && results.total > 0 && (
         <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 z-50 max-h-80 overflow-y-auto">

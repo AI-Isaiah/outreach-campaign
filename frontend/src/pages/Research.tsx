@@ -507,7 +507,7 @@ export default function Research() {
         </div>
       ) : !data?.jobs.length ? (
         <EmptyState
-          icon={Search}
+          icon={<Search />}
           title="No research jobs yet"
           description="Upload a company list to discover who's investing in crypto"
           action={{ label: "New Research Job", onClick: () => setShowNewJob(true) }}

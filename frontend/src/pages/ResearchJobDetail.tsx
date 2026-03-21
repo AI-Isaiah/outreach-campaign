@@ -498,10 +498,10 @@ export default function ResearchJobDetail() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Metric cards */}
           <div className="grid grid-cols-2 gap-3">
-            <MetricCard label="Avg Score" value={String(jobData.avg_score)} accentColor="blue" />
-            <MetricCard label="Confirmed" value={String(jobData.by_category.confirmed_investor || 0)} accentColor="green" />
-            <MetricCard label="Likely" value={String(jobData.by_category.likely_interested || 0)} accentColor="blue" />
-            <MetricCard label="Warm Intros" value={String(jobData.warm_intro_count)} accentColor="yellow" />
+            <MetricCard label="Avg Score" value={String(jobData.avg_score)} accent="blue" />
+            <MetricCard label="Confirmed" value={String(jobData.by_category.confirmed_investor || 0)} accent="green" />
+            <MetricCard label="Likely" value={String(jobData.by_category.likely_interested || 0)} accent="blue" />
+            <MetricCard label="Warm Intros" value={String(jobData.warm_intro_count)} accent="yellow" />
           </div>
 
           {/* Score distribution bar chart */}
@@ -513,7 +513,7 @@ export default function ResearchJobDetail() {
                 <YAxis type="category" dataKey="range" tick={{ fontSize: 11 }} width={50} />
                 <Tooltip
                   contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #E5E7EB" }}
-                  formatter={(value: number) => [`${value} companies`, "Count"]}
+                  formatter={(value) => [`${value} companies`, "Count"]}
                 />
                 <Bar dataKey="count" radius={[0, 4, 4, 0]}>
                   {jobData.score_distribution.map((entry) => (
@@ -544,7 +544,7 @@ export default function ResearchJobDetail() {
                 </Pie>
                 <Tooltip
                   contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #E5E7EB" }}
-                  formatter={(value: number, name: string) => [`${value}`, name]}
+                  formatter={(value, name) => [`${value}`, String(name)]}
                 />
               </PieChart>
             </ResponsiveContainer>

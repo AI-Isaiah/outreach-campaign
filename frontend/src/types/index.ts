@@ -412,6 +412,7 @@ export interface AnalysisResponse {
   insights: string[];
   template_suggestions: string[];
   strategy_notes: string;
+  insights_json?: string;
   created_at: string;
 }
 
