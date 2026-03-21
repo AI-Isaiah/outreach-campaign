@@ -1,0 +1,17 @@
+.git
+.venv
+__pycache__
+*.pyc
+.env
+config.yaml
+*.db
+data/
+.gmail_token.json
+credentials.json
+frontend/node_modules
+.claude/
+*.md
+specs/
+.pytest_cache
+.ruff_cache
+firebase-debug.log

@@ -41,3 +41,4 @@ data/whatsapp_session/
 
 # Tools
 .firecrawl/
+.gstack/

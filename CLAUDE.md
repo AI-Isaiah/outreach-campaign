@@ -78,3 +78,60 @@ Normalized fields (`email_normalized`, `linkedin_url_normalized`, `name_normaliz
 ## Data protection
 
 Real contact data, database files, and credentials are gitignored. Never commit `.env`, `*.db`, or files in `data/imports/`.
+
+## Frontend (React + Tailwind)
+
+Tech stack: React 18, React Router 6, TanStack React Query 5, Tailwind CSS 3.4, dnd-kit, TypeScript, Vite. Source in `frontend/src/`.
+
+### Design Tokens
+
+No custom tailwind.config.js extensions yet — uses default Tailwind palette. These are the semantic color mappings to follow:
+
+| Token | Tailwind | Hex | Usage |
+|-------|----------|-----|-------|
+| Primary | gray-900 | #111827 | Sidebar bg, primary buttons, page titles |
+| Accent | blue-600 / blue-700 hover | #2563EB / #1D4ED8 | Links, CTAs, focus rings |
+| Success | green-600 | #16A34A | Verified, positive replies, won deals |
+| Warning | amber-600 | #D97706 | GDPR flags, no-response states |
+| Error | red-600 | #DC2626 | Bounced, negative replies, delete |
+| Surface | white / gray-50 | #FFFFFF / #F9FAFB | Cards / page background |
+| Border | gray-200 / gray-100 | #E5E7EB / #F3F4F6 | Card borders / row dividers |
+| Text | gray-900 / gray-500 / gray-400 | — | Primary / secondary / tertiary |
+
+### Component Patterns
+
+- **Cards (MetricCard)**: `bg-white rounded-lg shadow-sm border-l-4 p-4`. Label: `text-sm font-medium text-gray-500`. Value: `text-2xl font-bold`. Accent border variants: green-400, blue-400, yellow-400, red-400, default gray-200.
+- **Badges (StatusBadge)**: `rounded-full px-2 py-0.5 text-xs font-medium capitalize inline-block`. 10 status-color pairs (queued=gray, in_progress=blue, replied_positive=green, replied_negative=red, no_response=yellow, bounced=red, active=green, completed=gray, drafted=blue, sent=green).
+- **Buttons**: Primary dark: `bg-gray-900 text-white rounded-lg px-4 py-2.5 text-sm font-medium hover:bg-gray-800`. Primary blue: `bg-blue-600 text-white rounded text-sm font-medium px-3 py-1.5 hover:bg-blue-700 disabled:opacity-50`. Secondary: `bg-white border border-gray-200 text-gray-700 rounded-lg px-4 py-2.5 text-sm font-medium hover:bg-gray-50`.
+- **Tables**: Container: `bg-white rounded-lg border border-gray-200 overflow-hidden`. Header: `bg-gray-50 border-b`, text: `text-xs font-medium text-gray-500 uppercase tracking-wide`. Rows: `divide-y divide-gray-100 hover:bg-gray-50 transition-colors`. Cell padding: `px-5 py-4` (body), `px-5 py-3` (header).
+- **Navigation**: Dark sidebar `w-56 bg-gray-900`. Links: `text-sm font-medium text-gray-300`, active: `bg-gray-800 text-white`, hover: `hover:bg-gray-800/50 hover:text-white`.
+
+### Layout
+
+- Shell: fixed sidebar (w-56, 224px) + scrollable main (flex-1, overflow-y-auto)
+- Content: `max-w-7xl mx-auto px-6 py-8`
+- Stats grid: `grid grid-cols-2 md:grid-cols-4 gap-4`
+- Section spacing: `space-y-8` between dashboard sections
+
+### Brand Voice in UI Copy
+
+Follow the lemlist-inspired brand guidelines in `.claude/brand-voice-guidelines.md`. Key rules for UI text:
+
+- Active voice always: "Scan for Replies" not "Replies can be scanned"
+- Outcome-first labels: "Verified Emails" not "Email Verification Status"
+- Specific numbers over adjectives: "Found 3 new replies" not "Successfully updated"
+- Concise CTAs that state what happens: "Open Today's Queue" not "Click here to view"
+- Never use: "revolutionary", "game-changing", "leverage", "synergy"
+
+### Known Gaps (prioritized)
+
+1. **No mobile responsive sidebar** — add collapsible sidebar at md: breakpoint (High)
+2. **No focus-visible styles** — add `focus-visible:ring-2 ring-blue-500 ring-offset-2` globally (High)
+3. **No ARIA landmarks** — add `<nav>`, `<main>`, `<aside>` with labels (High)
+4. **Bare loading/empty/error states** — add skeleton loaders, illustrated empties, error cards with retry (High)
+5. **Button inconsistencies** — standardize border-radius and padding, extract `<Button>` component (Medium)
+6. **No nav icons** — add Lucide React icons to sidebar items (Medium)
+7. **No trend indicators on Dashboard** — add sparklines or deltas to MetricCards (Medium)
+8. **PageFallback is plain text** — replace with skeleton loader (Medium)
+
+Full specs with pixel-level detail: `Design-Handoff-Specs.docx`
