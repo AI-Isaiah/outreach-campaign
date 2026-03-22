@@ -39,16 +39,17 @@ def gmail_connect(conn=Depends(get_db), user=Depends(get_current_user)):
     finally:
         cur.close()
 
-    auth_url = (
-        "https://accounts.google.com/o/oauth2/v2/auth"
-        f"?client_id={GOOGLE_CLIENT_ID}"
-        f"&redirect_uri={GOOGLE_REDIRECT_URI}"
-        f"&response_type=code"
-        f"&scope={SCOPES}"
-        f"&access_type=offline"
-        f"&prompt=consent"
-        f"&state={state}"
-    )
+    from urllib.parse import urlencode
+    params = urlencode({
+        "client_id": GOOGLE_CLIENT_ID,
+        "redirect_uri": GOOGLE_REDIRECT_URI,
+        "response_type": "code",
+        "scope": SCOPES,
+        "access_type": "offline",
+        "prompt": "consent",
+        "state": state,
+    })
+    auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{params}"
     return RedirectResponse(auth_url)
 
 
