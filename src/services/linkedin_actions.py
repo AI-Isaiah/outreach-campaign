@@ -24,6 +24,8 @@ def complete_linkedin_action(
     contact_id: int,
     campaign_id: int,
     action_type: str,
+    *,
+    user_id: int,
 ) -> dict:
     """Mark a manual LinkedIn action as done and advance the sequence.
 
@@ -56,14 +58,14 @@ def complete_linkedin_action(
     expected_channel, event_type = valid_actions[action_type]
 
     # Get enrollment status
-    ccs = get_contact_campaign_status(conn, contact_id, campaign_id)
+    ccs = get_contact_campaign_status(conn, contact_id, campaign_id, user_id=user_id)
     if ccs is None:
         raise ValueError(f"Contact {contact_id} is not enrolled in campaign {campaign_id}")
 
     current_step_order = ccs["current_step"]
 
     # Get sequence steps
-    steps = get_sequence_steps(conn, campaign_id)
+    steps = get_sequence_steps(conn, campaign_id, user_id=user_id)
     step_by_order = {step["step_order"]: step for step in steps}
     current_step = step_by_order.get(current_step_order)
 
@@ -80,11 +82,11 @@ def complete_linkedin_action(
     # If status is queued, transition to in_progress first
     if ccs["status"] == "queued":
         update_contact_campaign_status(
-            conn, contact_id, campaign_id, status="in_progress"
+            conn, contact_id, campaign_id, status="in_progress", user_id=user_id,
         )
 
     # Log the event
-    log_event(conn, contact_id, event_type, campaign_id=campaign_id)
+    log_event(conn, contact_id, event_type, campaign_id=campaign_id, user_id=user_id)
 
     # Find next step and advance
     next_step = find_next_step(steps, current_step_order)
@@ -97,6 +99,7 @@ def complete_linkedin_action(
             status="in_progress",
             current_step=next_step["step_order"],
             next_action_date=next_date,
+            user_id=user_id,
         )
         advanced = True
         return {
@@ -111,11 +114,12 @@ def complete_linkedin_action(
         update_contact_campaign_status(
             conn, contact_id, campaign_id,
             status="no_response",
+            user_id=user_id,
         )
-        log_event(conn, contact_id, "status_no_response", campaign_id=campaign_id)
+        log_event(conn, contact_id, "status_no_response", campaign_id=campaign_id, user_id=user_id)
         # Auto-activate next contact at company
         from src.services.state_machine import _activate_next_contact
-        _activate_next_contact(conn, contact_id, campaign_id)
+        _activate_next_contact(conn, contact_id, campaign_id, user_id=user_id)
 
         return {
             "success": True,

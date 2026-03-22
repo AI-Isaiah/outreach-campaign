@@ -27,7 +27,7 @@ def queue_today(
     from src.models.campaigns import get_campaign_by_name
     from src.services.priority_queue import get_daily_queue
 
-    campaign = get_campaign_by_name(conn, campaign_name)
+    campaign = get_campaign_by_name(conn, campaign_name, user_id=1)
     if not campaign:
         return []
     return get_daily_queue(conn, campaign["id"], target_date=target_date, limit=limit)

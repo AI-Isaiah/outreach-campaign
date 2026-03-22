@@ -327,8 +327,9 @@ def import_pasted_emails(
             cursor.execute(
                 """INSERT INTO contacts
                        (company_id, first_name, last_name, full_name,
-                        email, email_normalized, priority_rank, source)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                        email, email_normalized, priority_rank, source,
+                        user_id)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     company_id,
                     first_name,
@@ -338,6 +339,7 @@ def import_pasted_emails(
                     email_norm,
                     priority_rank,
                     "pasted_emails",
+                    user_id,
                 ),
             )
             contacts_created += 1

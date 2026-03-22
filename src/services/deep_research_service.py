@@ -365,15 +365,15 @@ def _enrich_contacts(conn, company_id: int, key_people: list[dict], user_id: int
                        (company_id, first_name, last_name, full_name,
                         email, email_normalized, email_status,
                         linkedin_url, linkedin_url_normalized,
-                        title, source)
-                   VALUES (%s, %s, %s, %s, %s, %s, 'unverified', %s, %s, %s, 'deep_research')
+                        title, source, user_id)
+                   VALUES (%s, %s, %s, %s, %s, %s, 'unverified', %s, %s, %s, 'deep_research', %s)
                    ON CONFLICT DO NOTHING
                    RETURNING id""",
                 (
                     company_id, first_name, last_name, name,
                     email, email_norm,
                     linkedin_url, linkedin_norm or None,
-                    title,
+                    title, user_id,
                 ),
             )
             if cur.fetchone():

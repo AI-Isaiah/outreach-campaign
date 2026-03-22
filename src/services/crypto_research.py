@@ -487,7 +487,7 @@ def resolve_or_create_company(cur, company_name: str, user_id: int | None = None
     return cur.fetchone()["id"]
 
 
-def import_single_contact(cur, contact: dict, company_id: int) -> int | None:
+def import_single_contact(cur, contact: dict, company_id: int, user_id: int | None = None) -> int | None:
     """Import a single discovered contact. Returns contact_id or None if skipped."""
     name = (contact.get("name") or "").strip()
     if not name:
@@ -505,15 +505,15 @@ def import_single_contact(cur, contact: dict, company_id: int) -> int | None:
                (company_id, first_name, last_name, full_name,
                 email, email_normalized, email_status,
                 linkedin_url, linkedin_url_normalized,
-                title, source)
-           VALUES (%s, %s, %s, %s, %s, %s, 'unverified', %s, %s, %s, 'research')
+                title, source, user_id)
+           VALUES (%s, %s, %s, %s, %s, %s, 'unverified', %s, %s, %s, 'research', %s)
            ON CONFLICT DO NOTHING
            RETURNING id""",
         (
             company_id, first_name, last_name, name,
             email, email_norm,
             linkedin, linkedin_norm,
-            contact.get("title"),
+            contact.get("title"), user_id,
         ),
     )
     row = cur.fetchone()
@@ -558,7 +558,7 @@ def batch_import_and_enroll(
 
     campaign_id = None
     if campaign_name:
-        camp = get_campaign_by_name(conn, campaign_name)
+        camp = get_campaign_by_name(conn, campaign_name, user_id=user_id)
         if camp:
             campaign_id = camp["id"]
 
@@ -601,13 +601,14 @@ def batch_import_and_enroll(
                 # Create deal if requested
                 if create_deals and company_id:
                     cur.execute(
-                        """INSERT INTO deals (company_id, title, stage, notes)
-                           VALUES (%s, %s, 'cold', %s) RETURNING id""",
+                        """INSERT INTO deals (company_id, title, stage, notes, user_id)
+                           VALUES (%s, %s, 'cold', %s, %s) RETURNING id""",
                         (
                             company_id,
                             f"Research: {result['company_name']}",
                             f"Crypto score: {result.get('crypto_score', '?')}/100 - "
                             f"{result.get('evidence_summary', '')}",
+                            user_id,
                         ),
                     )
                     deal_id = cur.fetchone()["id"]
@@ -619,7 +620,7 @@ def batch_import_and_enroll(
 
                 # Import contacts
                 for contact in discovered:
-                    contact_id = import_single_contact(cur, contact, company_id)
+                    contact_id = import_single_contact(cur, contact, company_id, user_id=user_id)
                     if contact_id is None:
                         skipped += 1
                         continue
@@ -631,6 +632,7 @@ def batch_import_and_enroll(
                             enroll_contact(
                                 conn, contact_id, campaign_id,
                                 next_action_date=date.today().isoformat(),
+                                user_id=user_id,
                             )
                             enrolled += 1
                         except Exception:

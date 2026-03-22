@@ -33,12 +33,12 @@ def create_template(
         return row["id"]
 
 
-def get_template(conn: PgConnection, template_id: int):
+def get_template(conn: PgConnection, template_id: int, *, user_id: int):
     """Return a single template by id, or None."""
     with get_cursor(conn) as cursor:
         cursor.execute(
-            "SELECT * FROM templates WHERE id = %s",
-            (template_id,),
+            "SELECT * FROM templates WHERE id = %s AND user_id = %s",
+            (template_id, user_id),
         )
         return cursor.fetchone()
 
@@ -47,10 +47,12 @@ def list_templates(
     conn: PgConnection,
     channel: Optional[str] = None,
     is_active: bool = True,
+    *,
+    user_id: int,
 ) -> list:
     """Return templates, optionally filtered by channel and active status."""
-    query = "SELECT * FROM templates WHERE 1=1"
-    params: list = []
+    query = "SELECT * FROM templates WHERE user_id = %s"
+    params: list = [user_id]
 
     if channel is not None:
         query += " AND channel = %s"

@@ -102,7 +102,8 @@ def mark_linkedin_done(
 
     try:
         result = complete_linkedin_action(
-            conn, contact_id, camp["id"], body.action_type
+            conn, contact_id, camp["id"], body.action_type,
+            user_id=user["id"],
         )
         return result
     except ValueError as e:
@@ -139,10 +140,10 @@ def override_template(
         try:
             key = f"override_{body.contact_id}_{camp['id']}"
             cur.execute(
-                """INSERT INTO engine_config (key, value, updated_at)
-                   VALUES (%s, %s, NOW())
-                   ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()""",
-                (key, str(body.template_id)),
+                """INSERT INTO engine_config (key, value, user_id, updated_at)
+                   VALUES (%s, %s, %s, NOW())
+                   ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()""",
+                (key, str(body.template_id), user["id"]),
             )
             conn.commit()
         except Exception:

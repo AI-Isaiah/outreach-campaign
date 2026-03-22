@@ -33,7 +33,7 @@ def generate_weekly_plan(conn, campaign_name: str) -> dict:
     - newsletter_recommendation: dict with recommend (bool) and reason (str)
     - next_actions: list of action strings
     """
-    camp = get_campaign_by_name(conn, campaign_name)
+    camp = get_campaign_by_name(conn, campaign_name, user_id=1)
     if camp is None:
         raise ValueError(f"Campaign '{campaign_name}' not found")
 

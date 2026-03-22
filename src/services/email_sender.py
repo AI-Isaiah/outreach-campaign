@@ -261,6 +261,8 @@ def render_campaign_email(
     campaign_id: int,
     template_id: int,
     config: dict,
+    *,
+    user_id: int = None,
 ) -> Optional[dict]:
     """Render a campaign email without sending it.
 
@@ -284,11 +286,11 @@ def render_campaign_email(
         if not check_gdpr_email_limit(conn, contact_id, campaign_id):
             return None
 
-    template_row = get_template(conn, template_id)
+    template_row = get_template(conn, template_id, user_id=user_id)
     if template_row is None or not template_row["body_template"]:
         return None
 
-    context = get_template_context(conn, contact_id, config)
+    context = get_template_context(conn, contact_id, config, user_id=user_id)
     body_text = (
         render_template(template_row["body_template"], context)
         if template_row["body_template"].endswith(".txt")
@@ -322,6 +324,8 @@ def send_campaign_email(
     campaign_id: int,
     template_id: int,
     config: dict,
+    *,
+    user_id: int = None,
 ) -> bool:
     """Send a campaign email to a contact.
 
@@ -375,12 +379,12 @@ def send_campaign_email(
 
     # --- Render template ------------------------------------------------------
 
-    template_row = get_template(conn, template_id)
+    template_row = get_template(conn, template_id, user_id=user_id)
     if template_row is None or not template_row["body_template"]:
         logger.error("Template %d not found or has no body", template_id)
         return False
 
-    context = get_template_context(conn, contact_id, config)
+    context = get_template_context(conn, contact_id, config, user_id=user_id)
     body_text = render_template(
         template_row["body_template"],
         context,
@@ -434,6 +438,7 @@ def send_campaign_email(
         campaign_id=campaign_id,
         template_id=template_id,
         metadata=metadata,
+        user_id=user_id,
     )
 
     # Advance the contact's current step
@@ -447,6 +452,7 @@ def send_campaign_email(
         update_contact_campaign_status(
             conn, contact_id, campaign_id,
             current_step=status_row["current_step"] + 1,
+            user_id=user_id,
         )
 
     logger.info("Campaign email sent to contact %d (campaign %d)", contact_id, campaign_id)

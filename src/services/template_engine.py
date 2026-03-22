@@ -62,6 +62,8 @@ def get_template_context(
     conn,
     contact_id: int,
     config: dict,
+    *,
+    user_id: int = None,
 ) -> dict:
     """Build the template context dictionary for a contact.
 

@@ -524,7 +524,7 @@ def import_discovered_contacts(
 
             imported = 0
             for contact in discovered:
-                contact_id = import_single_contact(cur, contact, company_id)
+                contact_id = import_single_contact(cur, contact, company_id, user_id=user["id"])
                 if contact_id is not None:
                     imported += 1
 

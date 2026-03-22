@@ -42,22 +42,22 @@ def create_campaign(
         return row["id"]
 
 
-def get_campaign(conn: PgConnection, campaign_id: int):
+def get_campaign(conn: PgConnection, campaign_id: int, *, user_id: int):
     """Return a single campaign by id, or None."""
     with get_cursor(conn) as cursor:
         cursor.execute(
-            "SELECT * FROM campaigns WHERE id = %s",
-            (campaign_id,),
+            "SELECT * FROM campaigns WHERE id = %s AND user_id = %s",
+            (campaign_id, user_id),
         )
         return cursor.fetchone()
 
 
-def get_campaign_by_name(conn: PgConnection, name: str):
+def get_campaign_by_name(conn: PgConnection, name: str, *, user_id: int):
     """Return a single campaign by name, or None."""
     with get_cursor(conn) as cursor:
         cursor.execute(
-            "SELECT * FROM campaigns WHERE name = %s",
-            (name,),
+            "SELECT * FROM campaigns WHERE name = %s AND user_id = %s",
+            (name, user_id),
         )
         return cursor.fetchone()
 
@@ -65,16 +65,21 @@ def get_campaign_by_name(conn: PgConnection, name: str):
 def list_campaigns(
     conn: PgConnection,
     status: Optional[str] = None,
+    *,
+    user_id: int,
 ) -> list:
     """Return all campaigns, optionally filtered by status."""
     with get_cursor(conn) as cursor:
         if status is not None:
             cursor.execute(
-                "SELECT * FROM campaigns WHERE status = %s ORDER BY id",
-                (status,),
+                "SELECT * FROM campaigns WHERE user_id = %s AND status = %s ORDER BY id",
+                (user_id, status),
             )
         else:
-            cursor.execute("SELECT * FROM campaigns ORDER BY id")
+            cursor.execute(
+                "SELECT * FROM campaigns WHERE user_id = %s ORDER BY id",
+                (user_id,),
+            )
         return cursor.fetchall()
 
 
@@ -82,12 +87,14 @@ def update_campaign_status(
     conn: PgConnection,
     campaign_id: int,
     status: str,
+    *,
+    user_id: int,
 ) -> None:
     """Update the status of a campaign."""
     with get_cursor(conn) as cursor:
         cursor.execute(
-            "UPDATE campaigns SET status = %s WHERE id = %s",
-            (status, campaign_id),
+            "UPDATE campaigns SET status = %s WHERE id = %s AND user_id = %s",
+            (status, campaign_id, user_id),
         )
         conn.commit()
 
@@ -105,9 +112,20 @@ def add_sequence_step(
     delay_days: int = 0,
     gdpr_only: bool = False,
     non_gdpr_only: bool = False,
+    *,
+    user_id: int,
 ) -> int:
-    """Add a sequence step to a campaign and return its id."""
+    """Add a sequence step to a campaign and return its id.
+
+    Verifies the campaign belongs to the user before inserting.
+    """
     with get_cursor(conn) as cursor:
+        cursor.execute(
+            "SELECT id FROM campaigns WHERE id = %s AND user_id = %s",
+            (campaign_id, user_id),
+        )
+        if cursor.fetchone() is None:
+            raise PermissionError(f"Campaign {campaign_id} not found or not owned by user {user_id}")
         cursor.execute(
             """INSERT INTO sequence_steps
                (campaign_id, step_order, channel, template_id, delay_days, gdpr_only, non_gdpr_only)
@@ -131,12 +149,18 @@ def add_sequence_step(
 # Sequence Steps (query)
 # ---------------------------------------------------------------------------
 
-def get_sequence_steps(conn: PgConnection, campaign_id: int) -> list:
-    """Return all steps for a campaign, ordered by step_order."""
+def get_sequence_steps(conn: PgConnection, campaign_id: int, *, user_id: int) -> list:
+    """Return all steps for a campaign, ordered by step_order.
+
+    Joins to campaigns table to verify ownership.
+    """
     with get_cursor(conn) as cursor:
         cursor.execute(
-            "SELECT * FROM sequence_steps WHERE campaign_id = %s ORDER BY step_order",
-            (campaign_id,),
+            """SELECT ss.* FROM sequence_steps ss
+               JOIN campaigns c ON c.id = ss.campaign_id
+               WHERE ss.campaign_id = %s AND c.user_id = %s
+               ORDER BY ss.step_order""",
+            (campaign_id, user_id),
         )
         return cursor.fetchall()
 
@@ -151,9 +175,20 @@ def enroll_contact(
     campaign_id: int,
     variant: Optional[str] = None,
     next_action_date: Optional[str] = None,
+    *,
+    user_id: int,
 ) -> Optional[int]:
-    """Enroll a contact in a campaign. Returns enrollment id, or None if already enrolled."""
+    """Enroll a contact in a campaign. Returns enrollment id, or None if already enrolled.
+
+    Verifies the campaign belongs to the user before enrolling.
+    """
     with get_cursor(conn) as cursor:
+        cursor.execute(
+            "SELECT id FROM campaigns WHERE id = %s AND user_id = %s",
+            (campaign_id, user_id),
+        )
+        if cursor.fetchone() is None:
+            raise PermissionError(f"Campaign {campaign_id} not found or not owned by user {user_id}")
         try:
             cursor.execute(
                 """INSERT INTO contact_campaign_status
@@ -174,25 +209,37 @@ def bulk_enroll_contacts(
     campaign_id: int,
     contact_ids: list,
     variant_assigner: Optional[Callable] = None,
+    *,
+    user_id: int,
 ) -> int:
     """Enroll multiple contacts in a campaign.
 
     Uses ``psycopg2.extras.execute_values`` for a single INSERT round-trip
     instead of one INSERT per contact.
 
+    Verifies the campaign belongs to the user before enrolling.
+
     Args:
         conn: database connection
         campaign_id: campaign to enroll contacts in
         contact_ids: list of contact ids to enroll
         variant_assigner: optional callable(contact_id) -> str for variant assignment
+        user_id: owner of the campaign (keyword-only)
 
     Returns:
         count of newly enrolled contacts (skips already enrolled)
     """
     if not contact_ids:
         return 0
-    placeholders = ",".join("%s" for _ in contact_ids)
     with get_cursor(conn) as cursor:
+        cursor.execute(
+            "SELECT id FROM campaigns WHERE id = %s AND user_id = %s",
+            (campaign_id, user_id),
+        )
+        if cursor.fetchone() is None:
+            raise PermissionError(f"Campaign {campaign_id} not found or not owned by user {user_id}")
+
+        placeholders = ",".join("%s" for _ in contact_ids)
         cursor.execute(
             f"SELECT contact_id FROM contact_campaign_status "
             f"WHERE campaign_id = %s AND contact_id IN ({placeholders})",
@@ -225,12 +272,19 @@ def get_contact_campaign_status(
     conn: PgConnection,
     contact_id: int,
     campaign_id: int,
+    *,
+    user_id: int,
 ):
-    """Return the enrollment/status row for a contact in a campaign, or None."""
+    """Return the enrollment/status row for a contact in a campaign, or None.
+
+    Joins to campaigns table to verify ownership.
+    """
     with get_cursor(conn) as cursor:
         cursor.execute(
-            "SELECT * FROM contact_campaign_status WHERE contact_id = %s AND campaign_id = %s",
-            (contact_id, campaign_id),
+            """SELECT ccs.* FROM contact_campaign_status ccs
+               JOIN campaigns c ON c.id = ccs.campaign_id
+               WHERE ccs.contact_id = %s AND ccs.campaign_id = %s AND c.user_id = %s""",
+            (contact_id, campaign_id, user_id),
         )
         return cursor.fetchone()
 
@@ -242,10 +296,13 @@ def update_contact_campaign_status(
     status: Optional[str] = None,
     current_step: Optional[int] = None,
     next_action_date: Optional[str] = None,
+    *,
+    user_id: int,
 ) -> None:
     """Update fields on a contact's campaign status row.
 
     Only supplied (non-None) fields are updated. updated_at is always refreshed.
+    Verifies the campaign belongs to the user before updating.
     """
     fields = []
     params: list = []
@@ -266,10 +323,12 @@ def update_contact_campaign_status(
     fields.append("updated_at = NOW()")
 
     query = (
-        f"UPDATE contact_campaign_status SET {', '.join(fields)} "
-        f"WHERE contact_id = %s AND campaign_id = %s"
+        f"UPDATE contact_campaign_status ccs SET {', '.join(fields)} "
+        f"FROM campaigns c "
+        f"WHERE ccs.campaign_id = c.id "
+        f"AND ccs.contact_id = %s AND ccs.campaign_id = %s AND c.user_id = %s"
     )
-    params.extend([contact_id, campaign_id])
+    params.extend([contact_id, campaign_id, user_id])
     with get_cursor(conn) as cursor:
         cursor.execute(query, params)
         conn.commit()

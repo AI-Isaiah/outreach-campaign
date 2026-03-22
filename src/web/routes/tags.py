@@ -91,9 +91,9 @@ def attach_tag(tag_id: int, body: TagAttach, conn=Depends(get_db), user=Depends(
         if not cur.fetchone():
             raise HTTPException(404, f"Tag {tag_id} not found")
 
-        # Verify entity exists
+        # Verify entity exists and belongs to this user
         table = "contacts" if body.entity_type == "contact" else "companies"
-        cur.execute(f"SELECT id FROM {table} WHERE id = %s", (body.entity_id,))
+        cur.execute(f"SELECT id FROM {table} WHERE id = %s AND user_id = %s", (body.entity_id, user["id"]))
         if not cur.fetchone():
             raise HTTPException(404, f"{body.entity_type.title()} {body.entity_id} not found")
 
@@ -128,6 +128,12 @@ def detach_tag(tag_id: int, body: TagAttach, conn=Depends(get_db), user=Depends(
         )
         if not cur.fetchone():
             raise HTTPException(404, f"Tag {tag_id} not found")
+
+        # Verify entity exists and belongs to this user
+        table = "contacts" if body.entity_type == "contact" else "companies"
+        cur.execute(f"SELECT id FROM {table} WHERE id = %s AND user_id = %s", (body.entity_id, user["id"]))
+        if not cur.fetchone():
+            raise HTTPException(404, f"{body.entity_type.title()} {body.entity_id} not found")
 
         cur.execute(
             "DELETE FROM entity_tags WHERE tag_id = %s AND entity_type = %s AND entity_id = %s",

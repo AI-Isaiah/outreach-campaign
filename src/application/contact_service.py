@@ -23,6 +23,8 @@ def transition_contact_status(
     campaign_name: str,
     new_status: str,
     note: Optional[str] = None,
+    *,
+    user_id: int,
 ) -> dict:
     """Transition a contact's campaign status with validation.
 
@@ -38,7 +40,7 @@ def transition_contact_status(
         ValueError: if campaign not found, contact not found, or not enrolled.
         InvalidTransition: if the status transition is not allowed.
     """
-    camp = get_campaign_by_name(conn, campaign_name)
+    camp = get_campaign_by_name(conn, campaign_name, user_id=user_id)
     if not camp:
         raise ValueError(f"Campaign '{campaign_name}' not found")
 
@@ -53,16 +55,16 @@ def transition_contact_status(
         if not contact:
             raise ValueError(f"Contact {contact_id} not found")
 
-        ccs = get_contact_campaign_status(conn, contact_id, campaign_id)
+        ccs = get_contact_campaign_status(conn, contact_id, campaign_id, user_id=user_id)
         if ccs is None:
             raise ValueError(f"Contact {contact_id} not enrolled in campaign")
 
         # Auto-advance from queued to in_progress if needed
         if ccs["status"] == "queued":
-            transition_contact(conn, contact_id, campaign_id, "in_progress")
+            transition_contact(conn, contact_id, campaign_id, "in_progress", user_id=user_id)
 
         # Apply the transition
-        result_status = transition_contact(conn, contact_id, campaign_id, new_status)
+        result_status = transition_contact(conn, contact_id, campaign_id, new_status, user_id=user_id)
 
         # Log call_booked event if applicable
         if new_status == "replied_positive" and note and "call" in note.lower():
@@ -70,6 +72,7 @@ def transition_contact_status(
                 conn, contact_id, "call_booked",
                 campaign_id=campaign_id,
                 metadata=json.dumps({"note": note}),
+                user_id=user_id,
             )
 
         # Save response note if provided

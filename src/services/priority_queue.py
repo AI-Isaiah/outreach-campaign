@@ -261,6 +261,7 @@ def defer_contact(
     contact_id: int,
     campaign_id: int,
     reason: Optional[str] = None,
+    user_id: Optional[int] = None,
 ) -> dict:
     """Defer a contact to the back of the queue.
 
@@ -293,9 +294,9 @@ def defer_contact(
 
         metadata = json.dumps({"reason": reason}) if reason else None
         cursor.execute(
-            """INSERT INTO events (contact_id, campaign_id, event_type, metadata, notes)
-               VALUES (%s, %s, 'deferred', %s, %s)""",
-            (contact_id, campaign_id, metadata, reason),
+            """INSERT INTO events (contact_id, campaign_id, event_type, metadata, notes, user_id)
+               VALUES (%s, %s, 'deferred', %s, %s, %s)""",
+            (contact_id, campaign_id, metadata, reason, user_id),
         )
         conn.commit()
 

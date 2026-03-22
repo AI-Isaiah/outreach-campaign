@@ -133,12 +133,12 @@ def import_expandi_results(
         update_contact_campaign_status,
     )
 
-    campaign = get_campaign_by_name(conn, campaign_name)
+    campaign = get_campaign_by_name(conn, campaign_name, user_id=1)
     if not campaign:
         raise ValueError(f"Campaign not found: {campaign_name}")
 
     campaign_id = campaign["id"]
-    steps = get_sequence_steps(conn, campaign_id)
+    steps = get_sequence_steps(conn, campaign_id, user_id=1)
     # Build a lookup from step_order -> step row
     step_by_order = {step["step_order"]: step for step in steps}
 
@@ -176,7 +176,7 @@ def import_expandi_results(
             result["matched"] += 1
 
             # Get the contact's campaign enrollment
-            ccs = get_contact_campaign_status(conn, contact_id, campaign_id)
+            ccs = get_contact_campaign_status(conn, contact_id, campaign_id, user_id=1)
             if ccs is None:
                 # Contact exists but isn't enrolled in this campaign
                 continue
@@ -190,6 +190,7 @@ def import_expandi_results(
                 contact_id,
                 f"expandi_{status}",
                 campaign_id=campaign_id,
+                user_id=1,
             )
 
             # Determine if we should advance
@@ -221,6 +222,7 @@ def import_expandi_results(
                         status="in_progress",
                         current_step=next_step["step_order"],
                         next_action_date=next_date,
+                        user_id=1,
                     )
                 else:
                     # No more steps: mark as completed
@@ -229,6 +231,7 @@ def import_expandi_results(
                         contact_id,
                         campaign_id,
                         status="no_response",
+                        user_id=1,
                     )
                 result["advanced"] += 1
 

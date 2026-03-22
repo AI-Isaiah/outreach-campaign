@@ -21,6 +21,9 @@ logging.basicConfig(
 app = typer.Typer(name="outreach", help="Multi-channel outreach campaign manager")
 console = Console()
 
+# CLI is single-user (founder's tool). Web app handles multi-tenancy.
+CLI_USER_ID = 1
+
 
 def _load_config() -> dict:
     """Load config, wrapping errors for CLI display."""
@@ -40,7 +43,7 @@ def import_csv(csv_path: str = typer.Argument(..., help="Path to Crypto Fund Lis
     conn = get_connection(SUPABASE_DB_URL)
     try:
         run_migrations(conn)
-        stats = import_fund_csv(conn, csv_path)
+        stats = import_fund_csv(conn, csv_path, user_id=CLI_USER_ID)
         console.print(f"[green]Imported {stats['companies_created']} companies, {stats['contacts_created']} contacts[/green]")
     finally:
         conn.close()
@@ -55,7 +58,7 @@ def import_emails(file_path: str = typer.Argument(..., help="Path to file with p
     conn = get_connection(SUPABASE_DB_URL)
     try:
         run_migrations(conn)
-        stats = import_pasted_emails(conn, file_path)
+        stats = import_pasted_emails(conn, file_path, user_id=CLI_USER_ID)
         console.print(f"[green]Imported {stats['contacts_created']} contacts ({stats['lines_skipped']} skipped)[/green]")
     finally:
         conn.close()
@@ -275,7 +278,7 @@ def create_campaign_cmd(
     run_migrations(conn)
 
     try:
-        campaign_id = create_campaign(conn, name, description=description, user_id=1)
+        campaign_id = create_campaign(conn, name, description=description, user_id=CLI_USER_ID)
         console.print(f"[green]Created campaign '{name}' (id={campaign_id})[/green]")
     except Exception as e:
         console.print(f"[red]ERROR: {e}[/red]")
@@ -306,7 +309,7 @@ def setup_sequence(
     conn = get_connection(SUPABASE_DB_URL)
     run_migrations(conn)
 
-    camp = get_campaign_by_name(conn, campaign)
+    camp = get_campaign_by_name(conn, campaign, user_id=CLI_USER_ID)
     if not camp:
         console.print(f"[red]ERROR: Campaign '{campaign}' not found[/red]")
         conn.close()
@@ -319,54 +322,54 @@ def setup_sequence(
         t_li_connect = create_template(
             conn, f"{campaign}_li_connect", "linkedin_connect",
             "Hi {{first_name}}, I'd like to connect regarding {{company_name}}.",
-            user_id=1,
+            user_id=CLI_USER_ID,
         )
         t_li_message = create_template(
             conn, f"{campaign}_li_message", "linkedin_message",
             "Hi {{first_name}}, following up on my connection request.",
-            user_id=1,
+            user_id=CLI_USER_ID,
         )
         t_email_cold = create_template(
             conn, f"{campaign}_email_cold", "email",
             "Hello {{first_name}},\n\nI wanted to reach out regarding...",
-            subject="Quick introduction", user_id=1,
+            subject="Quick introduction", user_id=CLI_USER_ID,
         )
 
         # Step 1: LinkedIn connect (day 0)
-        add_sequence_step(conn, campaign_id, 1, "linkedin_connect", t_li_connect, delay_days=0)
+        add_sequence_step(conn, campaign_id, 1, "linkedin_connect", t_li_connect, delay_days=0, user_id=CLI_USER_ID)
         # Step 2: LinkedIn message (day 3)
-        add_sequence_step(conn, campaign_id, 2, "linkedin_message", t_li_message, delay_days=3)
+        add_sequence_step(conn, campaign_id, 2, "linkedin_message", t_li_message, delay_days=3, user_id=CLI_USER_ID)
         # Step 3: Cold email (day 5)
-        add_sequence_step(conn, campaign_id, 3, "email", t_email_cold, delay_days=5)
+        add_sequence_step(conn, campaign_id, 3, "email", t_email_cold, delay_days=5, user_id=CLI_USER_ID)
 
         if gdpr:
             # GDPR: max 2 emails total
             t_email_final = create_template(
                 conn, f"{campaign}_email_final", "email",
                 "Hi {{first_name}},\n\nJust a final note...",
-                subject="Final note", user_id=1,
+                subject="Final note", user_id=CLI_USER_ID,
             )
-            add_sequence_step(conn, campaign_id, 4, "email", t_email_final, delay_days=7)
+            add_sequence_step(conn, campaign_id, 4, "email", t_email_final, delay_days=7, user_id=CLI_USER_ID)
             console.print(f"[green]Set up GDPR sequence for '{campaign}' (4 steps, max 2 emails)[/green]")
         else:
             # Standard: 3 emails total
             t_email_followup = create_template(
                 conn, f"{campaign}_email_followup", "email",
                 "Hi {{first_name}},\n\nFollowing up on my previous email...",
-                subject="Following up", user_id=1,
+                subject="Following up", user_id=CLI_USER_ID,
             )
             t_email_breakup = create_template(
                 conn, f"{campaign}_email_breakup", "email",
                 "Hi {{first_name}},\n\nI understand you're busy...",
-                subject="Last note", user_id=1,
+                subject="Last note", user_id=CLI_USER_ID,
             )
             add_sequence_step(
                 conn, campaign_id, 4, "email", t_email_followup,
-                delay_days=7, non_gdpr_only=True,
+                delay_days=7, non_gdpr_only=True, user_id=CLI_USER_ID,
             )
             add_sequence_step(
                 conn, campaign_id, 5, "email", t_email_breakup,
-                delay_days=14, non_gdpr_only=True,
+                delay_days=14, non_gdpr_only=True, user_id=CLI_USER_ID,
             )
             console.print(f"[green]Set up standard sequence for '{campaign}' (5 steps)[/green]")
     except Exception as e:
@@ -397,7 +400,7 @@ def enroll(
     conn = get_connection(SUPABASE_DB_URL)
     run_migrations(conn)
 
-    camp = get_campaign_by_name(conn, campaign)
+    camp = get_campaign_by_name(conn, campaign, user_id=CLI_USER_ID)
     if not camp:
         console.print(f"[red]ERROR: Campaign '{campaign}' not found[/red]")
         conn.close()
@@ -444,7 +447,7 @@ def enroll(
     enrolled_count = 0
     today = date_mod.today().isoformat()
     for row in rows:
-        result = enroll_contact(conn, row["id"], campaign_id, next_action_date=today)
+        result = enroll_contact(conn, row["id"], campaign_id, next_action_date=today, user_id=CLI_USER_ID)
         if result is not None:
             enrolled_count += 1
 
@@ -483,7 +486,7 @@ def send(
     try:
         run_migrations(conn)
 
-        camp = get_campaign_by_name(conn, campaign)
+        camp = get_campaign_by_name(conn, campaign, user_id=CLI_USER_ID)
         if not camp:
             console.print(f"[red]ERROR: Campaign '{campaign}' not found[/red]")
             raise typer.Exit(1)
@@ -618,7 +621,7 @@ def status(
 
             # Find the campaign
             if campaign:
-                camp = get_campaign_by_name(conn, campaign)
+                camp = get_campaign_by_name(conn, campaign, user_id=CLI_USER_ID)
                 if not camp:
                     console.print(f"[red]ERROR: Campaign '{campaign}' not found[/red]")
                     raise typer.Exit(1)
@@ -639,7 +642,7 @@ def status(
                 campaign_id = row["campaign_id"]
 
         # Ensure contact is in_progress before transitioning
-        ccs = get_contact_campaign_status(conn, contact_id, campaign_id)
+        ccs = get_contact_campaign_status(conn, contact_id, campaign_id, user_id=CLI_USER_ID)
         if ccs is None:
             console.print(f"[red]ERROR: Contact is not enrolled in campaign {campaign_id}[/red]")
             raise typer.Exit(1)
@@ -647,7 +650,7 @@ def status(
         # If currently queued, auto-advance to in_progress first
         if ccs["status"] == "queued":
             try:
-                transition_contact(conn, contact_id, campaign_id, "in_progress")
+                transition_contact(conn, contact_id, campaign_id, "in_progress", user_id=CLI_USER_ID)
             except InvalidTransition as e:
                 console.print(f"[red]ERROR: {e}[/red]")
                 raise typer.Exit(1)
@@ -655,7 +658,7 @@ def status(
         # Apply the transition
         new_status = outcome_map[outcome]
         try:
-            transition_contact(conn, contact_id, campaign_id, new_status)
+            transition_contact(conn, contact_id, campaign_id, new_status, user_id=CLI_USER_ID)
         except InvalidTransition as e:
             console.print(f"[red]ERROR: {e}[/red]")
             raise typer.Exit(1)
@@ -668,6 +671,7 @@ def status(
                 "call_booked",
                 campaign_id=campaign_id,
                 metadata=json.dumps({"call_booked": True}),
+                user_id=CLI_USER_ID,
             )
 
         contact_name = contact_row["full_name"] or contact_row["email"] or str(contact_id)
@@ -814,7 +818,7 @@ def report(
     try:
         run_migrations(conn)
 
-        camp = get_campaign_by_name(conn, campaign)
+        camp = get_campaign_by_name(conn, campaign, user_id=CLI_USER_ID)
         if not camp:
             console.print(f"[red]ERROR: Campaign '{campaign}' not found[/red]")
             raise typer.Exit(1)
@@ -1031,7 +1035,7 @@ def newsletter_subscribers(
                 raise typer.Exit(1)
 
             from src.models.campaigns import get_campaign_by_name
-            camp = get_campaign_by_name(conn, campaign)
+            camp = get_campaign_by_name(conn, campaign, user_id=CLI_USER_ID)
             if not camp:
                 console.print(f"[red]ERROR: Campaign '{campaign}' not found[/red]")
                 raise typer.Exit(1)

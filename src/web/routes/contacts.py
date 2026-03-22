@@ -113,8 +113,8 @@ def create_contact(
                    first_name, last_name, full_name, email, email_normalized,
                    linkedin_url, linkedin_url_normalized, phone_number, phone_normalized,
                    title, company_id, source, lifecycle_stage, newsletter_status,
-                   priority_rank, email_status
-               ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'manual', %s, %s, 999, 'unverified')
+                   priority_rank, email_status, user_id
+               ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'manual', %s, %s, 999, 'unverified', %s)
                RETURNING id""",
             (
                 body.first_name, body.last_name, full_name,
@@ -123,11 +123,12 @@ def create_contact(
                 body.phone_number, phone_norm,
                 body.title, body.company_id,
                 body.lifecycle_stage, newsletter_status,
+                user["id"],
             ),
         )
         contact_id = cur.fetchone()["id"]
 
-        log_event(conn, contact_id, "contact_created", metadata='{"source": "manual"}')
+        log_event(conn, contact_id, "contact_created", metadata='{"source": "manual"}', user_id=user["id"])
 
         # Add initial note if provided
         if body.notes:
@@ -173,6 +174,7 @@ def update_lifecycle_stage(
         log_event(
             conn, contact_id, "lifecycle_changed",
             metadata=json.dumps({"from": old_stage, "to": body.lifecycle_stage}),
+            user_id=user["id"],
         )
         conn.commit()
         return {"success": True, "lifecycle_stage": body.lifecycle_stage}
@@ -360,6 +362,7 @@ def update_contact_status(
     try:
         return transition_contact_status(
             conn, contact_id, body.campaign, body.new_status, note=body.note,
+            user_id=user["id"],
         )
     except ValueError as e:
         status_code = 404 if "not found" in str(e) else 400
@@ -389,7 +392,7 @@ def add_response_note(
 
         campaign_id = None
         if body.campaign:
-            camp = get_campaign_by_name(conn, body.campaign)
+            camp = get_campaign_by_name(conn, body.campaign, user_id=user["id"])
             if camp:
                 campaign_id = camp["id"]
 
@@ -550,6 +553,7 @@ def bulk_update_lifecycle(
                 log_event(
                     conn, contact["id"], "lifecycle_changed",
                     metadata=json.dumps({"from": old_stage, "to": body.lifecycle_stage, "bulk": True}),
+                    user_id=user["id"],
                 )
 
         conn.commit()

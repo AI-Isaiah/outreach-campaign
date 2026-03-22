@@ -83,6 +83,7 @@ def confirm_reply(
                 transition_contact(
                     conn, reply["contact_id"], reply["campaign_id"],
                     status_map[body.outcome],
+                    user_id=user["id"],
                 )
             except InvalidTransition:
                 pass  # Contact may already be in this state

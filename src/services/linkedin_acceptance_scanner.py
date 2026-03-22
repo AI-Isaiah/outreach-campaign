@@ -164,6 +164,8 @@ def scan_linkedin_acceptances(
     conn,
     drafter: GmailDrafter | None = None,
     days_back: int = 7,
+    *,
+    user_id: int,
 ) -> dict:
     """Scan Gmail for LinkedIn connection acceptance notifications.
 
@@ -326,7 +328,7 @@ def scan_linkedin_acceptances(
                 campaign_id = enrollment["campaign_id"]
                 current_step_order = enrollment["current_step"]
 
-                steps = get_sequence_steps(conn, campaign_id)
+                steps = get_sequence_steps(conn, campaign_id, user_id=user_id)
                 step_by_order = {s["step_order"]: s for s in steps}
                 current_step = step_by_order.get(current_step_order)
 
@@ -352,6 +354,7 @@ def scan_linkedin_acceptances(
                             status="in_progress",
                             current_step=next_step["step_order"],
                             next_action_date=next_date,
+                            user_id=user_id,
                         )
                     else:
                         update_contact_campaign_status(
@@ -359,6 +362,7 @@ def scan_linkedin_acceptances(
                             contact_id,
                             campaign_id,
                             status="no_response",
+                            user_id=user_id,
                         )
 
                     advanced_any = True
@@ -370,6 +374,7 @@ def scan_linkedin_acceptances(
                 contact_id,
                 "linkedin_acceptance_detected",
                 campaign_id=campaign_for_log,
+                user_id=user_id,
             )
 
             # Store gmail_message_id in the event metadata for dedup

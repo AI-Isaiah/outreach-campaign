@@ -213,6 +213,7 @@ def send_newsletter(
     markdown_path: str,
     config: dict,
     dry_run: bool = False,
+    user_id: int = 1,
 ) -> dict:
     """Send a newsletter to all subscribers.
 
@@ -270,6 +271,7 @@ def send_newsletter(
                 contact["id"],
                 "newsletter_sent",
                 metadata=metadata,
+                user_id=user_id,
             )
         else:
             result["failed"] += 1
@@ -284,6 +286,7 @@ def send_newsletter_to_recipients(
     recipients: list,
     config: dict,
     attachments: list,
+    user_id: int = 1,
 ) -> dict:
     """Send an HTML newsletter to a list of recipients.
 
@@ -362,6 +365,7 @@ def send_newsletter_to_recipients(
                 log_event(
                     conn, contact["id"], "newsletter_sent",
                     metadata=json.dumps({"newsletter_id": newsletter_id, "subject": newsletter["subject"]}),
+                    user_id=user_id,
                 )
             else:
                 result["failed"] += 1

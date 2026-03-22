@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 FUZZY_THRESHOLD = FUZZY_DEDUP_THRESHOLD
 
 
-def run_dedup(conn, export_dir: str | None = None) -> dict:
+def run_dedup(conn, export_dir: str | None = None, user_id: int | None = None) -> dict:
     """Run the 3-pass deduplication pipeline.
 
     Pass 1: Exact email match
@@ -30,8 +30,8 @@ def run_dedup(conn, export_dir: str | None = None) -> dict:
     Returns a dict with counts: email_dupes, linkedin_dupes, fuzzy_flagged.
     """
     try:
-        email_dupes = _pass_exact_email(conn)
-        linkedin_dupes = _pass_exact_linkedin(conn)
+        email_dupes = _pass_exact_email(conn, user_id=user_id)
+        linkedin_dupes = _pass_exact_linkedin(conn, user_id=user_id)
         fuzzy_flagged = _pass_fuzzy_company(conn, export_dir)
         conn.commit()
     except Exception:
@@ -45,7 +45,7 @@ def run_dedup(conn, export_dir: str | None = None) -> dict:
     }
 
 
-def _pass_exact_email(conn) -> int:
+def _pass_exact_email(conn, user_id: int | None = None) -> int:
     """Pass 1: find contacts sharing the same email_normalized, keep lowest id."""
     dupes_removed = 0
 
@@ -66,9 +66,9 @@ def _pass_exact_email(conn) -> int:
 
             for rid in remove_ids:
                 cursor.execute(
-                    "INSERT INTO dedup_log (kept_contact_id, merged_contact_id, match_type, match_score) "
-                    "VALUES (%s, %s, 'exact_email', 1.0)",
-                    (keep_id, rid),
+                    "INSERT INTO dedup_log (kept_contact_id, merged_contact_id, match_type, match_score, user_id) "
+                    "VALUES (%s, %s, 'exact_email', 1.0, %s)",
+                    (keep_id, rid, user_id),
                 )
                 cursor.execute("DELETE FROM contacts WHERE id = %s", (rid,))
                 dupes_removed += 1
@@ -76,7 +76,7 @@ def _pass_exact_email(conn) -> int:
     return dupes_removed
 
 
-def _pass_exact_linkedin(conn) -> int:
+def _pass_exact_linkedin(conn, user_id: int | None = None) -> int:
     """Pass 2: find contacts sharing the same linkedin_url_normalized, keep lowest id."""
     dupes_removed = 0
 
@@ -97,9 +97,9 @@ def _pass_exact_linkedin(conn) -> int:
 
             for rid in remove_ids:
                 cursor.execute(
-                    "INSERT INTO dedup_log (kept_contact_id, merged_contact_id, match_type, match_score) "
-                    "VALUES (%s, %s, 'exact_linkedin', 1.0)",
-                    (keep_id, rid),
+                    "INSERT INTO dedup_log (kept_contact_id, merged_contact_id, match_type, match_score, user_id) "
+                    "VALUES (%s, %s, 'exact_linkedin', 1.0, %s)",
+                    (keep_id, rid, user_id),
                 )
                 cursor.execute("DELETE FROM contacts WHERE id = %s", (rid,))
                 dupes_removed += 1

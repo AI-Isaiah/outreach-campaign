@@ -116,6 +116,7 @@ def create_conversation(
                 log_event(
                     conn, contact_id, "lifecycle_advanced",
                     metadata=json.dumps({"from": stage, "to": new_stage, "trigger": "successful_conversation"}),
+                    user_id=user["id"],
                 )
 
         conn.commit()

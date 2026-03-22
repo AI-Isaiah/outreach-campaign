@@ -43,6 +43,8 @@ def transition_contact(
     contact_id: int,
     campaign_id: int,
     new_status: str,
+    *,
+    user_id: int,
 ) -> str:
     """Transition a contact to a new campaign status.
 
@@ -62,7 +64,7 @@ def transition_contact(
         InvalidTransition: if the transition is not allowed or the contact
             is not enrolled in the campaign.
     """
-    row = get_contact_campaign_status(conn, contact_id, campaign_id)
+    row = get_contact_campaign_status(conn, contact_id, campaign_id, user_id=user_id)
     if row is None:
         raise InvalidTransition(
             f"Contact {contact_id} is not enrolled in campaign {campaign_id}"
@@ -76,14 +78,14 @@ def transition_contact(
         )
 
     # Persist the status change
-    update_contact_campaign_status(conn, contact_id, campaign_id, status=new_status)
+    update_contact_campaign_status(conn, contact_id, campaign_id, status=new_status, user_id=user_id)
 
     # Log an event for the transition
-    log_event(conn, contact_id, f"status_{new_status}", campaign_id=campaign_id)
+    log_event(conn, contact_id, f"status_{new_status}", campaign_id=campaign_id, user_id=user_id)
 
     # Auto-activate next contact at the same company for terminal statuses
     if new_status in _TERMINAL_STATUSES:
-        _activate_next_contact(conn, contact_id, campaign_id)
+        _activate_next_contact(conn, contact_id, campaign_id, user_id=user_id)
 
     return new_status
 
@@ -92,6 +94,8 @@ def _activate_next_contact(
     conn,
     contact_id: int,
     campaign_id: int,
+    *,
+    user_id: int,
 ) -> Optional[int]:
     """Activate the next-ranked contact at the same company.
 
@@ -142,9 +146,10 @@ def _activate_next_contact(
             next_contact_id,
             campaign_id,
             next_action_date=date.today().isoformat(),
+            user_id=user_id,
         )
 
-        log_event(conn, next_contact_id, EventType.AUTO_ACTIVATED, campaign_id=campaign_id)
+        log_event(conn, next_contact_id, EventType.AUTO_ACTIVATED, campaign_id=campaign_id, user_id=user_id)
 
         return next_contact_id
 
@@ -153,6 +158,8 @@ def get_active_contact_for_company(
     conn,
     company_id: int,
     campaign_id: int,
+    *,
+    user_id: int,
 ):
     """Return the contact that is actively being worked for a company.
 

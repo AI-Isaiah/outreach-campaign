@@ -46,6 +46,7 @@ from src.web.routes import (  # noqa: E402
     deals,
     deep_research,
     gmail,
+    gmail_oauth,
     import_routes,
     inbox,
     insights,
@@ -142,8 +143,9 @@ def health_check():
     return {"status": "ok" if db_ok else "degraded", "database": db_ok}
 
 
-# Auth router — no auth dependency (it IS the auth entry point)
+# Auth routers — no global auth dependency (they handle auth internally)
 app.include_router(auth.router, prefix="/api")
+app.include_router(gmail_oauth.router, prefix="/api")
 
 # All other routers — auth required
 _auth_deps = [Depends(require_auth)]

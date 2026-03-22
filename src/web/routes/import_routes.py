@@ -59,7 +59,7 @@ def run_dedupe(
     """Run deduplication on all contacts."""
     try:
         from src.services.deduplication import run_dedup
-        stats = run_dedup(conn)
+        stats = run_dedup(conn, user_id=user["id"])
         return {"success": True, "stats": stats}
     except (psycopg2.Error, ValueError) as exc:
         import logging

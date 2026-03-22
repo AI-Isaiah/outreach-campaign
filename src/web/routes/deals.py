@@ -159,8 +159,8 @@ def create_deal(
 
         cur.execute(
             """INSERT INTO deals (company_id, contact_id, campaign_id, title, stage,
-                                  amount_millions, expected_close_date, notes)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                                  amount_millions, expected_close_date, notes, user_id)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                RETURNING id""",
             (
                 body.company_id,
@@ -171,6 +171,7 @@ def create_deal(
                 body.amount_millions,
                 body.expected_close_date,
                 body.notes,
+                user["id"],
             ),
         )
         deal_id = cur.fetchone()["id"]

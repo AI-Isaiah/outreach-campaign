@@ -16,6 +16,8 @@ def log_event(
     campaign_id: Optional[int] = None,
     template_id: Optional[int] = None,
     metadata: Optional[str] = None,
+    *,
+    user_id: int,
 ) -> int:
     """Log an event and return its id.
 
@@ -24,9 +26,9 @@ def log_event(
     with get_cursor(conn) as cursor:
         cursor.execute(
             """INSERT INTO events
-               (contact_id, event_type, campaign_id, template_id, metadata)
-               VALUES (%s, %s, %s, %s, %s) RETURNING id""",
-            (contact_id, event_type, campaign_id, template_id, metadata),
+               (contact_id, event_type, campaign_id, template_id, metadata, user_id)
+               VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
+            (contact_id, event_type, campaign_id, template_id, metadata, user_id),
         )
         row = cursor.fetchone()
         conn.commit()

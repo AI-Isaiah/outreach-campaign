@@ -115,7 +115,8 @@ def create_draft(
             to_email = contact["email"]
     else:
         rendered = render_campaign_email(
-            conn, body.contact_id, campaign_id, body.template_id, config
+            conn, body.contact_id, campaign_id, body.template_id, config,
+            user_id=user["id"],
         )
         if not rendered:
             raise HTTPException(400, "Could not render email (check contact eligibility)")
@@ -203,7 +204,8 @@ def create_batch_drafts(
             continue
 
         rendered = render_campaign_email(
-            conn, item["contact_id"], campaign_id, item["template_id"], config
+            conn, item["contact_id"], campaign_id, item["template_id"], config,
+            user_id=user["id"],
         )
         if not rendered:
             results.append({
@@ -292,6 +294,7 @@ def check_draft_status(
                         conn, contact_id, "email_sent",
                         campaign_id=camp["id"],
                         metadata=json.dumps({"source": "gmail", "subject": draft_row["subject"]}),
+                        user_id=user["id"],
                     )
 
                     # Advance step
@@ -305,6 +308,7 @@ def check_draft_status(
                         update_contact_campaign_status(
                             conn, contact_id, camp["id"],
                             current_step=status_row["current_step"] + 1,
+                            user_id=user["id"],
                         )
 
                     return {"status": "sent", "draft_id": draft_row["gmail_draft_id"]}

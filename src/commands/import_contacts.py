@@ -205,8 +205,8 @@ def import_fund_csv(conn, csv_path: str, *, user_id: Optional[str] = None) -> Di
                            (company_id, first_name, last_name, full_name,
                             email, email_normalized, linkedin_url,
                             linkedin_url_normalized, title, priority_rank,
-                            source, is_gdpr)
-                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'csv', %s)""",
+                            source, is_gdpr, user_id)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'csv', %s, %s)""",
                         (
                             company_id,
                             first_name or None,
@@ -219,6 +219,7 @@ def import_fund_csv(conn, csv_path: str, *, user_id: Optional[str] = None) -> Di
                             title,
                             slot["rank"],
                             is_gdpr,
+                            user_id,
                         ),
                     )
                     contacts_created += 1

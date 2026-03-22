@@ -41,15 +41,7 @@ def get_enriched_queue(
     Raises:
         ValueError: if the campaign is not found.
     """
-    if user_id is not None:
-        with get_cursor(conn) as cur:
-            cur.execute(
-                "SELECT * FROM campaigns WHERE name = %s AND user_id = %s",
-                (campaign, user_id),
-            )
-            camp = cur.fetchone()
-    else:
-        camp = get_campaign_by_name(conn, campaign)
+    camp = get_campaign_by_name(conn, campaign, user_id=user_id)
     if not camp:
         raise ValueError(f"Campaign '{campaign}' not found")
 
@@ -88,7 +80,7 @@ def get_enriched_queue(
     except FileNotFoundError:
         config = {}
 
-    enriched = _batch_enrich(conn, items, campaign_id, config)
+    enriched = _batch_enrich(conn, items, campaign_id, config, user_id=user_id)
 
     return {
         "campaign": campaign,
@@ -100,7 +92,7 @@ def get_enriched_queue(
     }
 
 
-def _batch_enrich(conn, items: list[dict], campaign_id: int, config: dict) -> list[dict]:
+def _batch_enrich(conn, items: list[dict], campaign_id: int, config: dict, *, user_id: Optional[str] = None) -> list[dict]:
     """Batch-fetch related data and render messages for queue items."""
     if not items:
         return []
@@ -176,7 +168,7 @@ def _batch_enrich(conn, items: list[dict], campaign_id: int, config: dict) -> li
         entry["aum_tier"] = aum_to_tier(item.get("aum_millions") or 0)
 
         if item["channel"] == "email" and item["template_id"]:
-            rendered = render_campaign_email(conn, cid, campaign_id, item["template_id"], config)
+            rendered = render_campaign_email(conn, cid, campaign_id, item["template_id"], config, user_id=user_id)
             entry["rendered_email"] = rendered or None
 
             draft_row = gmail_drafts_by_contact.get(cid)

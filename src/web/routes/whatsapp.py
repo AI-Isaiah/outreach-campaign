@@ -67,13 +67,17 @@ def whatsapp_scan_status(conn=Depends(get_db), user=Depends(get_current_user)):
         row = cur.fetchone()
         last_scan = row["last_scan"] if row else None
 
-        # Total message count
-        cur.execute("SELECT COUNT(*) AS count FROM whatsapp_messages")
+        # Total message count (scoped to current user's contacts)
+        cur.execute(
+            "SELECT COUNT(*) AS count FROM whatsapp_messages WHERE contact_id IN (SELECT id FROM contacts WHERE user_id = %s)",
+            (user["id"],),
+        )
         msg_count = cur.fetchone()["count"]
 
-        # Contacts with messages
+        # Contacts with messages (scoped to current user's contacts)
         cur.execute(
-            "SELECT COUNT(DISTINCT contact_id) AS count FROM whatsapp_messages"
+            "SELECT COUNT(DISTINCT contact_id) AS count FROM whatsapp_messages WHERE contact_id IN (SELECT id FROM contacts WHERE user_id = %s)",
+            (user["id"],),
         )
         contacts_with_messages = cur.fetchone()["count"]
 
