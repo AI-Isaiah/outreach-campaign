@@ -282,10 +282,10 @@ def test_find_warm_intros_by_company_id(db_conn):
     company_id = cur.fetchone()["id"]
     cur.execute(
         """INSERT INTO contacts (company_id, first_name, last_name, full_name, email,
-                                 email_normalized, email_status)
-           VALUES (%s, 'Alice', 'Smith', 'Alice Smith', 'alice@test.com', 'alice@test.com', 'valid')
+                                 email_normalized, email_status, user_id)
+           VALUES (%s, 'Alice', 'Smith', 'Alice Smith', 'alice@test.com', 'alice@test.com', 'valid', %s)
            RETURNING id""",
-        (company_id,),
+        (company_id, TEST_USER_ID),
     )
     contact_id = cur.fetchone()["id"]
     db_conn.commit()
@@ -304,9 +304,9 @@ def test_find_warm_intros_by_name(db_conn):
     company_id = cur.fetchone()["id"]
     cur.execute(
         """INSERT INTO contacts (company_id, first_name, last_name, full_name, email,
-                                 email_normalized, email_status)
-           VALUES (%s, 'Bob', 'Jones', 'Bob Jones', 'bob@test.com', 'bob@test.com', 'valid')""",
-        (company_id,),
+                                 email_normalized, email_status, user_id)
+           VALUES (%s, 'Bob', 'Jones', 'Bob Jones', 'bob@test.com', 'bob@test.com', 'valid', %s)""",
+        (company_id, TEST_USER_ID),
     )
     db_conn.commit()
 
@@ -352,10 +352,10 @@ def test_batch_import_skips_duplicates(db_conn):
     company_id = cur.fetchone()["id"]
     cur.execute(
         """INSERT INTO contacts (company_id, first_name, last_name, full_name,
-                                 email, email_normalized, email_status)
+                                 email, email_normalized, email_status, user_id)
            VALUES (%s, 'Existing', 'Person', 'Existing Person',
-                   'existing@dup.com', 'existing@dup.com', 'valid')""",
-        (company_id,),
+                   'existing@dup.com', 'existing@dup.com', 'valid', %s)""",
+        (company_id, TEST_USER_ID),
     )
 
     cur.execute(

@@ -88,13 +88,13 @@ def _insert_contact(conn, company_id, first_name="Test", last_name="User",
                    (company_id, first_name, last_name, full_name,
                     email, email_normalized, email_status,
                     linkedin_url, linkedin_url_normalized,
-                    title, source)
-               VALUES (%s, %s, %s, %s, %s, %s, 'valid', %s, %s, %s, %s) RETURNING id""",
+                    title, source, user_id)
+               VALUES (%s, %s, %s, %s, %s, %s, 'valid', %s, %s, %s, %s, %s) RETURNING id""",
             (
                 company_id, first_name, last_name, full_name,
                 email, email_norm,
                 linkedin_url, linkedin_norm,
-                title, source,
+                title, source, TEST_USER_ID,
             ),
         )
         conn.commit()
@@ -910,7 +910,7 @@ def test_template_context_includes_deep_research(db_conn):
     )
 
     config = {"calendly_url": "https://cal.com/test", "physical_address": "123 Main St"}
-    context = get_template_context(db_conn, contact_id, config)
+    context = get_template_context(db_conn, contact_id, config, user_id=TEST_USER_ID)
 
     assert context["deep_research"] is not None
     assert context["deep_research"]["company_overview"] == "Research for template"
@@ -926,7 +926,7 @@ def test_template_context_no_deep_research(db_conn):
     )
 
     config = {"calendly_url": "https://cal.com/test", "physical_address": "123 Main St"}
-    context = get_template_context(db_conn, contact_id, config)
+    context = get_template_context(db_conn, contact_id, config, user_id=TEST_USER_ID)
 
     assert context["deep_research"] is None
 
@@ -960,7 +960,7 @@ def test_template_context_uses_latest_completed(db_conn):
     )
 
     config = {"calendly_url": "https://cal.com/test", "physical_address": "123 Main St"}
-    context = get_template_context(db_conn, contact_id, config)
+    context = get_template_context(db_conn, contact_id, config, user_id=TEST_USER_ID)
 
     assert context["deep_research"] is not None
     assert context["deep_research"]["company_overview"] == "Latest completed run"

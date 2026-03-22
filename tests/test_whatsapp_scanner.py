@@ -28,12 +28,12 @@ def _setup_contact_with_phone(conn):
     cur.execute(
         """INSERT INTO contacts (company_id, first_name, last_name, full_name,
                                  email, email_normalized, email_status,
-                                 phone_number, phone_normalized)
+                                 phone_number, phone_normalized, user_id)
            VALUES (%s, 'Bob', 'Smith', 'Bob Smith',
                    'bob@phonefund.com', 'bob@phonefund.com', 'valid',
-                   '+1 555-123-4567', '+15551234567')
+                   '+1 555-123-4567', '+15551234567', %s)
            RETURNING id""",
-        (company_id,),
+        (company_id, TEST_USER_ID),
     )
     contact_id = cur.fetchone()["id"]
     conn.commit()

@@ -58,8 +58,8 @@ def sample_contact(conn):
     """Insert a minimal contact row and return its id."""
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO contacts (first_name, last_name, email, source) VALUES (%s, %s, %s, %s) RETURNING id",
-        ("Alice", "Smith", "alice@example.com", "csv"),
+        "INSERT INTO contacts (first_name, last_name, email, source, user_id) VALUES (%s, %s, %s, %s, %s) RETURNING id",
+        ("Alice", "Smith", "alice@example.com", "csv", TEST_USER_ID),
     )
     contact_id = cursor.fetchone()["id"]
     conn.commit()
@@ -73,8 +73,8 @@ def multiple_contacts(conn):
     cursor = conn.cursor()
     for i in range(5):
         cursor.execute(
-            "INSERT INTO contacts (first_name, last_name, email, source) VALUES (%s, %s, %s, %s) RETURNING id",
-            (f"User{i}", f"Last{i}", f"user{i}@example.com", "csv"),
+            "INSERT INTO contacts (first_name, last_name, email, source, user_id) VALUES (%s, %s, %s, %s, %s) RETURNING id",
+            (f"User{i}", f"Last{i}", f"user{i}@example.com", "csv", TEST_USER_ID),
         )
         ids.append(cursor.fetchone()["id"])
     conn.commit()
@@ -93,22 +93,22 @@ class TestCreateCampaign:
 
     def test_with_description(self, conn):
         cid = create_campaign(conn, "Described Campaign", description="A description", user_id=TEST_USER_ID)
-        row = get_campaign(conn, cid)
+        row = get_campaign(conn, cid, user_id=TEST_USER_ID)
         assert row["description"] == "A description"
 
     def test_without_description(self, conn):
         cid = create_campaign(conn, "No Desc", user_id=TEST_USER_ID)
-        row = get_campaign(conn, cid)
+        row = get_campaign(conn, cid, user_id=TEST_USER_ID)
         assert row["description"] is None
 
     def test_default_status_is_active(self, conn):
         cid = create_campaign(conn, "Default Status", user_id=TEST_USER_ID)
-        row = get_campaign(conn, cid)
+        row = get_campaign(conn, cid, user_id=TEST_USER_ID)
         assert row["status"] == "active"
 
     def test_created_at_populated(self, conn):
         cid = create_campaign(conn, "Timestamp Test", user_id=TEST_USER_ID)
-        row = get_campaign(conn, cid)
+        row = get_campaign(conn, cid, user_id=TEST_USER_ID)
         assert row["created_at"] is not None
 
     def test_duplicate_name_raises(self, conn):
@@ -120,65 +120,65 @@ class TestCreateCampaign:
 
 class TestGetCampaign:
     def test_existing(self, conn, sample_campaign):
-        row = get_campaign(conn, sample_campaign)
+        row = get_campaign(conn, sample_campaign, user_id=TEST_USER_ID)
         assert row is not None
         assert row["id"] == sample_campaign
         assert row["name"] == "Q1 Outreach"
 
     def test_nonexistent(self, conn):
-        row = get_campaign(conn, 99999)
+        row = get_campaign(conn, 99999, user_id=TEST_USER_ID)
         assert row is None
 
 
 class TestGetCampaignByName:
     def test_existing(self, conn, sample_campaign):
-        row = get_campaign_by_name(conn, "Q1 Outreach")
+        row = get_campaign_by_name(conn, "Q1 Outreach", user_id=TEST_USER_ID)
         assert row is not None
         assert row["id"] == sample_campaign
 
     def test_nonexistent(self, conn):
-        row = get_campaign_by_name(conn, "Nonexistent")
+        row = get_campaign_by_name(conn, "Nonexistent", user_id=TEST_USER_ID)
         assert row is None
 
 
 class TestListCampaigns:
     def test_empty(self, conn):
-        assert list_campaigns(conn) == []
+        assert list_campaigns(conn, user_id=TEST_USER_ID) == []
 
     def test_returns_all(self, conn):
         create_campaign(conn, "C1", user_id=TEST_USER_ID)
         create_campaign(conn, "C2", user_id=TEST_USER_ID)
         create_campaign(conn, "C3", user_id=TEST_USER_ID)
-        result = list_campaigns(conn)
+        result = list_campaigns(conn, user_id=TEST_USER_ID)
         assert len(result) == 3
 
     def test_filter_by_status(self, conn):
         c1 = create_campaign(conn, "Active1", user_id=TEST_USER_ID)
         c2 = create_campaign(conn, "Active2", user_id=TEST_USER_ID)
         c3 = create_campaign(conn, "Paused1", user_id=TEST_USER_ID)
-        update_campaign_status(conn, c3, "paused")
+        update_campaign_status(conn, c3, "paused", user_id=TEST_USER_ID)
 
-        active = list_campaigns(conn, status="active")
+        active = list_campaigns(conn, status="active", user_id=TEST_USER_ID)
         assert len(active) == 2
-        paused = list_campaigns(conn, status="paused")
+        paused = list_campaigns(conn, status="paused", user_id=TEST_USER_ID)
         assert len(paused) == 1
         assert paused[0]["name"] == "Paused1"
 
     def test_filter_no_match(self, conn):
         create_campaign(conn, "Active", user_id=TEST_USER_ID)
-        result = list_campaigns(conn, status="completed")
+        result = list_campaigns(conn, status="completed", user_id=TEST_USER_ID)
         assert result == []
 
 
 class TestUpdateCampaignStatus:
     def test_update(self, conn, sample_campaign):
-        update_campaign_status(conn, sample_campaign, "paused")
-        row = get_campaign(conn, sample_campaign)
+        update_campaign_status(conn, sample_campaign, "paused", user_id=TEST_USER_ID)
+        row = get_campaign(conn, sample_campaign, user_id=TEST_USER_ID)
         assert row["status"] == "paused"
 
     def test_update_to_completed(self, conn, sample_campaign):
-        update_campaign_status(conn, sample_campaign, "completed")
-        row = get_campaign(conn, sample_campaign)
+        update_campaign_status(conn, sample_campaign, "completed", user_id=TEST_USER_ID)
+        row = get_campaign(conn, sample_campaign, user_id=TEST_USER_ID)
         assert row["status"] == "completed"
 
 
@@ -203,7 +203,7 @@ class TestCreateTemplate:
             variant_label="A",
             user_id=TEST_USER_ID,
         )
-        row = get_template(conn, tid)
+        row = get_template(conn, tid, user_id=TEST_USER_ID)
         assert row["name"] == "Full Template"
         assert row["channel"] == "email"
         assert row["body_template"] == "Hello {{name}}"
@@ -214,24 +214,24 @@ class TestCreateTemplate:
 
     def test_linkedin_channel(self, conn):
         tid = create_template(conn, "LI Connect", "linkedin_connect", "Hi, let's connect", user_id=TEST_USER_ID)
-        row = get_template(conn, tid)
+        row = get_template(conn, tid, user_id=TEST_USER_ID)
         assert row["channel"] == "linkedin_connect"
 
 
 class TestGetTemplate:
     def test_existing(self, conn, sample_template):
-        row = get_template(conn, sample_template)
+        row = get_template(conn, sample_template, user_id=TEST_USER_ID)
         assert row is not None
         assert row["name"] == "Intro Email v1"
 
     def test_nonexistent(self, conn):
-        row = get_template(conn, 99999)
+        row = get_template(conn, 99999, user_id=TEST_USER_ID)
         assert row is None
 
 
 class TestListTemplates:
     def test_empty(self, conn):
-        assert list_templates(conn) == []
+        assert list_templates(conn, user_id=TEST_USER_ID) == []
 
     def test_returns_active_only_by_default(self, conn):
         t1 = create_template(conn, "Active", "email", "body", user_id=TEST_USER_ID)
@@ -241,7 +241,7 @@ class TestListTemplates:
         cursor.execute("UPDATE templates SET is_active = false WHERE id = %s", (t2,))
         conn.commit()
 
-        result = list_templates(conn)
+        result = list_templates(conn, user_id=TEST_USER_ID)
         assert len(result) == 1
         assert result[0]["name"] == "Active"
 
@@ -252,7 +252,7 @@ class TestListTemplates:
         cursor.execute("UPDATE templates SET is_active = false WHERE id = %s", (t2,))
         conn.commit()
 
-        result = list_templates(conn, is_active=False)
+        result = list_templates(conn, is_active=False, user_id=TEST_USER_ID)
         assert len(result) == 1
         assert result[0]["name"] == "Inactive"
 
@@ -261,10 +261,10 @@ class TestListTemplates:
         create_template(conn, "LI1", "linkedin_connect", "body", user_id=TEST_USER_ID)
         create_template(conn, "Email2", "email", "body", user_id=TEST_USER_ID)
 
-        emails = list_templates(conn, channel="email")
+        emails = list_templates(conn, channel="email", user_id=TEST_USER_ID)
         assert len(emails) == 2
 
-        li = list_templates(conn, channel="linkedin_connect")
+        li = list_templates(conn, channel="linkedin_connect", user_id=TEST_USER_ID)
         assert len(li) == 1
 
     def test_filter_by_channel_and_active(self, conn):
@@ -275,7 +275,7 @@ class TestListTemplates:
         cursor.execute("UPDATE templates SET is_active = false WHERE id = %s", (t2,))
         conn.commit()
 
-        result = list_templates(conn, channel="email", is_active=True)
+        result = list_templates(conn, channel="email", is_active=True, user_id=TEST_USER_ID)
         assert len(result) == 1
         assert result[0]["name"] == "Email Active"
 
@@ -286,7 +286,7 @@ class TestListTemplates:
 
 class TestAddSequenceStep:
     def test_basic(self, conn, sample_campaign):
-        sid = add_sequence_step(conn, sample_campaign, 1, "linkedin_connect")
+        sid = add_sequence_step(conn, sample_campaign, 1, "linkedin_connect", user_id=TEST_USER_ID)
         assert isinstance(sid, int)
         assert sid > 0
 
@@ -300,8 +300,9 @@ class TestAddSequenceStep:
             delay_days=3,
             gdpr_only=True,
             non_gdpr_only=False,
+            user_id=TEST_USER_ID,
         )
-        steps = get_sequence_steps(conn, sample_campaign)
+        steps = get_sequence_steps(conn, sample_campaign, user_id=TEST_USER_ID)
         assert len(steps) == 1
         step = steps[0]
         assert step["channel"] == "email"
@@ -311,29 +312,29 @@ class TestAddSequenceStep:
         assert step["non_gdpr_only"] is False
 
     def test_duplicate_step_order_raises(self, conn, sample_campaign):
-        add_sequence_step(conn, sample_campaign, 1, "email")
+        add_sequence_step(conn, sample_campaign, 1, "email", user_id=TEST_USER_ID)
         with pytest.raises(psycopg2.IntegrityError):
-            add_sequence_step(conn, sample_campaign, 1, "linkedin_connect")
+            add_sequence_step(conn, sample_campaign, 1, "linkedin_connect", user_id=TEST_USER_ID)
         conn.rollback()  # PG requires rollback after error in transaction
 
     def test_same_step_order_different_campaign(self, conn):
         c1 = create_campaign(conn, "Campaign A", user_id=TEST_USER_ID)
         c2 = create_campaign(conn, "Campaign B", user_id=TEST_USER_ID)
-        s1 = add_sequence_step(conn, c1, 1, "email")
-        s2 = add_sequence_step(conn, c2, 1, "email")
+        s1 = add_sequence_step(conn, c1, 1, "email", user_id=TEST_USER_ID)
+        s2 = add_sequence_step(conn, c2, 1, "email", user_id=TEST_USER_ID)
         assert s1 != s2
 
 
 class TestGetSequenceSteps:
     def test_empty(self, conn, sample_campaign):
-        assert get_sequence_steps(conn, sample_campaign) == []
+        assert get_sequence_steps(conn, sample_campaign, user_id=TEST_USER_ID) == []
 
     def test_ordered_by_step_order(self, conn, sample_campaign):
-        add_sequence_step(conn, sample_campaign, 3, "email", delay_days=7)
-        add_sequence_step(conn, sample_campaign, 1, "linkedin_connect", delay_days=0)
-        add_sequence_step(conn, sample_campaign, 2, "linkedin_message", delay_days=3)
+        add_sequence_step(conn, sample_campaign, 3, "email", delay_days=7, user_id=TEST_USER_ID)
+        add_sequence_step(conn, sample_campaign, 1, "linkedin_connect", delay_days=0, user_id=TEST_USER_ID)
+        add_sequence_step(conn, sample_campaign, 2, "linkedin_message", delay_days=3, user_id=TEST_USER_ID)
 
-        steps = get_sequence_steps(conn, sample_campaign)
+        steps = get_sequence_steps(conn, sample_campaign, user_id=TEST_USER_ID)
         assert len(steps) == 3
         assert [s["step_order"] for s in steps] == [1, 2, 3]
         assert [s["channel"] for s in steps] == [
@@ -345,12 +346,12 @@ class TestGetSequenceSteps:
     def test_only_returns_for_given_campaign(self, conn):
         c1 = create_campaign(conn, "C1", user_id=TEST_USER_ID)
         c2 = create_campaign(conn, "C2", user_id=TEST_USER_ID)
-        add_sequence_step(conn, c1, 1, "email")
-        add_sequence_step(conn, c2, 1, "email")
-        add_sequence_step(conn, c2, 2, "linkedin_connect")
+        add_sequence_step(conn, c1, 1, "email", user_id=TEST_USER_ID)
+        add_sequence_step(conn, c2, 1, "email", user_id=TEST_USER_ID)
+        add_sequence_step(conn, c2, 2, "linkedin_connect", user_id=TEST_USER_ID)
 
-        assert len(get_sequence_steps(conn, c1)) == 1
-        assert len(get_sequence_steps(conn, c2)) == 2
+        assert len(get_sequence_steps(conn, c1, user_id=TEST_USER_ID)) == 1
+        assert len(get_sequence_steps(conn, c2, user_id=TEST_USER_ID)) == 2
 
 
 # ===================================================================
@@ -359,40 +360,41 @@ class TestGetSequenceSteps:
 
 class TestEnrollContact:
     def test_basic(self, conn, sample_contact, sample_campaign):
-        eid = enroll_contact(conn, sample_contact, sample_campaign)
+        eid = enroll_contact(conn, sample_contact, sample_campaign, user_id=TEST_USER_ID)
         assert isinstance(eid, int)
         assert eid > 0
 
     def test_with_variant(self, conn, sample_contact, sample_campaign):
-        eid = enroll_contact(conn, sample_contact, sample_campaign, variant="A")
-        row = get_contact_campaign_status(conn, sample_contact, sample_campaign)
+        eid = enroll_contact(conn, sample_contact, sample_campaign, variant="A", user_id=TEST_USER_ID)
+        row = get_contact_campaign_status(conn, sample_contact, sample_campaign, user_id=TEST_USER_ID)
         assert row["assigned_variant"] == "A"
 
     def test_with_next_action_date(self, conn, sample_contact, sample_campaign):
         eid = enroll_contact(
             conn, sample_contact, sample_campaign,
             next_action_date="2026-03-01",
+            user_id=TEST_USER_ID,
         )
-        row = get_contact_campaign_status(conn, sample_contact, sample_campaign)
+        row = get_contact_campaign_status(conn, sample_contact, sample_campaign, user_id=TEST_USER_ID)
         assert str(row["next_action_date"]) == "2026-03-01"
 
     def test_default_status_queued(self, conn, sample_contact, sample_campaign):
-        enroll_contact(conn, sample_contact, sample_campaign)
-        row = get_contact_campaign_status(conn, sample_contact, sample_campaign)
+        enroll_contact(conn, sample_contact, sample_campaign, user_id=TEST_USER_ID)
+        row = get_contact_campaign_status(conn, sample_contact, sample_campaign, user_id=TEST_USER_ID)
         assert row["status"] == "queued"
         assert row["current_step"] == 1
 
     def test_duplicate_returns_none(self, conn, sample_contact, sample_campaign):
-        eid1 = enroll_contact(conn, sample_contact, sample_campaign)
-        eid2 = enroll_contact(conn, sample_contact, sample_campaign)
+        eid1 = enroll_contact(conn, sample_contact, sample_campaign, user_id=TEST_USER_ID)
+        eid2 = enroll_contact(conn, sample_contact, sample_campaign, user_id=TEST_USER_ID)
         assert eid1 is not None
         assert eid2 is None
 
     def test_same_contact_different_campaigns(self, conn, sample_contact):
         c1 = create_campaign(conn, "Camp1", user_id=TEST_USER_ID)
         c2 = create_campaign(conn, "Camp2", user_id=TEST_USER_ID)
-        e1 = enroll_contact(conn, sample_contact, c1)
-        e2 = enroll_contact(conn, sample_contact, c2)
+        e1 = enroll_contact(conn, sample_contact, c1, user_id=TEST_USER_ID)
+        e2 = enroll_contact(conn, sample_contact, c2, user_id=TEST_USER_ID)
         assert e1 is not None
         assert e2 is not None
         assert e1 != e2
@@ -400,15 +402,15 @@ class TestEnrollContact:
 
 class TestBulkEnrollContacts:
     def test_basic(self, conn, sample_campaign, multiple_contacts):
-        count = bulk_enroll_contacts(conn, sample_campaign, multiple_contacts)
+        count = bulk_enroll_contacts(conn, sample_campaign, multiple_contacts, user_id=TEST_USER_ID)
         assert count == 5
 
     def test_skips_already_enrolled(self, conn, sample_campaign, multiple_contacts):
         # Enroll first two individually
-        enroll_contact(conn, multiple_contacts[0], sample_campaign)
-        enroll_contact(conn, multiple_contacts[1], sample_campaign)
+        enroll_contact(conn, multiple_contacts[0], sample_campaign, user_id=TEST_USER_ID)
+        enroll_contact(conn, multiple_contacts[1], sample_campaign, user_id=TEST_USER_ID)
 
-        count = bulk_enroll_contacts(conn, sample_campaign, multiple_contacts)
+        count = bulk_enroll_contacts(conn, sample_campaign, multiple_contacts, user_id=TEST_USER_ID)
         assert count == 3  # only the remaining 3
 
     def test_with_variant_assigner(self, conn, sample_campaign, multiple_contacts):
@@ -417,99 +419,105 @@ class TestBulkEnrollContacts:
 
         count = bulk_enroll_contacts(
             conn, sample_campaign, multiple_contacts, variant_assigner=assigner,
+            user_id=TEST_USER_ID,
         )
         assert count == 5
 
         for cid in multiple_contacts:
-            row = get_contact_campaign_status(conn, cid, sample_campaign)
+            row = get_contact_campaign_status(conn, cid, sample_campaign, user_id=TEST_USER_ID)
             expected = "A" if cid % 2 == 0 else "B"
             assert row["assigned_variant"] == expected
 
     def test_empty_list(self, conn, sample_campaign):
-        count = bulk_enroll_contacts(conn, sample_campaign, [])
+        count = bulk_enroll_contacts(conn, sample_campaign, [], user_id=TEST_USER_ID)
         assert count == 0
 
     def test_all_already_enrolled(self, conn, sample_campaign, multiple_contacts):
-        bulk_enroll_contacts(conn, sample_campaign, multiple_contacts)
-        count = bulk_enroll_contacts(conn, sample_campaign, multiple_contacts)
+        bulk_enroll_contacts(conn, sample_campaign, multiple_contacts, user_id=TEST_USER_ID)
+        count = bulk_enroll_contacts(conn, sample_campaign, multiple_contacts, user_id=TEST_USER_ID)
         assert count == 0
 
     def test_no_variant_assigner(self, conn, sample_campaign, multiple_contacts):
-        bulk_enroll_contacts(conn, sample_campaign, multiple_contacts)
+        bulk_enroll_contacts(conn, sample_campaign, multiple_contacts, user_id=TEST_USER_ID)
         for cid in multiple_contacts:
-            row = get_contact_campaign_status(conn, cid, sample_campaign)
+            row = get_contact_campaign_status(conn, cid, sample_campaign, user_id=TEST_USER_ID)
             assert row["assigned_variant"] is None
 
 
 class TestGetContactCampaignStatus:
     def test_enrolled(self, conn, sample_contact, sample_campaign):
-        enroll_contact(conn, sample_contact, sample_campaign)
-        row = get_contact_campaign_status(conn, sample_contact, sample_campaign)
+        enroll_contact(conn, sample_contact, sample_campaign, user_id=TEST_USER_ID)
+        row = get_contact_campaign_status(conn, sample_contact, sample_campaign, user_id=TEST_USER_ID)
         assert row is not None
         assert row["contact_id"] == sample_contact
         assert row["campaign_id"] == sample_campaign
 
     def test_not_enrolled(self, conn, sample_contact, sample_campaign):
-        row = get_contact_campaign_status(conn, sample_contact, sample_campaign)
+        row = get_contact_campaign_status(conn, sample_contact, sample_campaign, user_id=TEST_USER_ID)
         assert row is None
 
 
 class TestUpdateContactCampaignStatus:
     def test_update_status(self, conn, sample_contact, sample_campaign):
-        enroll_contact(conn, sample_contact, sample_campaign)
+        enroll_contact(conn, sample_contact, sample_campaign, user_id=TEST_USER_ID)
         update_contact_campaign_status(
             conn, sample_contact, sample_campaign, status="in_progress",
+            user_id=TEST_USER_ID,
         )
-        row = get_contact_campaign_status(conn, sample_contact, sample_campaign)
+        row = get_contact_campaign_status(conn, sample_contact, sample_campaign, user_id=TEST_USER_ID)
         assert row["status"] == "in_progress"
 
     def test_update_current_step(self, conn, sample_contact, sample_campaign):
-        enroll_contact(conn, sample_contact, sample_campaign)
+        enroll_contact(conn, sample_contact, sample_campaign, user_id=TEST_USER_ID)
         update_contact_campaign_status(
             conn, sample_contact, sample_campaign, current_step=2,
+            user_id=TEST_USER_ID,
         )
-        row = get_contact_campaign_status(conn, sample_contact, sample_campaign)
+        row = get_contact_campaign_status(conn, sample_contact, sample_campaign, user_id=TEST_USER_ID)
         assert row["current_step"] == 2
 
     def test_update_next_action_date(self, conn, sample_contact, sample_campaign):
-        enroll_contact(conn, sample_contact, sample_campaign)
+        enroll_contact(conn, sample_contact, sample_campaign, user_id=TEST_USER_ID)
         update_contact_campaign_status(
             conn, sample_contact, sample_campaign,
             next_action_date="2026-04-01",
+            user_id=TEST_USER_ID,
         )
-        row = get_contact_campaign_status(conn, sample_contact, sample_campaign)
+        row = get_contact_campaign_status(conn, sample_contact, sample_campaign, user_id=TEST_USER_ID)
         assert str(row["next_action_date"]) == "2026-04-01"
 
     def test_update_multiple_fields(self, conn, sample_contact, sample_campaign):
-        enroll_contact(conn, sample_contact, sample_campaign)
+        enroll_contact(conn, sample_contact, sample_campaign, user_id=TEST_USER_ID)
         update_contact_campaign_status(
             conn, sample_contact, sample_campaign,
             status="replied_positive",
             current_step=3,
             next_action_date="2026-05-01",
+            user_id=TEST_USER_ID,
         )
-        row = get_contact_campaign_status(conn, sample_contact, sample_campaign)
+        row = get_contact_campaign_status(conn, sample_contact, sample_campaign, user_id=TEST_USER_ID)
         assert row["status"] == "replied_positive"
         assert row["current_step"] == 3
         assert str(row["next_action_date"]) == "2026-05-01"
 
     def test_updated_at_changes(self, conn, sample_contact, sample_campaign):
-        enroll_contact(conn, sample_contact, sample_campaign)
-        row_before = get_contact_campaign_status(conn, sample_contact, sample_campaign)
+        enroll_contact(conn, sample_contact, sample_campaign, user_id=TEST_USER_ID)
+        row_before = get_contact_campaign_status(conn, sample_contact, sample_campaign, user_id=TEST_USER_ID)
         original_updated = row_before["updated_at"]
 
         update_contact_campaign_status(
             conn, sample_contact, sample_campaign, status="in_progress",
+            user_id=TEST_USER_ID,
         )
-        row_after = get_contact_campaign_status(conn, sample_contact, sample_campaign)
+        row_after = get_contact_campaign_status(conn, sample_contact, sample_campaign, user_id=TEST_USER_ID)
         # updated_at should be refreshed (or at least not older)
         assert row_after["updated_at"] >= original_updated
 
     def test_no_op_when_no_fields(self, conn, sample_contact, sample_campaign):
-        enroll_contact(conn, sample_contact, sample_campaign)
+        enroll_contact(conn, sample_contact, sample_campaign, user_id=TEST_USER_ID)
         # Calling with no optional args should not raise
-        update_contact_campaign_status(conn, sample_contact, sample_campaign)
-        row = get_contact_campaign_status(conn, sample_contact, sample_campaign)
+        update_contact_campaign_status(conn, sample_contact, sample_campaign, user_id=TEST_USER_ID)
+        row = get_contact_campaign_status(conn, sample_contact, sample_campaign, user_id=TEST_USER_ID)
         assert row["status"] == "queued"  # unchanged
 
 
@@ -519,7 +527,7 @@ class TestUpdateContactCampaignStatus:
 
 class TestLogEvent:
     def test_basic(self, conn, sample_contact):
-        eid = log_event(conn, sample_contact, "email_sent")
+        eid = log_event(conn, sample_contact, "email_sent", user_id=TEST_USER_ID)
         assert isinstance(eid, int)
         assert eid > 0
 
@@ -532,6 +540,7 @@ class TestLogEvent:
             "email_sent",
             campaign_id=sample_campaign,
             template_id=sample_template,
+            user_id=TEST_USER_ID,
         )
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM events WHERE id = %s", (eid,))
@@ -543,7 +552,7 @@ class TestLogEvent:
 
     def test_with_metadata(self, conn, sample_contact):
         meta = json.dumps({"subject": "Hello", "opened": True})
-        eid = log_event(conn, sample_contact, "email_opened", metadata=meta)
+        eid = log_event(conn, sample_contact, "email_opened", metadata=meta, user_id=TEST_USER_ID)
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM events WHERE id = %s", (eid,))
         row = cursor.fetchone()
@@ -552,7 +561,7 @@ class TestLogEvent:
         assert parsed["opened"] is True
 
     def test_without_optional_fields(self, conn, sample_contact):
-        eid = log_event(conn, sample_contact, "page_visit")
+        eid = log_event(conn, sample_contact, "page_visit", user_id=TEST_USER_ID)
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM events WHERE id = %s", (eid,))
         row = cursor.fetchone()
@@ -561,7 +570,7 @@ class TestLogEvent:
         assert row["metadata"] is None
 
     def test_created_at_populated(self, conn, sample_contact):
-        eid = log_event(conn, sample_contact, "email_sent")
+        eid = log_event(conn, sample_contact, "email_sent", user_id=TEST_USER_ID)
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM events WHERE id = %s", (eid,))
         row = cursor.fetchone()
@@ -587,10 +596,10 @@ class TestIntegration:
         )
 
         # 3. Add sequence steps
-        add_sequence_step(conn, cid, 1, "linkedin_connect", template_id=t1, delay_days=0)
-        add_sequence_step(conn, cid, 2, "email", template_id=t2, delay_days=3)
+        add_sequence_step(conn, cid, 1, "linkedin_connect", template_id=t1, delay_days=0, user_id=TEST_USER_ID)
+        add_sequence_step(conn, cid, 2, "email", template_id=t2, delay_days=3, user_id=TEST_USER_ID)
 
-        steps = get_sequence_steps(conn, cid)
+        steps = get_sequence_steps(conn, cid, user_id=TEST_USER_ID)
         assert len(steps) == 2
         assert steps[0]["channel"] == "linkedin_connect"
         assert steps[1]["channel"] == "email"
@@ -599,7 +608,7 @@ class TestIntegration:
         def ab_assigner(cid):
             return "A" if cid % 2 == 0 else "B"
 
-        enrolled = bulk_enroll_contacts(conn, cid, multiple_contacts, ab_assigner)
+        enrolled = bulk_enroll_contacts(conn, cid, multiple_contacts, ab_assigner, user_id=TEST_USER_ID)
         assert enrolled == 5
 
         # 5. Update status for first contact
@@ -607,8 +616,9 @@ class TestIntegration:
         update_contact_campaign_status(
             conn, contact, cid,
             status="in_progress", current_step=1,
+            user_id=TEST_USER_ID,
         )
-        row = get_contact_campaign_status(conn, contact, cid)
+        row = get_contact_campaign_status(conn, contact, cid, user_id=TEST_USER_ID)
         assert row["status"] == "in_progress"
         assert row["current_step"] == 1
 
@@ -616,10 +626,11 @@ class TestIntegration:
         eid = log_event(
             conn, contact, "linkedin_connect_sent",
             campaign_id=cid, template_id=t1,
+            user_id=TEST_USER_ID,
         )
         assert eid > 0
 
         # 7. Pause campaign
-        update_campaign_status(conn, cid, "paused")
-        camp = get_campaign(conn, cid)
+        update_campaign_status(conn, cid, "paused", user_id=TEST_USER_ID)
+        camp = get_campaign(conn, cid, user_id=TEST_USER_ID)
         assert camp["status"] == "paused"

@@ -30,28 +30,28 @@ def _setup(conn):
     # Create contacts
     cur.execute(
         """INSERT INTO contacts (company_id, first_name, last_name, full_name, email,
-                                 email_normalized, email_status, linkedin_url)
+                                 email_normalized, email_status, linkedin_url, user_id)
            VALUES (%s, 'Alice', 'A', 'Alice A', 'alice@big.com', 'alice@big.com', 'valid',
-                   'https://linkedin.com/in/alice')
+                   'https://linkedin.com/in/alice', %s)
            RETURNING id""",
-        (big_id,),
+        (big_id, TEST_USER_ID),
     )
     alice_id = cur.fetchone()["id"]
 
     cur.execute(
         """INSERT INTO contacts (company_id, first_name, last_name, full_name, email,
-                                 email_normalized, email_status)
-           VALUES (%s, 'Bob', 'B', 'Bob B', 'bob@small.com', 'bob@small.com', 'valid')
+                                 email_normalized, email_status, user_id)
+           VALUES (%s, 'Bob', 'B', 'Bob B', 'bob@small.com', 'bob@small.com', 'valid', %s)
            RETURNING id""",
-        (small_id,),
+        (small_id, TEST_USER_ID),
     )
     bob_id = cur.fetchone()["id"]
 
     campaign_id = create_campaign(conn, "scorer_test", user_id=TEST_USER_ID)
 
     # Enroll both
-    enroll_contact(conn, alice_id, campaign_id, next_action_date="2026-01-01")
-    enroll_contact(conn, bob_id, campaign_id, next_action_date="2026-01-01")
+    enroll_contact(conn, alice_id, campaign_id, next_action_date="2026-01-01", user_id=TEST_USER_ID)
+    enroll_contact(conn, bob_id, campaign_id, next_action_date="2026-01-01", user_id=TEST_USER_ID)
 
     conn.commit()
     return campaign_id, alice_id, bob_id

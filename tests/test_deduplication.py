@@ -18,6 +18,8 @@ def _setup_db(tmp_db):
     cursor = conn.cursor()
     cursor.execute("DROP INDEX IF EXISTS idx_contacts_email_norm_unique")
     cursor.execute("DROP INDEX IF EXISTS idx_contacts_linkedin_norm_unique")
+    cursor.execute("DROP INDEX IF EXISTS idx_contacts_user_email_norm")
+    cursor.execute("DROP INDEX IF EXISTS idx_contacts_user_linkedin_norm")
     cursor.execute("ALTER TABLE dedup_log DROP CONSTRAINT IF EXISTS fk_dedup_kept_contact")
     cursor.execute("ALTER TABLE dedup_log DROP CONSTRAINT IF EXISTS fk_dedup_merged_contact")
     conn.commit()
@@ -36,7 +38,7 @@ def test_dedup_exact_email(tmp_db):
     c1 = insert_contact(conn, co, email="alice@acme.com", linkedin_url=None)
     c2 = insert_contact(conn, co, email="alice@acme.com", linkedin_url=None)
 
-    stats = run_dedup(conn)
+    stats = run_dedup(conn, user_id=1)
 
     assert stats["email_dupes"] == 1
 
@@ -57,7 +59,7 @@ def test_dedup_exact_linkedin(tmp_db):
     c1 = insert_contact(conn, co, email=None, linkedin_url="https://linkedin.com/in/bob")
     c2 = insert_contact(conn, co, email=None, linkedin_url="https://linkedin.com/in/bob/")
 
-    stats = run_dedup(conn)
+    stats = run_dedup(conn, user_id=1)
 
     assert stats["linkedin_dupes"] == 1
 
@@ -80,7 +82,7 @@ def test_dedup_fuzzy_company_flagged(tmp_db, tmp_path):
     export_dir = str(tmp_path / "export")
     os.makedirs(export_dir, exist_ok=True)
 
-    stats = run_dedup(conn, export_dir=export_dir)
+    stats = run_dedup(conn, export_dir=export_dir, user_id=1)
 
     assert stats["fuzzy_flagged"] >= 1
 
@@ -104,7 +106,7 @@ def test_dedup_logs_actions(tmp_db):
     c3 = insert_contact(conn, co, email=None, linkedin_url="https://linkedin.com/in/dave")
     c4 = insert_contact(conn, co, email=None, linkedin_url="https://linkedin.com/in/dave")
 
-    run_dedup(conn)
+    run_dedup(conn, user_id=1)
 
     cursor = conn.cursor()
     cursor.execute(
@@ -137,7 +139,7 @@ def test_dedup_keeps_first_contact(tmp_db):
     c1 = insert_contact(conn, co, email="eve@delta.com", linkedin_url=None, priority_rank=2)
     c2 = insert_contact(conn, co, email="eve@delta.com", linkedin_url=None, priority_rank=1)
 
-    run_dedup(conn)
+    run_dedup(conn, user_id=1)
 
     cursor = conn.cursor()
     cursor.execute("SELECT id FROM contacts ORDER BY id")
@@ -156,7 +158,7 @@ def test_dedup_no_false_positives(tmp_db):
     c1 = insert_contact(conn, co, email="frank@epsilon.com", linkedin_url="https://linkedin.com/in/frank")
     c2 = insert_contact(conn, co, email="grace@epsilon.com", linkedin_url="https://linkedin.com/in/grace")
 
-    stats = run_dedup(conn)
+    stats = run_dedup(conn, user_id=1)
 
     assert stats["email_dupes"] == 0
     assert stats["linkedin_dupes"] == 0

@@ -51,8 +51,8 @@ def _seed_contact(conn, company_id, first="John", last="Doe", email="john@test.c
     cur = conn.cursor()
     cur.execute(
         "INSERT INTO contacts (company_id, first_name, last_name, full_name, email, "
-        "email_normalized, email_status) VALUES (%s, %s, %s, %s, %s, %s, 'valid') RETURNING id",
-        (company_id, first, last, f"{first} {last}", email, email.lower()),
+        "email_normalized, email_status, user_id) VALUES (%s, %s, %s, %s, %s, %s, 'valid', %s) RETURNING id",
+        (company_id, first, last, f"{first} {last}", email, email.lower(), TEST_USER_ID),
     )
     conn.commit()
     return cur.fetchone()["id"]

@@ -54,14 +54,14 @@ def _setup_campaign_with_steps(conn, name="test_campaign"):
         conn, f"{name}_email_breakup", "email", "Last note...", subject="Last note", user_id=TEST_USER_ID,
     )
 
-    add_sequence_step(conn, campaign_id, 1, "linkedin_connect", t1, delay_days=0)
-    add_sequence_step(conn, campaign_id, 2, "linkedin_message", t2, delay_days=3)
-    add_sequence_step(conn, campaign_id, 3, "email", t3, delay_days=5)
+    add_sequence_step(conn, campaign_id, 1, "linkedin_connect", t1, delay_days=0, user_id=1)
+    add_sequence_step(conn, campaign_id, 2, "linkedin_message", t2, delay_days=3, user_id=1)
+    add_sequence_step(conn, campaign_id, 3, "email", t3, delay_days=5, user_id=1)
     add_sequence_step(
-        conn, campaign_id, 4, "email", t4, delay_days=7, non_gdpr_only=True
+        conn, campaign_id, 4, "email", t4, delay_days=7, non_gdpr_only=True, user_id=1,
     )
     add_sequence_step(
-        conn, campaign_id, 5, "email", t5, delay_days=14, non_gdpr_only=True
+        conn, campaign_id, 5, "email", t5, delay_days=14, non_gdpr_only=True, user_id=1,
     )
 
     return campaign_id
@@ -97,9 +97,9 @@ class TestQueueToday:
         """queue_today returns contacts that are ready for action today."""
         comp = insert_company(conn, "Acme Corp", aum_millions=500)
         cid = insert_contact(conn, comp, first_name="Alice", last_name="Smith")
-        enroll_contact(conn, cid, campaign, next_action_date=_today())
+        enroll_contact(conn, cid, campaign, next_action_date=_today(), user_id=1)
         update_contact_campaign_status(
-            conn, cid, campaign, status="in_progress", current_step=1
+            conn, cid, campaign, status="in_progress", current_step=1, user_id=1,
         )
 
         result = queue_today(conn, "test_campaign", target_date=_today())
@@ -124,9 +124,9 @@ class TestQueueToday:
                 email=f"c{i}@example.com",
                 linkedin_url=f"https://linkedin.com/in/c{i}",
             )
-            enroll_contact(conn, cid, campaign, next_action_date=_today())
+            enroll_contact(conn, cid, campaign, next_action_date=_today(), user_id=1)
             update_contact_campaign_status(
-                conn, cid, campaign, status="in_progress", current_step=1
+                conn, cid, campaign, status="in_progress", current_step=1, user_id=1,
             )
 
         result = queue_today(conn, "test_campaign", target_date=_today(), limit=3)
@@ -152,9 +152,9 @@ class TestQueueToday:
         )
 
         for cid in [c_small, c_big]:
-            enroll_contact(conn, cid, campaign, next_action_date=_today())
+            enroll_contact(conn, cid, campaign, next_action_date=_today(), user_id=1)
             update_contact_campaign_status(
-                conn, cid, campaign, status="in_progress", current_step=1
+                conn, cid, campaign, status="in_progress", current_step=1, user_id=1,
             )
 
         result = queue_today(conn, "test_campaign", target_date=_today())
@@ -178,9 +178,9 @@ class TestExportExpandiCsv:
             email="alice@export.com",
             linkedin_url="https://linkedin.com/in/alice",
         )
-        enroll_contact(conn, cid, campaign, next_action_date=_today())
+        enroll_contact(conn, cid, campaign, next_action_date=_today(), user_id=1)
         update_contact_campaign_status(
-            conn, cid, campaign, status="in_progress", current_step=1
+            conn, cid, campaign, status="in_progress", current_step=1, user_id=1,
         )
 
         output_dir = str(tmp_path / "exports")
@@ -215,9 +215,9 @@ class TestExportExpandiCsv:
             conn, comp_li, first_name="LI", last_name="Person",
             email="li@example.com", linkedin_url="https://linkedin.com/in/li",
         )
-        enroll_contact(conn, c_li, campaign, next_action_date=_today())
+        enroll_contact(conn, c_li, campaign, next_action_date=_today(), user_id=1)
         update_contact_campaign_status(
-            conn, c_li, campaign, status="in_progress", current_step=1  # linkedin_connect
+            conn, c_li, campaign, status="in_progress", current_step=1, user_id=1,  # linkedin_connect
         )
 
         # Contact on email step
@@ -226,9 +226,9 @@ class TestExportExpandiCsv:
             email="email@example.com", email_status="valid",
             linkedin_url="https://linkedin.com/in/email",
         )
-        enroll_contact(conn, c_email, campaign, next_action_date=_today())
+        enroll_contact(conn, c_email, campaign, next_action_date=_today(), user_id=1)
         update_contact_campaign_status(
-            conn, c_email, campaign, status="in_progress", current_step=3  # email step
+            conn, c_email, campaign, status="in_progress", current_step=3, user_id=1,  # email step
         )
 
         output_dir = str(tmp_path / "exports")
@@ -255,9 +255,9 @@ class TestExportExpandiCsv:
             email="connect@example.com",
             linkedin_url="https://linkedin.com/in/connect",
         )
-        enroll_contact(conn, c1, campaign, next_action_date=_today())
+        enroll_contact(conn, c1, campaign, next_action_date=_today(), user_id=1)
         update_contact_campaign_status(
-            conn, c1, campaign, status="in_progress", current_step=1
+            conn, c1, campaign, status="in_progress", current_step=1, user_id=1,
         )
 
         # Contact on linkedin_message step
@@ -266,9 +266,9 @@ class TestExportExpandiCsv:
             email="message@example.com",
             linkedin_url="https://linkedin.com/in/message",
         )
-        enroll_contact(conn, c2, campaign, next_action_date=_today())
+        enroll_contact(conn, c2, campaign, next_action_date=_today(), user_id=1)
         update_contact_campaign_status(
-            conn, c2, campaign, status="in_progress", current_step=2
+            conn, c2, campaign, status="in_progress", current_step=2, user_id=1,
         )
 
         output_dir = str(tmp_path / "exports")
@@ -332,9 +332,9 @@ class TestImportExpandiResults:
             conn, comp, first_name="Match", last_name="Person",
             linkedin_url="https://linkedin.com/in/matchperson",
         )
-        enroll_contact(conn, cid, campaign, next_action_date=_today())
+        enroll_contact(conn, cid, campaign, next_action_date=_today(), user_id=1)
         update_contact_campaign_status(
-            conn, cid, campaign, status="in_progress", current_step=1
+            conn, cid, campaign, status="in_progress", current_step=1, user_id=1,
         )
 
         filepath = self._write_expandi_csv(tmp_path, [
@@ -353,9 +353,9 @@ class TestImportExpandiResults:
             conn, comp, first_name="Advance", last_name="Person",
             linkedin_url="https://linkedin.com/in/advanceperson",
         )
-        enroll_contact(conn, cid, campaign, next_action_date=_today())
+        enroll_contact(conn, cid, campaign, next_action_date=_today(), user_id=1)
         update_contact_campaign_status(
-            conn, cid, campaign, status="in_progress", current_step=1  # linkedin_connect
+            conn, cid, campaign, status="in_progress", current_step=1, user_id=1,  # linkedin_connect
         )
 
         filepath = self._write_expandi_csv(tmp_path, [
@@ -367,7 +367,7 @@ class TestImportExpandiResults:
         assert result["advanced"] == 1
 
         # Verify the contact's step was advanced to step 2 (linkedin_message)
-        ccs = get_contact_campaign_status(conn, cid, campaign)
+        ccs = get_contact_campaign_status(conn, cid, campaign, user_id=1)
         assert ccs["current_step"] == 2
         assert ccs["status"] == "in_progress"
         # Next action date should be today + delay_days of step 2 (3 days)
@@ -381,9 +381,9 @@ class TestImportExpandiResults:
             conn, comp, first_name="Msg", last_name="Person",
             linkedin_url="https://linkedin.com/in/msgperson",
         )
-        enroll_contact(conn, cid, campaign, next_action_date=_today())
+        enroll_contact(conn, cid, campaign, next_action_date=_today(), user_id=1)
         update_contact_campaign_status(
-            conn, cid, campaign, status="in_progress", current_step=2  # linkedin_message
+            conn, cid, campaign, status="in_progress", current_step=2, user_id=1,  # linkedin_message
         )
 
         filepath = self._write_expandi_csv(tmp_path, [
@@ -395,7 +395,7 @@ class TestImportExpandiResults:
         assert result["advanced"] == 1
 
         # Verify advanced to step 3 (email)
-        ccs = get_contact_campaign_status(conn, cid, campaign)
+        ccs = get_contact_campaign_status(conn, cid, campaign, user_id=1)
         assert ccs["current_step"] == 3
         expected_date = (date.today() + timedelta(days=5)).isoformat()
         assert str(ccs["next_action_date"]) == expected_date
@@ -420,9 +420,9 @@ class TestImportExpandiResults:
             conn, comp, first_name="Pending", last_name="Person",
             linkedin_url="https://linkedin.com/in/pendingperson",
         )
-        enroll_contact(conn, cid, campaign, next_action_date=_today())
+        enroll_contact(conn, cid, campaign, next_action_date=_today(), user_id=1)
         update_contact_campaign_status(
-            conn, cid, campaign, status="in_progress", current_step=1
+            conn, cid, campaign, status="in_progress", current_step=1, user_id=1,
         )
 
         filepath = self._write_expandi_csv(tmp_path, [
@@ -435,7 +435,7 @@ class TestImportExpandiResults:
         assert result["advanced"] == 0
 
         # Step should remain at 1
-        ccs = get_contact_campaign_status(conn, cid, campaign)
+        ccs = get_contact_campaign_status(conn, cid, campaign, user_id=1)
         assert ccs["current_step"] == 1
 
     def test_does_not_advance_connected_on_email_step(self, conn, campaign, tmp_path):
@@ -446,9 +446,9 @@ class TestImportExpandiResults:
             email="emailstep@example.com", email_status="valid",
             linkedin_url="https://linkedin.com/in/emailstep",
         )
-        enroll_contact(conn, cid, campaign, next_action_date=_today())
+        enroll_contact(conn, cid, campaign, next_action_date=_today(), user_id=1)
         update_contact_campaign_status(
-            conn, cid, campaign, status="in_progress", current_step=3  # email step
+            conn, cid, campaign, status="in_progress", current_step=3, user_id=1,  # email step
         )
 
         filepath = self._write_expandi_csv(tmp_path, [
@@ -473,9 +473,9 @@ class TestImportExpandiResults:
             conn, comp, first_name="Known", last_name="Person",
             linkedin_url="https://linkedin.com/in/knownperson",
         )
-        enroll_contact(conn, cid, campaign, next_action_date=_today())
+        enroll_contact(conn, cid, campaign, next_action_date=_today(), user_id=1)
         update_contact_campaign_status(
-            conn, cid, campaign, status="in_progress", current_step=1
+            conn, cid, campaign, status="in_progress", current_step=1, user_id=1,
         )
 
         filepath = self._write_expandi_csv(tmp_path, [
@@ -496,9 +496,9 @@ class TestImportExpandiResults:
             conn, comp, first_name="Case", last_name="Person",
             linkedin_url="https://linkedin.com/in/CasePerson",
         )
-        enroll_contact(conn, cid, campaign, next_action_date=_today())
+        enroll_contact(conn, cid, campaign, next_action_date=_today(), user_id=1)
         update_contact_campaign_status(
-            conn, cid, campaign, status="in_progress", current_step=1
+            conn, cid, campaign, status="in_progress", current_step=1, user_id=1,
         )
 
         filepath = self._write_expandi_csv(tmp_path, [
@@ -515,9 +515,9 @@ class TestImportExpandiResults:
             conn, comp, first_name="Slash", last_name="Person",
             linkedin_url="https://linkedin.com/in/slashperson",
         )
-        enroll_contact(conn, cid, campaign, next_action_date=_today())
+        enroll_contact(conn, cid, campaign, next_action_date=_today(), user_id=1)
         update_contact_campaign_status(
-            conn, cid, campaign, status="in_progress", current_step=1
+            conn, cid, campaign, status="in_progress", current_step=1, user_id=1,
         )
 
         filepath = self._write_expandi_csv(tmp_path, [
@@ -534,9 +534,9 @@ class TestImportExpandiResults:
             conn, comp, first_name="Query", last_name="Person",
             linkedin_url="https://linkedin.com/in/queryperson",
         )
-        enroll_contact(conn, cid, campaign, next_action_date=_today())
+        enroll_contact(conn, cid, campaign, next_action_date=_today(), user_id=1)
         update_contact_campaign_status(
-            conn, cid, campaign, status="in_progress", current_step=1
+            conn, cid, campaign, status="in_progress", current_step=1, user_id=1,
         )
 
         filepath = self._write_expandi_csv(tmp_path, [

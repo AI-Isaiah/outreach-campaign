@@ -26,10 +26,10 @@ def _setup(conn):
 
     cur.execute(
         """INSERT INTO contacts (company_id, first_name, last_name, full_name, email,
-                                 email_normalized, email_status)
-           VALUES (%s, 'John', 'Doe', 'John Doe', 'john@test.com', 'john@test.com', 'valid')
+                                 email_normalized, email_status, user_id)
+           VALUES (%s, 'John', 'Doe', 'John Doe', 'john@test.com', 'john@test.com', 'valid', %s)
            RETURNING id""",
-        (company_id,),
+        (company_id, TEST_USER_ID),
     )
     contact_id = cur.fetchone()["id"]
 
@@ -86,7 +86,7 @@ def test_segment_performance(tmp_db):
     _, contact_id, campaign_id, _ = _setup(conn)
 
     from src.models.campaigns import enroll_contact
-    enroll_contact(conn, contact_id, campaign_id)
+    enroll_contact(conn, contact_id, campaign_id, user_id=1)
 
     result = get_segment_performance(conn, campaign_id)
     assert len(result) >= 1

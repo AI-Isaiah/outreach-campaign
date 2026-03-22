@@ -75,9 +75,9 @@ def sample_contact(conn, sample_company):
     """Insert a non-GDPR contact and return its id."""
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO contacts (company_id, first_name, last_name, full_name, email, source, is_gdpr) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
-        (sample_company, "Alice", "Smith", "Alice Smith", "alice@example.com", "csv", False),
+        "INSERT INTO contacts (company_id, first_name, last_name, full_name, email, source, is_gdpr, user_id) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+        (sample_company, "Alice", "Smith", "Alice Smith", "alice@example.com", "csv", False, TEST_USER_ID),
     )
     contact_id = cursor.fetchone()["id"]
     conn.commit()
@@ -89,9 +89,9 @@ def gdpr_contact(conn, gdpr_company):
     """Insert a GDPR-subject contact and return its id."""
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO contacts (company_id, first_name, last_name, full_name, email, source, is_gdpr) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
-        (gdpr_company, "Hans", "Mueller", "Hans Mueller", "hans@berlin-cap.de", "csv", True),
+        "INSERT INTO contacts (company_id, first_name, last_name, full_name, email, source, is_gdpr, user_id) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+        (gdpr_company, "Hans", "Mueller", "Hans Mueller", "hans@berlin-cap.de", "csv", True, TEST_USER_ID),
     )
     contact_id = cursor.fetchone()["id"]
     conn.commit()
@@ -146,9 +146,9 @@ def _make_subscribed_contacts(conn, company_id, count=3):
         cursor = conn.cursor()
         cursor.execute(
             "INSERT INTO contacts (company_id, first_name, last_name, full_name, email, source, "
-            "is_gdpr, newsletter_status) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            "is_gdpr, newsletter_status, user_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
             (company_id, f"Sub{i}", f"User{i}", f"Sub{i} User{i}",
-             f"sub{i}@example.com", "csv", False, "subscribed"),
+             f"sub{i}@example.com", "csv", False, "subscribed", TEST_USER_ID),
         )
         ids.append(cursor.fetchone()["id"])
     conn.commit()
@@ -178,8 +178,8 @@ class TestGetNewsletterSubscribers:
         cursor = conn.cursor()
         cursor.execute(
             "INSERT INTO contacts (company_id, first_name, email, source, "
-            "newsletter_status, unsubscribed) VALUES (%s, %s, %s, %s, %s, %s)",
-            (sample_company, "Gone", "gone@example.com", "csv", "unsubscribed", True),
+            "newsletter_status, unsubscribed, user_id) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (sample_company, "Gone", "gone@example.com", "csv", "unsubscribed", True, TEST_USER_ID),
         )
         conn.commit()
         result = get_newsletter_subscribers(conn)
@@ -190,8 +190,8 @@ class TestGetNewsletterSubscribers:
         cursor = conn.cursor()
         cursor.execute(
             "INSERT INTO contacts (company_id, first_name, email, source, "
-            "newsletter_status, unsubscribed) VALUES (%s, %s, %s, %s, %s, %s)",
-            (sample_company, "Weird", "weird@example.com", "csv", "subscribed", True),
+            "newsletter_status, unsubscribed, user_id) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (sample_company, "Weird", "weird@example.com", "csv", "subscribed", True, TEST_USER_ID),
         )
         conn.commit()
         result = get_newsletter_subscribers(conn)
@@ -202,8 +202,8 @@ class TestGetNewsletterSubscribers:
         cursor = conn.cursor()
         cursor.execute(
             "INSERT INTO contacts (company_id, first_name, source, "
-            "newsletter_status) VALUES (%s, %s, %s, %s)",
-            (sample_company, "NoEmail", "csv", "subscribed"),
+            "newsletter_status, user_id) VALUES (%s, %s, %s, %s, %s)",
+            (sample_company, "NoEmail", "csv", "subscribed", TEST_USER_ID),
         )
         conn.commit()
         result = get_newsletter_subscribers(conn)
@@ -218,21 +218,21 @@ class TestGetNewsletterSubscribers:
         cursor = conn.cursor()
         # subscribed
         cursor.execute(
-            "INSERT INTO contacts (company_id, first_name, email, source, newsletter_status) "
-            "VALUES (%s, %s, %s, %s, %s)",
-            (sample_company, "Sub", "sub@example.com", "csv", "subscribed"),
+            "INSERT INTO contacts (company_id, first_name, email, source, newsletter_status, user_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (sample_company, "Sub", "sub@example.com", "csv", "subscribed", TEST_USER_ID),
         )
         # none
         cursor.execute(
-            "INSERT INTO contacts (company_id, first_name, email, source, newsletter_status) "
-            "VALUES (%s, %s, %s, %s, %s)",
-            (sample_company, "None", "none@example.com", "csv", "none"),
+            "INSERT INTO contacts (company_id, first_name, email, source, newsletter_status, user_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (sample_company, "None", "none@example.com", "csv", "none", TEST_USER_ID),
         )
         # unsubscribed
         cursor.execute(
-            "INSERT INTO contacts (company_id, first_name, email, source, newsletter_status, unsubscribed) "
-            "VALUES (%s, %s, %s, %s, %s, %s)",
-            (sample_company, "Unsub", "unsub@example.com", "csv", "unsubscribed", True),
+            "INSERT INTO contacts (company_id, first_name, email, source, newsletter_status, unsubscribed, user_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (sample_company, "Unsub", "unsub@example.com", "csv", "unsubscribed", True, TEST_USER_ID),
         )
         conn.commit()
 
@@ -250,9 +250,9 @@ class TestAutoSubscribeEligible:
         self, conn, sample_contact, sample_campaign
     ):
         """Non-GDPR contacts with no_response status are auto-subscribed."""
-        enroll_contact(conn, sample_contact, sample_campaign)
+        enroll_contact(conn, sample_contact, sample_campaign, user_id=1)
         update_contact_campaign_status(
-            conn, sample_contact, sample_campaign, status="no_response"
+            conn, sample_contact, sample_campaign, status="no_response", user_id=1,
         )
 
         result = auto_subscribe_eligible(conn, sample_campaign)
@@ -273,9 +273,9 @@ class TestAutoSubscribeEligible:
         self, conn, gdpr_contact, sample_campaign
     ):
         """GDPR contacts should NOT be auto-subscribed."""
-        enroll_contact(conn, gdpr_contact, sample_campaign)
+        enroll_contact(conn, gdpr_contact, sample_campaign, user_id=1)
         update_contact_campaign_status(
-            conn, gdpr_contact, sample_campaign, status="no_response"
+            conn, gdpr_contact, sample_campaign, status="no_response", user_id=1,
         )
 
         result = auto_subscribe_eligible(conn, sample_campaign)
@@ -295,16 +295,16 @@ class TestAutoSubscribeEligible:
         """Contact is non-GDPR but company is GDPR -- should skip."""
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO contacts (company_id, first_name, email, source, is_gdpr) "
-            "VALUES (%s, %s, %s, %s, %s) RETURNING id",
-            (gdpr_company, "Max", "max@test.de", "csv", False),
+            "INSERT INTO contacts (company_id, first_name, email, source, is_gdpr, user_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+            (gdpr_company, "Max", "max@test.de", "csv", False, TEST_USER_ID),
         )
         contact_id = cursor.fetchone()["id"]
         conn.commit()
 
-        enroll_contact(conn, contact_id, sample_campaign)
+        enroll_contact(conn, contact_id, sample_campaign, user_id=1)
         update_contact_campaign_status(
-            conn, contact_id, sample_campaign, status="no_response"
+            conn, contact_id, sample_campaign, status="no_response", user_id=1,
         )
 
         result = auto_subscribe_eligible(conn, sample_campaign)
@@ -318,15 +318,15 @@ class TestAutoSubscribeEligible:
         cursor = conn.cursor()
         cursor.execute(
             "INSERT INTO contacts (company_id, first_name, email, source, "
-            "is_gdpr, newsletter_status) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
-            (sample_company, "Already", "already@example.com", "csv", False, "subscribed"),
+            "is_gdpr, newsletter_status, user_id) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            (sample_company, "Already", "already@example.com", "csv", False, "subscribed", TEST_USER_ID),
         )
         contact_id = cursor.fetchone()["id"]
         conn.commit()
 
-        enroll_contact(conn, contact_id, sample_campaign)
+        enroll_contact(conn, contact_id, sample_campaign, user_id=1)
         update_contact_campaign_status(
-            conn, contact_id, sample_campaign, status="no_response"
+            conn, contact_id, sample_campaign, status="no_response", user_id=1,
         )
 
         result = auto_subscribe_eligible(conn, sample_campaign)
@@ -340,15 +340,15 @@ class TestAutoSubscribeEligible:
         cursor = conn.cursor()
         cursor.execute(
             "INSERT INTO contacts (company_id, first_name, email, source, "
-            "is_gdpr, newsletter_status, unsubscribed) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
-            (sample_company, "Former", "former@example.com", "csv", False, "unsubscribed", True),
+            "is_gdpr, newsletter_status, unsubscribed, user_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            (sample_company, "Former", "former@example.com", "csv", False, "unsubscribed", True, TEST_USER_ID),
         )
         contact_id = cursor.fetchone()["id"]
         conn.commit()
 
-        enroll_contact(conn, contact_id, sample_campaign)
+        enroll_contact(conn, contact_id, sample_campaign, user_id=1)
         update_contact_campaign_status(
-            conn, contact_id, sample_campaign, status="no_response"
+            conn, contact_id, sample_campaign, status="no_response", user_id=1,
         )
 
         result = auto_subscribe_eligible(conn, sample_campaign)
@@ -359,7 +359,7 @@ class TestAutoSubscribeEligible:
         self, conn, sample_contact, sample_campaign
     ):
         """Contacts with other statuses (queued, in_progress, etc.) are ignored."""
-        enroll_contact(conn, sample_contact, sample_campaign)
+        enroll_contact(conn, sample_contact, sample_campaign, user_id=1)
         # status is 'queued' by default -- should not be subscribed
 
         result = auto_subscribe_eligible(conn, sample_campaign)
@@ -373,16 +373,16 @@ class TestAutoSubscribeEligible:
         """Contacts without email should not be subscribed."""
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO contacts (company_id, first_name, source, is_gdpr) "
-            "VALUES (%s, %s, %s, %s) RETURNING id",
-            (sample_company, "NoEmail", "csv", False),
+            "INSERT INTO contacts (company_id, first_name, source, is_gdpr, user_id) "
+            "VALUES (%s, %s, %s, %s, %s) RETURNING id",
+            (sample_company, "NoEmail", "csv", False, TEST_USER_ID),
         )
         contact_id = cursor.fetchone()["id"]
         conn.commit()
 
-        enroll_contact(conn, contact_id, sample_campaign)
+        enroll_contact(conn, contact_id, sample_campaign, user_id=1)
         update_contact_campaign_status(
-            conn, contact_id, sample_campaign, status="no_response"
+            conn, contact_id, sample_campaign, status="no_response", user_id=1,
         )
 
         result = auto_subscribe_eligible(conn, sample_campaign)
@@ -395,42 +395,42 @@ class TestAutoSubscribeEligible:
         # Non-GDPR, no_response -> should subscribe
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO contacts (company_id, first_name, email, source, is_gdpr) "
-            "VALUES (%s, %s, %s, %s, %s) RETURNING id",
-            (sample_company, "NonGdpr1", "nongdpr1@example.com", "csv", False),
+            "INSERT INTO contacts (company_id, first_name, email, source, is_gdpr, user_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+            (sample_company, "NonGdpr1", "nongdpr1@example.com", "csv", False, TEST_USER_ID),
         )
         c1 = cursor.fetchone()["id"]
 
         # Non-GDPR, no_response -> should subscribe
         cursor.execute(
-            "INSERT INTO contacts (company_id, first_name, email, source, is_gdpr) "
-            "VALUES (%s, %s, %s, %s, %s) RETURNING id",
-            (sample_company, "NonGdpr2", "nongdpr2@example.com", "csv", False),
+            "INSERT INTO contacts (company_id, first_name, email, source, is_gdpr, user_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+            (sample_company, "NonGdpr2", "nongdpr2@example.com", "csv", False, TEST_USER_ID),
         )
         c2 = cursor.fetchone()["id"]
 
         # GDPR, no_response -> should skip
         cursor.execute(
-            "INSERT INTO contacts (company_id, first_name, email, source, is_gdpr) "
-            "VALUES (%s, %s, %s, %s, %s) RETURNING id",
-            (gdpr_company, "Gdpr1", "gdpr1@example.de", "csv", True),
+            "INSERT INTO contacts (company_id, first_name, email, source, is_gdpr, user_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+            (gdpr_company, "Gdpr1", "gdpr1@example.de", "csv", True, TEST_USER_ID),
         )
         c3 = cursor.fetchone()["id"]
 
         # Non-GDPR, no_response, already subscribed -> should count as already
         cursor.execute(
-            "INSERT INTO contacts (company_id, first_name, email, source, is_gdpr, newsletter_status) "
-            "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
-            (sample_company, "AlreadySub", "already@example.com", "csv", False, "subscribed"),
+            "INSERT INTO contacts (company_id, first_name, email, source, is_gdpr, newsletter_status, user_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            (sample_company, "AlreadySub", "already@example.com", "csv", False, "subscribed", TEST_USER_ID),
         )
         c4 = cursor.fetchone()["id"]
 
         conn.commit()
 
         for cid in [c1, c2, c3, c4]:
-            enroll_contact(conn, cid, sample_campaign)
+            enroll_contact(conn, cid, sample_campaign, user_id=1)
             update_contact_campaign_status(
-                conn, cid, sample_campaign, status="no_response"
+                conn, cid, sample_campaign, status="no_response", user_id=1,
             )
 
         result = auto_subscribe_eligible(conn, sample_campaign)
@@ -809,9 +809,9 @@ class TestNewsletterIntegration:
         self, conn, sample_contact, sample_campaign
     ):
         """Auto-subscribe via campaign, then manually unsubscribe."""
-        enroll_contact(conn, sample_contact, sample_campaign)
+        enroll_contact(conn, sample_contact, sample_campaign, user_id=1)
         update_contact_campaign_status(
-            conn, sample_contact, sample_campaign, status="no_response"
+            conn, sample_contact, sample_campaign, status="no_response", user_id=1,
         )
 
         auto_subscribe_eligible(conn, sample_campaign)
@@ -832,15 +832,15 @@ class TestNewsletterIntegration:
         cursor = conn.cursor()
         cursor.execute(
             "INSERT INTO contacts (company_id, first_name, email, source, "
-            "is_gdpr, newsletter_status, unsubscribed) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
-            (sample_company, "Former", "former@example.com", "csv", False, "unsubscribed", True),
+            "is_gdpr, newsletter_status, unsubscribed, user_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            (sample_company, "Former", "former@example.com", "csv", False, "unsubscribed", True, TEST_USER_ID),
         )
         contact_id = cursor.fetchone()["id"]
         conn.commit()
 
-        enroll_contact(conn, contact_id, sample_campaign)
+        enroll_contact(conn, contact_id, sample_campaign, user_id=1)
         update_contact_campaign_status(
-            conn, contact_id, sample_campaign, status="no_response"
+            conn, contact_id, sample_campaign, status="no_response", user_id=1,
         )
 
         result = auto_subscribe_eligible(conn, sample_campaign)

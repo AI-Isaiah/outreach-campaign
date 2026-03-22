@@ -52,11 +52,11 @@ def _create_contact(conn, company_id, priority_rank=1, email=None):
     cursor = conn.cursor()
     cursor.execute(
         "INSERT INTO contacts (company_id, priority_rank, email, email_normalized, "
-        "first_name, last_name, full_name) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+        "first_name, last_name, full_name, user_id) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
         (company_id, priority_rank, email, email.lower(),
          f"First{priority_rank}", f"Last{priority_rank}",
-         f"First{priority_rank} Last{priority_rank}"),
+         f"First{priority_rank} Last{priority_rank}", TEST_USER_ID),
     )
     contact_id = cursor.fetchone()["id"]
     conn.commit()
@@ -74,17 +74,18 @@ def _enroll(conn, contact_id, campaign_id, variant=None):
         conn, contact_id, campaign_id,
         variant=variant,
         next_action_date=date.today().isoformat(),
+        user_id=TEST_USER_ID,
     )
 
 
 def _set_status(conn, contact_id, campaign_id, status):
     """Directly set a contact's campaign status."""
-    update_contact_campaign_status(conn, contact_id, campaign_id, status=status)
+    update_contact_campaign_status(conn, contact_id, campaign_id, status=status, user_id=TEST_USER_ID)
 
 
 def _log_event(conn, contact_id, event_type, campaign_id, created_at=None):
     """Log an event, optionally with a specific created_at timestamp."""
-    event_id = log_event(conn, contact_id, event_type, campaign_id=campaign_id)
+    event_id = log_event(conn, contact_id, event_type, campaign_id=campaign_id, user_id=TEST_USER_ID)
     if created_at is not None:
         cursor = conn.cursor()
         cursor.execute(
@@ -136,11 +137,11 @@ class TestGetCampaignMetrics:
         campaign_id = _create_campaign(conn)
         _enroll(conn, c1, campaign_id)
 
-        log_event(conn, c1, "email_sent", campaign_id=campaign_id)
-        log_event(conn, c1, "email_sent", campaign_id=campaign_id)
-        log_event(conn, c1, "expandi_connected", campaign_id=campaign_id)
-        log_event(conn, c1, "expandi_message_sent", campaign_id=campaign_id)
-        log_event(conn, c1, "call_booked", campaign_id=campaign_id)
+        log_event(conn, c1, "email_sent", campaign_id=campaign_id, user_id=TEST_USER_ID)
+        log_event(conn, c1, "email_sent", campaign_id=campaign_id, user_id=TEST_USER_ID)
+        log_event(conn, c1, "expandi_connected", campaign_id=campaign_id, user_id=TEST_USER_ID)
+        log_event(conn, c1, "expandi_message_sent", campaign_id=campaign_id, user_id=TEST_USER_ID)
+        log_event(conn, c1, "call_booked", campaign_id=campaign_id, user_id=TEST_USER_ID)
 
         metrics = get_campaign_metrics(conn, campaign_id)
 
@@ -224,7 +225,7 @@ class TestGetCampaignMetrics:
         camp_b = _create_campaign(conn, "Campaign B")
 
         _enroll(conn, c1, camp_a)
-        log_event(conn, c1, "email_sent", campaign_id=camp_b)
+        log_event(conn, c1, "email_sent", campaign_id=camp_b, user_id=TEST_USER_ID)
 
         metrics = get_campaign_metrics(conn, camp_a)
         assert metrics["emails_sent"] == 0

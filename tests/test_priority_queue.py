@@ -63,14 +63,14 @@ def _setup_campaign_with_steps(conn):
         conn, "email_breakup", "email", "Last note...", subject="Last note", user_id=TEST_USER_ID,
     )
 
-    add_sequence_step(conn, campaign_id, 1, "linkedin_connect", t1, delay_days=0)
-    add_sequence_step(conn, campaign_id, 2, "linkedin_message", t2, delay_days=3)
-    add_sequence_step(conn, campaign_id, 3, "email", t3, delay_days=5)
+    add_sequence_step(conn, campaign_id, 1, "linkedin_connect", t1, delay_days=0, user_id=1)
+    add_sequence_step(conn, campaign_id, 2, "linkedin_message", t2, delay_days=3, user_id=1)
+    add_sequence_step(conn, campaign_id, 3, "email", t3, delay_days=5, user_id=1)
     add_sequence_step(
-        conn, campaign_id, 4, "email", t4, delay_days=7, non_gdpr_only=True
+        conn, campaign_id, 4, "email", t4, delay_days=7, non_gdpr_only=True, user_id=1,
     )
     add_sequence_step(
-        conn, campaign_id, 5, "email", t5, delay_days=14, non_gdpr_only=True
+        conn, campaign_id, 5, "email", t5, delay_days=14, non_gdpr_only=True, user_id=1,
     )
 
     return campaign_id
@@ -106,10 +106,10 @@ class TestGetDailyQueue:
         """Contacts enrolled and ready today appear in the queue."""
         comp_id = insert_company(conn, "Acme Corp", aum_millions=500)
         contact_id = insert_contact(conn, comp_id, first_name="Alice", last_name="Smith")
-        enroll_contact(conn, contact_id, campaign, next_action_date=_today())
+        enroll_contact(conn, contact_id, campaign, next_action_date=_today(), user_id=1)
         # Set current_step to 1 (linkedin_connect) and status to in_progress
         update_contact_campaign_status(
-            conn, contact_id, campaign, status="in_progress", current_step=1
+            conn, contact_id, campaign, status="in_progress", current_step=1, user_id=1,
         )
 
         queue = get_daily_queue(conn, campaign, target_date=_today())
@@ -141,9 +141,9 @@ class TestGetDailyQueue:
         )
 
         for cid in [c1, c2]:
-            enroll_contact(conn, cid, campaign, next_action_date=_today())
+            enroll_contact(conn, cid, campaign, next_action_date=_today(), user_id=1)
             update_contact_campaign_status(
-                conn, cid, campaign, status="in_progress", current_step=1
+                conn, cid, campaign, status="in_progress", current_step=1, user_id=1,
             )
 
         queue = get_daily_queue(conn, campaign, target_date=_today())
@@ -165,9 +165,9 @@ class TestGetDailyQueue:
             (comp_mid, "Mid"),
         ]:
             cid = insert_contact(conn, comp_id, first_name=name, last_name="Person")
-            enroll_contact(conn, cid, campaign, next_action_date=_today())
+            enroll_contact(conn, cid, campaign, next_action_date=_today(), user_id=1)
             update_contact_campaign_status(
-                conn, cid, campaign, status="in_progress", current_step=1
+                conn, cid, campaign, status="in_progress", current_step=1, user_id=1,
             )
             contacts.append(cid)
 
@@ -191,9 +191,9 @@ class TestGetDailyQueue:
         )
 
         for cid in [c1, c2]:
-            enroll_contact(conn, cid, campaign, next_action_date=_today())
+            enroll_contact(conn, cid, campaign, next_action_date=_today(), user_id=1)
             update_contact_campaign_status(
-                conn, cid, campaign, status="in_progress", current_step=1
+                conn, cid, campaign, status="in_progress", current_step=1, user_id=1,
             )
 
         queue = get_daily_queue(conn, campaign, target_date=_today())
@@ -209,9 +209,9 @@ class TestGetDailyQueue:
         c_past = insert_contact(
             conn, comp, first_name="Past", last_name="Contact", priority_rank=1
         )
-        enroll_contact(conn, c_past, campaign, next_action_date=_yesterday())
+        enroll_contact(conn, c_past, campaign, next_action_date=_yesterday(), user_id=1)
         update_contact_campaign_status(
-            conn, c_past, campaign, status="in_progress", current_step=1
+            conn, c_past, campaign, status="in_progress", current_step=1, user_id=1,
         )
 
         comp2 = insert_company(conn, "Future Corp", aum_millions=600)
@@ -219,9 +219,9 @@ class TestGetDailyQueue:
             conn, comp2, first_name="Future", last_name="Contact",
             email="future@example.com",
         )
-        enroll_contact(conn, c_future, campaign, next_action_date=_tomorrow())
+        enroll_contact(conn, c_future, campaign, next_action_date=_tomorrow(), user_id=1)
         update_contact_campaign_status(
-            conn, c_future, campaign, status="in_progress", current_step=1
+            conn, c_future, campaign, status="in_progress", current_step=1, user_id=1,
         )
 
         queue = get_daily_queue(conn, campaign, target_date=_today())
@@ -238,9 +238,9 @@ class TestGetDailyQueue:
             conn, comp, first_name="Unverified", last_name="Email",
             email="bad@example.com", email_status="unverified",
         )
-        enroll_contact(conn, c_unverified, campaign, next_action_date=_today())
+        enroll_contact(conn, c_unverified, campaign, next_action_date=_today(), user_id=1)
         update_contact_campaign_status(
-            conn, c_unverified, campaign, status="in_progress", current_step=3  # email step
+            conn, c_unverified, campaign, status="in_progress", current_step=3, user_id=1,  # email step
         )
 
         queue = get_daily_queue(conn, campaign, target_date=_today())
@@ -254,9 +254,9 @@ class TestGetDailyQueue:
             conn, comp, first_name="Valid", last_name="Email",
             email="good@example.com", email_status="valid",
         )
-        enroll_contact(conn, c_valid, campaign, next_action_date=_today())
+        enroll_contact(conn, c_valid, campaign, next_action_date=_today(), user_id=1)
         update_contact_campaign_status(
-            conn, c_valid, campaign, status="in_progress", current_step=3
+            conn, c_valid, campaign, status="in_progress", current_step=3, user_id=1,
         )
 
         queue = get_daily_queue(conn, campaign, target_date=_today())
@@ -271,9 +271,9 @@ class TestGetDailyQueue:
             conn, comp, first_name="NoLI", last_name="Contact",
             linkedin_url=None,
         )
-        enroll_contact(conn, c_no_li, campaign, next_action_date=_today())
+        enroll_contact(conn, c_no_li, campaign, next_action_date=_today(), user_id=1)
         update_contact_campaign_status(
-            conn, c_no_li, campaign, status="in_progress", current_step=1  # linkedin_connect
+            conn, c_no_li, campaign, status="in_progress", current_step=1, user_id=1,  # linkedin_connect
         )
 
         queue = get_daily_queue(conn, campaign, target_date=_today())
@@ -287,9 +287,9 @@ class TestGetDailyQueue:
             conn, comp, first_name="EmptyLI", last_name="Contact",
             linkedin_url="",
         )
-        enroll_contact(conn, c_empty_li, campaign, next_action_date=_today())
+        enroll_contact(conn, c_empty_li, campaign, next_action_date=_today(), user_id=1)
         update_contact_campaign_status(
-            conn, c_empty_li, campaign, status="in_progress", current_step=2  # linkedin_message
+            conn, c_empty_li, campaign, status="in_progress", current_step=2, user_id=1,  # linkedin_message
         )
 
         queue = get_daily_queue(conn, campaign, target_date=_today())
@@ -303,9 +303,9 @@ class TestGetDailyQueue:
             conn, comp, first_name="Unsub", last_name="Contact",
             unsubscribed=True,
         )
-        enroll_contact(conn, c_unsub, campaign, next_action_date=_today())
+        enroll_contact(conn, c_unsub, campaign, next_action_date=_today(), user_id=1)
         update_contact_campaign_status(
-            conn, c_unsub, campaign, status="in_progress", current_step=1
+            conn, c_unsub, campaign, status="in_progress", current_step=1, user_id=1,
         )
 
         queue = get_daily_queue(conn, campaign, target_date=_today())
@@ -320,9 +320,9 @@ class TestGetDailyQueue:
                 email=f"c{i}@example.com",
                 linkedin_url=f"https://linkedin.com/in/c{i}",
             )
-            enroll_contact(conn, cid, campaign, next_action_date=_today())
+            enroll_contact(conn, cid, campaign, next_action_date=_today(), user_id=1)
             update_contact_campaign_status(
-                conn, cid, campaign, status="in_progress", current_step=1
+                conn, cid, campaign, status="in_progress", current_step=1, user_id=1,
             )
 
         queue = get_daily_queue(conn, campaign, target_date=_today(), limit=3)
@@ -341,9 +341,9 @@ class TestGetDailyQueue:
         """Contacts with a terminal status ('no_response') are not in the queue."""
         comp = insert_company(conn, "Done Corp", aum_millions=500)
         cid = insert_contact(conn, comp, first_name="Done", last_name="Contact")
-        enroll_contact(conn, cid, campaign, next_action_date=_today())
+        enroll_contact(conn, cid, campaign, next_action_date=_today(), user_id=1)
         update_contact_campaign_status(
-            conn, cid, campaign, status="no_response", current_step=5
+            conn, cid, campaign, status="no_response", current_step=5, user_id=1,
         )
 
         queue = get_daily_queue(conn, campaign, target_date=_today())
@@ -353,9 +353,9 @@ class TestGetDailyQueue:
         """Contacts with status 'queued' are included in the queue."""
         comp = insert_company(conn, "Queued Corp", aum_millions=500)
         cid = insert_contact(conn, comp, first_name="Queued", last_name="Contact")
-        enroll_contact(conn, cid, campaign, next_action_date=_today())
+        enroll_contact(conn, cid, campaign, next_action_date=_today(), user_id=1)
         update_contact_campaign_status(
-            conn, cid, campaign, status="queued", current_step=1
+            conn, cid, campaign, status="queued", current_step=1, user_id=1,
         )
 
         queue = get_daily_queue(conn, campaign, target_date=_today())
@@ -365,9 +365,9 @@ class TestGetDailyQueue:
         """When target_date is None, defaults to today."""
         comp = insert_company(conn, "Today Corp", aum_millions=500)
         cid = insert_contact(conn, comp, first_name="Today", last_name="Contact")
-        enroll_contact(conn, cid, campaign, next_action_date=_today())
+        enroll_contact(conn, cid, campaign, next_action_date=_today(), user_id=1)
         update_contact_campaign_status(
-            conn, cid, campaign, status="in_progress", current_step=1
+            conn, cid, campaign, status="in_progress", current_step=1, user_id=1,
         )
 
         queue = get_daily_queue(conn, campaign)  # no target_date
@@ -377,9 +377,9 @@ class TestGetDailyQueue:
         """Each queue item includes the total steps for that contact."""
         comp = insert_company(conn, "Steps Corp", aum_millions=500)
         cid = insert_contact(conn, comp, first_name="Steps", last_name="Contact")
-        enroll_contact(conn, cid, campaign, next_action_date=_today())
+        enroll_contact(conn, cid, campaign, next_action_date=_today(), user_id=1)
         update_contact_campaign_status(
-            conn, cid, campaign, status="in_progress", current_step=1
+            conn, cid, campaign, status="in_progress", current_step=1, user_id=1,
         )
 
         queue = get_daily_queue(conn, campaign, target_date=_today())
@@ -393,9 +393,9 @@ class TestGetDailyQueue:
         cid = insert_contact(
             conn, comp, first_name="GDPR", last_name="Contact", is_gdpr=True,
         )
-        enroll_contact(conn, cid, campaign, next_action_date=_today())
+        enroll_contact(conn, cid, campaign, next_action_date=_today(), user_id=1)
         update_contact_campaign_status(
-            conn, cid, campaign, status="in_progress", current_step=1
+            conn, cid, campaign, status="in_progress", current_step=1, user_id=1,
         )
 
         queue = get_daily_queue(conn, campaign, target_date=_today())
@@ -425,9 +425,9 @@ class TestGetDailyQueue:
         )
 
         for cid in [ca1, ca2, cb1]:
-            enroll_contact(conn, cid, campaign, next_action_date=_today())
+            enroll_contact(conn, cid, campaign, next_action_date=_today(), user_id=1)
             update_contact_campaign_status(
-                conn, cid, campaign, status="in_progress", current_step=1
+                conn, cid, campaign, status="in_progress", current_step=1, user_id=1,
             )
 
         queue = get_daily_queue(conn, campaign, target_date=_today())
@@ -441,9 +441,9 @@ class TestGetDailyQueue:
         """Queue items include the company's firm_type field."""
         comp = insert_company(conn, "HF Corp", aum_millions=500, firm_type="Hedge Fund")
         cid = insert_contact(conn, comp, first_name="HF", last_name="Contact")
-        enroll_contact(conn, cid, campaign, next_action_date=_today())
+        enroll_contact(conn, cid, campaign, next_action_date=_today(), user_id=1)
         update_contact_campaign_status(
-            conn, cid, campaign, status="in_progress", current_step=1
+            conn, cid, campaign, status="in_progress", current_step=1, user_id=1,
         )
 
         queue = get_daily_queue(conn, campaign, target_date=_today())
@@ -455,9 +455,9 @@ class TestGetDailyQueue:
         comp = insert_company(conn, "Unknown Corp", aum_millions=200)
         cid = insert_contact(conn, comp, first_name="Unk", last_name="Contact",
                               email="unk@example.com")
-        enroll_contact(conn, cid, campaign, next_action_date=_today())
+        enroll_contact(conn, cid, campaign, next_action_date=_today(), user_id=1)
         update_contact_campaign_status(
-            conn, cid, campaign, status="in_progress", current_step=1
+            conn, cid, campaign, status="in_progress", current_step=1, user_id=1,
         )
 
         queue = get_daily_queue(conn, campaign, target_date=_today())
@@ -480,10 +480,10 @@ class TestGetDailyQueue:
         )
 
         for cid in [c_us, c_eu]:
-            enroll_contact(conn, cid, campaign, next_action_date=_today())
+            enroll_contact(conn, cid, campaign, next_action_date=_today(), user_id=1)
             # Step 4 is non_gdpr_only email step
             update_contact_campaign_status(
-                conn, cid, campaign, status="in_progress", current_step=4
+                conn, cid, campaign, status="in_progress", current_step=4, user_id=1,
             )
 
         queue = get_daily_queue(conn, campaign, target_date=_today())
@@ -503,9 +503,9 @@ class TestGetNextStepForContact:
         """Returns the step matching the contact's current_step."""
         comp = insert_company(conn, "Test Corp", aum_millions=500)
         cid = insert_contact(conn, comp, first_name="Test", last_name="Contact")
-        enroll_contact(conn, cid, campaign, next_action_date=_today())
+        enroll_contact(conn, cid, campaign, next_action_date=_today(), user_id=1)
         update_contact_campaign_status(
-            conn, cid, campaign, status="in_progress", current_step=2
+            conn, cid, campaign, status="in_progress", current_step=2, user_id=1,
         )
 
         step = get_next_step_for_contact(conn, cid, campaign)
@@ -517,9 +517,9 @@ class TestGetNextStepForContact:
         """Returns None when current_step is beyond all sequence steps."""
         comp = insert_company(conn, "Test Corp", aum_millions=500)
         cid = insert_contact(conn, comp, first_name="Test", last_name="Contact")
-        enroll_contact(conn, cid, campaign, next_action_date=_today())
+        enroll_contact(conn, cid, campaign, next_action_date=_today(), user_id=1)
         update_contact_campaign_status(
-            conn, cid, campaign, status="in_progress", current_step=99
+            conn, cid, campaign, status="in_progress", current_step=99, user_id=1,
         )
 
         step = get_next_step_for_contact(conn, cid, campaign)
@@ -529,10 +529,10 @@ class TestGetNextStepForContact:
         """GDPR contacts skip steps marked non_gdpr_only and find the next eligible step."""
         comp = insert_company(conn, "EU Corp", aum_millions=500, is_gdpr=True)
         cid = insert_contact(conn, comp, first_name="EU", last_name="Contact", is_gdpr=True)
-        enroll_contact(conn, cid, campaign, next_action_date=_today())
+        enroll_contact(conn, cid, campaign, next_action_date=_today(), user_id=1)
         # Step 4 is non_gdpr_only, so a GDPR contact at step 4 should not get it
         update_contact_campaign_status(
-            conn, cid, campaign, status="in_progress", current_step=4
+            conn, cid, campaign, status="in_progress", current_step=4, user_id=1,
         )
 
         step = get_next_step_for_contact(conn, cid, campaign)
@@ -543,9 +543,9 @@ class TestGetNextStepForContact:
         """Non-GDPR contacts can access non_gdpr_only steps normally."""
         comp = insert_company(conn, "US Corp", aum_millions=500)
         cid = insert_contact(conn, comp, first_name="US", last_name="Contact", is_gdpr=False)
-        enroll_contact(conn, cid, campaign, next_action_date=_today())
+        enroll_contact(conn, cid, campaign, next_action_date=_today(), user_id=1)
         update_contact_campaign_status(
-            conn, cid, campaign, status="in_progress", current_step=4
+            conn, cid, campaign, status="in_progress", current_step=4, user_id=1,
         )
 
         step = get_next_step_for_contact(conn, cid, campaign)
@@ -564,9 +564,9 @@ class TestGetNextStepForContact:
         """Returns step 1 when contact is at current_step=1."""
         comp = insert_company(conn, "Test Corp", aum_millions=500)
         cid = insert_contact(conn, comp, first_name="New", last_name="Contact")
-        enroll_contact(conn, cid, campaign, next_action_date=_today())
+        enroll_contact(conn, cid, campaign, next_action_date=_today(), user_id=1)
         update_contact_campaign_status(
-            conn, cid, campaign, status="queued", current_step=1
+            conn, cid, campaign, status="queued", current_step=1, user_id=1,
         )
 
         step = get_next_step_for_contact(conn, cid, campaign)
@@ -578,9 +578,9 @@ class TestGetNextStepForContact:
         """GDPR contact at step 3 gets step 3 (which is not GDPR-restricted)."""
         comp = insert_company(conn, "EU Corp", aum_millions=500, is_gdpr=True)
         cid = insert_contact(conn, comp, first_name="EU", last_name="Contact", is_gdpr=True)
-        enroll_contact(conn, cid, campaign, next_action_date=_today())
+        enroll_contact(conn, cid, campaign, next_action_date=_today(), user_id=1)
         update_contact_campaign_status(
-            conn, cid, campaign, status="in_progress", current_step=3
+            conn, cid, campaign, status="in_progress", current_step=3, user_id=1,
         )
 
         step = get_next_step_for_contact(conn, cid, campaign)
@@ -624,11 +624,11 @@ class TestCountStepsForContact:
         t2 = create_template(conn, "t2", "email", "body2", subject="s2", user_id=TEST_USER_ID)
         t3 = create_template(conn, "t3", "email", "body3", subject="s3", user_id=TEST_USER_ID)
 
-        add_sequence_step(conn, campaign_id, 1, "email", t1, delay_days=0)
+        add_sequence_step(conn, campaign_id, 1, "email", t1, delay_days=0, user_id=1)
         add_sequence_step(
-            conn, campaign_id, 2, "email", t2, delay_days=3, gdpr_only=True
+            conn, campaign_id, 2, "email", t2, delay_days=3, gdpr_only=True, user_id=1,
         )
-        add_sequence_step(conn, campaign_id, 3, "email", t3, delay_days=5)
+        add_sequence_step(conn, campaign_id, 3, "email", t3, delay_days=5, user_id=1)
 
         comp = insert_company(conn, "US Corp", aum_millions=500)
         c_us = insert_contact(conn, comp, first_name="US", last_name="Contact", is_gdpr=False)
@@ -660,8 +660,8 @@ class TestDeferContact:
         contact = insert_contact(conn, comp, first_name="Deferred", email="defer@test.com")
         campaign_id = create_campaign(conn, "defer_campaign", user_id=TEST_USER_ID)
         t1 = create_template(conn, "t1", "email", "body", user_id=TEST_USER_ID)
-        add_sequence_step(conn, campaign_id, 1, "email", t1)
-        enroll_contact(conn, contact, campaign_id, next_action_date=_today())
+        add_sequence_step(conn, campaign_id, 1, "email", t1, user_id=1)
+        enroll_contact(conn, contact, campaign_id, next_action_date=_today(), user_id=1)
 
         result = defer_contact(conn, contact, campaign_id, reason="Bad timing")
         assert result["success"] is True
@@ -699,8 +699,8 @@ class TestDeferContact:
         contact = insert_contact(conn, comp, email="event@test.com")
         campaign_id = create_campaign(conn, "event_campaign", user_id=TEST_USER_ID)
         t1 = create_template(conn, "t1", "email", "body", user_id=TEST_USER_ID)
-        add_sequence_step(conn, campaign_id, 1, "email", t1)
-        enroll_contact(conn, contact, campaign_id, next_action_date=_today())
+        add_sequence_step(conn, campaign_id, 1, "email", t1, user_id=1)
+        enroll_contact(conn, contact, campaign_id, next_action_date=_today(), user_id=1)
 
         defer_contact(conn, contact, campaign_id, reason="Need more research")
 
@@ -724,9 +724,9 @@ class TestDeferContact:
         c2 = insert_contact(conn, comp, first_name="C2", email="c2@test.com", priority_rank=2)
         campaign_id = create_campaign(conn, "stats_campaign", user_id=TEST_USER_ID)
         t1 = create_template(conn, "t1", "email", "body", user_id=TEST_USER_ID)
-        add_sequence_step(conn, campaign_id, 1, "email", t1)
-        enroll_contact(conn, c1, campaign_id, next_action_date=_today())
-        enroll_contact(conn, c2, campaign_id, next_action_date=_today())
+        add_sequence_step(conn, campaign_id, 1, "email", t1, user_id=1)
+        enroll_contact(conn, c1, campaign_id, next_action_date=_today(), user_id=1)
+        enroll_contact(conn, c2, campaign_id, next_action_date=_today(), user_id=1)
 
         defer_contact(conn, c1, campaign_id, reason="Bad timing")
         defer_contact(conn, c2, campaign_id, reason="Bad timing")

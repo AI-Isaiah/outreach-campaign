@@ -21,9 +21,9 @@ def _setup(conn):
     )
     company_id = cur.fetchone()["id"]
     cur.execute(
-        """INSERT INTO contacts (company_id, first_name, full_name, email, email_normalized, email_status)
-           VALUES (%s, 'Test', 'Test User', 'test@test.com', 'test@test.com', 'valid') RETURNING id""",
-        (company_id,),
+        """INSERT INTO contacts (company_id, first_name, full_name, email, email_normalized, email_status, user_id)
+           VALUES (%s, 'Test', 'Test User', 'test@test.com', 'test@test.com', 'valid', %s) RETURNING id""",
+        (company_id, TEST_USER_ID),
     )
     contact_id = cur.fetchone()["id"]
     campaign_id = create_campaign(conn, "selector_test", user_id=TEST_USER_ID)
@@ -76,9 +76,9 @@ def test_exploit_picks_best_performer(tmp_db):
     # t1: 3 positive, 1 negative
     for i, outcome in enumerate(["positive", "positive", "positive", "negative"]):
         cur.execute(
-            """INSERT INTO contacts (company_id, first_name, full_name, email, email_normalized, email_status)
-               VALUES (1, 'C', 'Contact', %s, %s, 'valid') RETURNING id""",
-            (f"c{i}_{t1}@test.com", f"c{i}_{t1}@test.com"),
+            """INSERT INTO contacts (company_id, first_name, full_name, email, email_normalized, email_status, user_id)
+               VALUES (1, 'C', 'Contact', %s, %s, 'valid', %s) RETURNING id""",
+            (f"c{i}_{t1}@test.com", f"c{i}_{t1}@test.com", TEST_USER_ID),
         )
         cid = cur.fetchone()["id"]
         cur.execute(
@@ -90,9 +90,9 @@ def test_exploit_picks_best_performer(tmp_db):
     # t2: 1 positive, 3 negative
     for i, outcome in enumerate(["positive", "negative", "negative", "negative"]):
         cur.execute(
-            """INSERT INTO contacts (company_id, first_name, full_name, email, email_normalized, email_status)
-               VALUES (1, 'C', 'Contact', %s, %s, 'valid') RETURNING id""",
-            (f"c{i}_{t2}@test.com", f"c{i}_{t2}@test.com"),
+            """INSERT INTO contacts (company_id, first_name, full_name, email, email_normalized, email_status, user_id)
+               VALUES (1, 'C', 'Contact', %s, %s, 'valid', %s) RETURNING id""",
+            (f"c{i}_{t2}@test.com", f"c{i}_{t2}@test.com", TEST_USER_ID),
         )
         cid = cur.fetchone()["id"]
         cur.execute(

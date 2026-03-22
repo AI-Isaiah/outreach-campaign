@@ -21,9 +21,9 @@ def _insert_contact_with_email(conn, email, status="unverified"):
     )
     cid = cursor.fetchone()["id"]
     cursor.execute(
-        """INSERT INTO contacts (company_id, full_name, email, email_normalized, email_status, priority_rank, source, is_gdpr)
-           VALUES (%s, 'Test', %s, %s, %s, 1, 'test', false)""",
-        (cid, email, email.lower() if email else None, status),
+        """INSERT INTO contacts (company_id, full_name, email, email_normalized, email_status, priority_rank, source, is_gdpr, user_id)
+           VALUES (%s, 'Test', %s, %s, %s, 1, 'test', false, %s)""",
+        (cid, email, email.lower() if email else None, status, TEST_USER_ID),
     )
     conn.commit()
 

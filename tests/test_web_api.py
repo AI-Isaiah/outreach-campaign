@@ -58,9 +58,9 @@ def _seed_contact(conn, company_id, first="John", last="Doe", email="john@test.c
     cur = conn.cursor()
     cur.execute(
         """INSERT INTO contacts (company_id, first_name, last_name, full_name, email,
-                                 email_normalized, email_status)
-           VALUES (%s, %s, %s, %s, %s, %s, 'valid') RETURNING id""",
-        (company_id, first, last, f"{first} {last}", email, email.lower()),
+                                 email_normalized, email_status, user_id)
+           VALUES (%s, %s, %s, %s, %s, %s, 'valid', %s) RETURNING id""",
+        (company_id, first, last, f"{first} {last}", email, email.lower(), TEST_USER_ID),
     )
     conn.commit()
     return cur.fetchone()["id"]
@@ -249,7 +249,7 @@ def test_crm_timeline_with_events(client, db_conn):
     campaign_id = _seed_campaign(db_conn)
 
     from src.models.events import log_event
-    log_event(db_conn, contact_id, "email_sent", campaign_id=campaign_id)
+    log_event(db_conn, contact_id, "email_sent", campaign_id=campaign_id, user_id=1)
 
     resp = client.get(f"/api/crm/contacts/{contact_id}/timeline")
     data = resp.json()
@@ -424,7 +424,7 @@ def test_defer_contact(client, db_conn):
 
     from src.models.campaigns import enroll_contact
     from datetime import date
-    enroll_contact(db_conn, contact_id, campaign_id, next_action_date=date.today().isoformat())
+    enroll_contact(db_conn, contact_id, campaign_id, next_action_date=date.today().isoformat(), user_id=1)
 
     resp = client.post(f"/api/queue/{contact_id}/defer", json={
         "campaign": "defer_test",
@@ -466,7 +466,7 @@ def test_defer_stats_after_defer(client, db_conn):
 
     from src.models.campaigns import enroll_contact
     from datetime import date
-    enroll_contact(db_conn, contact_id, campaign_id, next_action_date=date.today().isoformat())
+    enroll_contact(db_conn, contact_id, campaign_id, next_action_date=date.today().isoformat(), user_id=1)
 
     # Defer the contact
     client.post(f"/api/queue/{contact_id}/defer", json={

@@ -68,8 +68,8 @@ def insert_contact(
            (company_id, first_name, last_name, full_name,
             email, email_normalized, email_status,
             linkedin_url, linkedin_url_normalized,
-            priority_rank, is_gdpr, unsubscribed, title, source)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+            priority_rank, is_gdpr, unsubscribed, title, source, user_id)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
         (
             company_id,
             first_name,
@@ -85,6 +85,7 @@ def insert_contact(
             unsubscribed,
             title,
             source,
+            TEST_USER_ID,
         ),
     )
     contact_id = cursor.fetchone()["id"]

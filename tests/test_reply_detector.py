@@ -26,11 +26,11 @@ def _setup_enrolled_contact(conn):
 
     cur.execute(
         """INSERT INTO contacts (company_id, first_name, last_name, full_name,
-                                 email, email_normalized, email_status)
+                                 email, email_normalized, email_status, user_id)
            VALUES (%s, 'Jane', 'Doe', 'Jane Doe', 'jane@testfund.com',
-                   'jane@testfund.com', 'valid')
+                   'jane@testfund.com', 'valid', %s)
            RETURNING id""",
-        (company_id,),
+        (company_id, TEST_USER_ID),
     )
     contact_id = cur.fetchone()["id"]
 
@@ -38,7 +38,7 @@ def _setup_enrolled_contact(conn):
 
     from src.models.campaigns import enroll_contact
 
-    enroll_contact(conn, contact_id, campaign_id)
+    enroll_contact(conn, contact_id, campaign_id, user_id=1)
 
     # Set status to in_progress for scanning
     cur.execute(
