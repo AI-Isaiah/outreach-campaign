@@ -108,7 +108,7 @@ def trigger_reply_scan(
 ):
     """Scan Gmail inbox for replies from enrolled contacts."""
     try:
-        result = scan_gmail_for_replies(conn)
+        result = scan_gmail_for_replies(conn, user_id=user["id"])
         return {"status": "ok", **result}
     except RuntimeError as e:
         raise HTTPException(400, str(e))
@@ -126,7 +126,7 @@ def trigger_linkedin_scan(
     their campaign sequence from linkedin_connect to the next step.
     """
     try:
-        result = scan_linkedin_acceptances(conn)
+        result = scan_linkedin_acceptances(conn, user_id=user["id"])
         return {"status": "ok", **result}
     except RuntimeError as e:
         raise HTTPException(400, str(e))

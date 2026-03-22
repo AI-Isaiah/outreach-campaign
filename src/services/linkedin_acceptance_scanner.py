@@ -109,7 +109,7 @@ def _get_email_body_text(payload: dict) -> str:
     return body_text
 
 
-def _find_contact_by_profile_url(conn, profile_url: str) -> Optional[dict]:
+def _find_contact_by_profile_url(conn, profile_url: str, *, user_id: int) -> Optional[dict]:
     """Find a contact by normalized LinkedIn URL."""
     normalized = _normalize_linkedin_url(profile_url)
     if not normalized:
@@ -117,13 +117,13 @@ def _find_contact_by_profile_url(conn, profile_url: str) -> Optional[dict]:
 
     with get_cursor(conn) as cur:
         cur.execute(
-            "SELECT id, first_name, last_name FROM contacts WHERE linkedin_url_normalized = %s",
-            (normalized,),
+            "SELECT id, first_name, last_name FROM contacts WHERE linkedin_url_normalized = %s AND user_id = %s",
+            (normalized, user_id),
         )
         return cur.fetchone()
 
 
-def _find_contact_by_name(conn, full_name: str) -> Optional[dict]:
+def _find_contact_by_name(conn, full_name: str, *, user_id: int) -> Optional[dict]:
     """Find a contact by name match.
 
     Uses name_normalized for matching. Falls back to first_name + last_name
@@ -136,8 +136,8 @@ def _find_contact_by_name(conn, full_name: str) -> Optional[dict]:
     with get_cursor(conn) as cur:
         # Try exact normalized match first
         cur.execute(
-            "SELECT id, first_name, last_name FROM contacts WHERE name_normalized = %s",
-            (normalized,),
+            "SELECT id, first_name, last_name FROM contacts WHERE name_normalized = %s AND user_id = %s",
+            (normalized, user_id),
         )
         row = cur.fetchone()
         if row:
@@ -150,8 +150,8 @@ def _find_contact_by_name(conn, full_name: str) -> Optional[dict]:
             last = parts[-1]
             cur.execute(
                 """SELECT id, first_name, last_name FROM contacts
-                   WHERE LOWER(first_name) = %s AND LOWER(last_name) = %s""",
-                (first, last),
+                   WHERE LOWER(first_name) = %s AND LOWER(last_name) = %s AND user_id = %s""",
+                (first, last, user_id),
             )
             row = cur.fetchone()
             if row:
@@ -281,12 +281,12 @@ def scan_linkedin_acceptances(
             match_method = None
 
             if profile_url:
-                contact = _find_contact_by_profile_url(conn, profile_url)
+                contact = _find_contact_by_profile_url(conn, profile_url, user_id=user_id)
                 if contact:
                     match_method = "linkedin_url"
 
             if contact is None:
-                contact = _find_contact_by_name(conn, accepted_name)
+                contact = _find_contact_by_name(conn, accepted_name, user_id=user_id)
                 if contact:
                     match_method = "name"
 

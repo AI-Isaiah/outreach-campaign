@@ -22,12 +22,13 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 CLASSIFY_MODEL = "claude-haiku-4-5-20251001"
 
 
-def scan_gmail_for_replies(conn, drafter: GmailDrafter | None = None) -> dict:
+def scan_gmail_for_replies(conn, drafter: GmailDrafter | None = None, *, user_id: int) -> dict:
     """Scan Gmail for replies from enrolled contacts.
 
     Args:
         conn: PostgreSQL connection
         drafter: optional GmailDrafter instance (created if not provided)
+        user_id: owner user id — only scan contacts belonging to this user
 
     Returns:
         dict with keys: scanned, new_replies, errors
@@ -39,7 +40,9 @@ def scan_gmail_for_replies(conn, drafter: GmailDrafter | None = None) -> dict:
                FROM contact_campaign_status ccs
                JOIN contacts c ON c.id = ccs.contact_id
                WHERE c.email IS NOT NULL
-                 AND ccs.status IN ('in_progress', 'queued')"""
+                 AND ccs.status IN ('in_progress', 'queued')
+                 AND c.user_id = %s""",
+            (user_id,),
         )
         contacts = cur.fetchall()
 

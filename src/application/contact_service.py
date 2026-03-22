@@ -48,8 +48,8 @@ def transition_contact_status(
 
     with get_cursor(conn) as cur:
         cur.execute(
-            "SELECT id, full_name, email FROM contacts WHERE id = %s",
-            (contact_id,),
+            "SELECT id, full_name, email FROM contacts WHERE id = %s AND user_id = %s",
+            (contact_id, user_id),
         )
         contact = cur.fetchone()
         if not contact:

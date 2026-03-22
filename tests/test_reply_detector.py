@@ -166,7 +166,7 @@ def test_scan_gmail_no_contacts(tmp_db):
     conn.commit()
 
     mock_drafter = MagicMock()
-    result = scan_gmail_for_replies(conn, drafter=mock_drafter)
+    result = scan_gmail_for_replies(conn, drafter=mock_drafter, user_id=1)
     assert result["scanned"] == 0
     assert result["new_replies"] == 0
     conn.close()
@@ -205,7 +205,7 @@ def test_scan_gmail_with_replies(mock_classify, tmp_db):
     mock_drafter = MagicMock()
     mock_drafter._get_service.return_value = mock_service
 
-    result = scan_gmail_for_replies(conn, drafter=mock_drafter)
+    result = scan_gmail_for_replies(conn, drafter=mock_drafter, user_id=1)
     assert result["scanned"] == 1
     assert result["new_replies"] == 1
     assert result["errors"] == 0
