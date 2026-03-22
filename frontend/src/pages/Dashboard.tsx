@@ -1,8 +1,9 @@
 import { useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { Inbox, ListTodo, Users, FileText } from "lucide-react";
+import { Inbox, ListTodo, Users, FileText, AlertTriangle } from "lucide-react";
 import { api } from "../api/client";
+import { getEmailConfig } from "../api/settings";
 import type { StatsResponse, Campaign, PendingReply, ReplyScanResponse, LinkedInScanResponse } from "../types";
 import MetricCard from "../components/MetricCard";
 import PendingReplyCard from "../components/PendingReplyCard";
@@ -38,11 +39,59 @@ export default function Dashboard() {
     },
   });
 
+  const emailConfig = useQuery({
+    queryKey: ["email-config"],
+    queryFn: getEmailConfig,
+  });
+
   // F006: Reset scan mutations on unmount to prevent stale data on re-navigation
   useEffect(() => () => { scanReplies.reset(); scanLinkedIn.reset(); }, []);
 
+  const showDisconnectedBanner =
+    emailConfig.data &&
+    !emailConfig.data.gmail_connected &&
+    emailConfig.data.gmail_email != null;
+
+  const showNoSenderBanner =
+    emailConfig.data &&
+    !emailConfig.data.gmail_connected &&
+    !emailConfig.data.smtp_configured;
+
   return (
     <div className="space-y-8">
+      {/* Gmail disconnected banner */}
+      {showDisconnectedBanner && (
+        <div
+          className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-3"
+          role="alert"
+        >
+          <AlertTriangle size={18} className="text-red-600 flex-shrink-0" />
+          <p className="text-sm text-red-800 flex-1">
+            Gmail disconnected — reconnect in{" "}
+            <Link to="/settings" className="font-medium underline hover:text-red-900">
+              Settings
+            </Link>{" "}
+            to resume sending.
+          </p>
+        </div>
+      )}
+
+      {/* No sender configured banner */}
+      {!showDisconnectedBanner && showNoSenderBanner && (
+        <div
+          className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-center gap-3"
+          role="alert"
+        >
+          <AlertTriangle size={18} className="text-amber-600 flex-shrink-0" />
+          <p className="text-sm text-amber-800 flex-1">
+            Set up email sending to start campaigns.{" "}
+            <Link to="/settings" className="font-medium underline hover:text-amber-900">
+              Go to Settings
+            </Link>
+          </p>
+        </div>
+      )}
+
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
         <p className="text-sm text-gray-500 mt-1">Overview of your outreach campaigns</p>

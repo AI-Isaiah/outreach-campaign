@@ -11,3 +11,5 @@ export { contactsApi } from "./contacts";
 export { dealsApi } from "./deals";
 export { newslettersApi } from "./newsletters";
 export { researchApi } from "./research";
+export { getEmailConfig, saveSmtpConfig, saveComplianceConfig, disconnectGmail } from "./settings";
+export type { EmailConfig } from "./settings";
