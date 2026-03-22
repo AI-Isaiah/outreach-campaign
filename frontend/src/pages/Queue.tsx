@@ -149,7 +149,7 @@ export default function Queue() {
                 key={`${item.contact_id}-email`}
                 item={item}
                 campaign={(item as any).campaign_name || ""}
-                onAction={() => queryClient.invalidateQueries({ queryKey: ["queue-all"] })}
+                onDeferred={() => queryClient.invalidateQueries({ queryKey: ["queue-all"] })}
               />
             ))}
           </div>
@@ -168,7 +168,7 @@ export default function Queue() {
                 key={`${item.contact_id}-li`}
                 item={item}
                 campaign={(item as any).campaign_name || ""}
-                onAction={() => queryClient.invalidateQueries({ queryKey: ["queue-all"] })}
+                onDeferred={() => queryClient.invalidateQueries({ queryKey: ["queue-all"] })}
               />
             ))}
           </div>

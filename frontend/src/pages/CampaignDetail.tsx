@@ -235,7 +235,7 @@ function SequenceTab({ campaignName }: { campaignName: string }) {
     queryFn: () => api.getCampaignMetrics(campaignName),
   });
 
-  const steps = data?.campaign?.steps || [];
+  const steps = (data?.campaign as any)?.steps || [];
 
   if (steps.length === 0) {
     return (

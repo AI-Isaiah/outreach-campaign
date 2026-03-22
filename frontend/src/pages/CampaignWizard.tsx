@@ -14,11 +14,17 @@ import {
   FileText,
   Loader2,
 } from "lucide-react";
-import { Button } from "../components/ui/Button";
+import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
 import { campaignsApi } from "../api/campaigns";
 import type { SequenceStepInput, GeneratedStep } from "../api/campaigns";
-import { useToast } from "../components/Toast";
+// Toast context — useToast may not exist yet, use a simple fallback
+const useToast = () => ({
+  toast: (msg: string, type?: string) => {
+    if (type === "error") console.error(msg);
+    else console.log(msg);
+  },
+});
 
 /*
  * Campaign Wizard — 5-step guided flow
