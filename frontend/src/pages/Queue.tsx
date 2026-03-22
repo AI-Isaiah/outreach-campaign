@@ -37,18 +37,17 @@ export default function Queue() {
     items = items.filter((i) => i.channel.startsWith("linkedin"));
   }
   if (campaignFilter) {
-    items = items.filter((i) => (i as any).campaign_name === campaignFilter);
+    items = items.filter((i) => i.campaign_name === campaignFilter);
   }
 
   const emailItems = items.filter((i) => i.channel === "email");
   const linkedinItems = items.filter((i) => i.channel.startsWith("linkedin"));
 
   // Get unique campaign names from items
-  const campaignNames = [...new Set(allItems.map((i) => (i as any).campaign_name).filter(Boolean))];
+  const campaignNames = [...new Set(allItems.map((i) => i.campaign_name).filter((n): n is string => !!n))];
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Today's Queue</h1>
@@ -71,9 +70,7 @@ export default function Queue() {
         )}
       </div>
 
-      {/* Filters */}
       <div className="flex gap-2 flex-wrap">
-        {/* Channel filter */}
         {(["all", "email", "linkedin"] as ChannelFilter[]).map((f) => (
           <button
             key={f}
@@ -88,7 +85,6 @@ export default function Queue() {
           </button>
         ))}
 
-        {/* Campaign filter */}
         {campaignNames.length > 1 && (
           <>
             <div className="w-px bg-gray-200 mx-1" />
@@ -148,7 +144,7 @@ export default function Queue() {
               <QueueEmailCard
                 key={`${item.contact_id}-email`}
                 item={item}
-                campaign={(item as any).campaign_name || ""}
+                campaign={item.campaign_name || ""}
                 onDeferred={() => queryClient.invalidateQueries({ queryKey: ["queue-all"] })}
               />
             ))}
@@ -167,7 +163,7 @@ export default function Queue() {
               <QueueLinkedInCard
                 key={`${item.contact_id}-li`}
                 item={item}
-                campaign={(item as any).campaign_name || ""}
+                campaign={item.campaign_name || ""}
                 onDeferred={() => queryClient.invalidateQueries({ queryKey: ["queue-all"] })}
               />
             ))}

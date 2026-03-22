@@ -152,9 +152,6 @@ def list_all_campaigns(
     """List all campaigns with embedded metrics (CTE for O(1) table scans)."""
     user_id = user["id"]
     status_filter = "AND c.status = %s" if status else ""
-    params: list = [user_id, user_id]
-    if status:
-        params.append(status)
 
     query = f"""
     WITH campaign_stats AS (
@@ -242,7 +239,7 @@ def get_campaign_contacts(
            ccs.current_step, ccs.status, ccs.next_action_date,
            ccs.assigned_variant,
            (SELECT COUNT(*) FROM sequence_steps ss
-            WHERE ss.campaign_id = ccs.campaign_id) AS total_steps
+            WHERE ss.campaign_id = %s) AS total_steps
     FROM contact_campaign_status ccs
     JOIN contacts c ON c.id = ccs.contact_id
     LEFT JOIN companies comp ON comp.id = c.company_id
@@ -251,7 +248,7 @@ def get_campaign_contacts(
     ORDER BY {order_by}
     """
 
-    params: list = [campaign_id, user_id]
+    params: list = [campaign_id, campaign_id, user_id]
     if status:
         params.append(status)
 

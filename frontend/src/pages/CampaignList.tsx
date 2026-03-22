@@ -60,15 +60,14 @@ export default function CampaignList() {
   );
 }
 
+const STATUS_DOT_COLORS: Record<string, string> = {
+  active: "bg-green-500",
+  draft: "bg-gray-300",
+  completed: "bg-blue-500",
+};
+
 function CampaignCard({ campaign: c }: { campaign: CampaignWithMetrics }) {
-  const statusDotColor =
-    c.status === "active"
-      ? "bg-green-500"
-      : c.status === "draft"
-      ? "bg-gray-300"
-      : c.status === "completed"
-      ? "bg-blue-500"
-      : "bg-yellow-500";
+  const statusDotColor = STATUS_DOT_COLORS[c.status] || "bg-yellow-500";
 
   const channels = c.description || "Email + LinkedIn";
   const createdDate = c.created_at?.split("T")[0] || "";
@@ -79,10 +78,8 @@ function CampaignCard({ campaign: c }: { campaign: CampaignWithMetrics }) {
       className="block border border-gray-200 rounded-lg p-5 hover:shadow-sm transition-shadow bg-white"
     >
       <div className="flex items-start gap-4">
-        {/* Status dot */}
         <div className={`w-2.5 h-2.5 rounded-full mt-1.5 shrink-0 ${statusDotColor}`} />
 
-        {/* Info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <h3 className="font-semibold text-gray-900 truncate">{c.name}</h3>
@@ -93,14 +90,12 @@ function CampaignCard({ campaign: c }: { campaign: CampaignWithMetrics }) {
           </p>
         </div>
 
-        {/* Metrics */}
         <div className="flex gap-6 shrink-0">
           <Metric label="Contacts" value={c.contacts_count ?? 0} />
           <Metric label="Reply Rate" value={`${c.reply_rate ?? 0}%`} />
           <Metric label="Calls" value={c.calls_booked ?? 0} />
         </div>
 
-        {/* Progress bar */}
         <div className="w-28 shrink-0 mt-1">
           <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
             <div

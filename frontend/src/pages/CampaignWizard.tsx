@@ -17,14 +17,8 @@ import {
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
 import { campaignsApi } from "../api/campaigns";
-import type { SequenceStepInput, GeneratedStep } from "../api/campaigns";
-// Toast context — useToast may not exist yet, use a simple fallback
-const useToast = () => ({
-  toast: (msg: string, type?: string) => {
-    if (type === "error") console.error(msg);
-    else console.log(msg);
-  },
-});
+import type { GeneratedStep } from "../api/campaigns";
+import { useToast } from "../components/Toast";
 
 /*
  * Campaign Wizard — 5-step guided flow
@@ -768,7 +762,7 @@ function StepReview({
 
 // ─── Helpers ───────────────────────────────────────────────────────
 
-function parseCsv(text: string): ParsedContact[] {
+export function parseCsv(text: string): ParsedContact[] {
   const lines = text.trim().split("\n");
   if (lines.length < 2) return [];
 
@@ -825,7 +819,7 @@ function parseCsv(text: string): ParsedContact[] {
   return contacts;
 }
 
-function generateLocalSequence(touchpoints: number, channels: string[]): GeneratedStep[] {
+export function generateLocalSequence(touchpoints: number, channels: string[]): GeneratedStep[] {
   const steps: GeneratedStep[] = [];
   const hasEmail = channels.includes("email");
   const hasLinkedin = channels.includes("linkedin");

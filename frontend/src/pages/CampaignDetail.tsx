@@ -51,14 +51,12 @@ export default function CampaignDetail() {
 
   return (
     <div className="space-y-6">
-      {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 text-sm text-gray-500">
         <Link to="/" className="hover:text-gray-900">Campaigns</Link>
         <ChevronRight size={14} />
         <span className="text-gray-900 font-medium">{campaign.name}</span>
       </nav>
 
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-3">
@@ -71,7 +69,6 @@ export default function CampaignDetail() {
         </div>
       </div>
 
-      {/* Metrics row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <MetricCard
           label="Contacted"
@@ -95,7 +92,6 @@ export default function CampaignDetail() {
         />
       </div>
 
-      {/* Tabs */}
       <div
         className="flex border-b border-gray-200 overflow-x-auto"
         role="tablist"
@@ -118,11 +114,10 @@ export default function CampaignDetail() {
         ))}
       </div>
 
-      {/* Tab content */}
       <div role="tabpanel" aria-label={`${activeTab} tab content`}>
         {activeTab === "contacts" && <ContactsTab campaignName={name!} campaignId={campaign.id} />}
         {activeTab === "messages" && <MessagesTab />}
-        {activeTab === "sequence" && <SequenceTab campaignName={name!} />}
+        {activeTab === "sequence" && <SequenceTab />}
         {activeTab === "analytics" && <AnalyticsTab metricsData={metricsData} />}
       </div>
     </div>
@@ -229,42 +224,10 @@ function MessagesTab() {
 
 // ─── Sequence Tab ──────────────────────────────────────────────────
 
-function SequenceTab({ campaignName }: { campaignName: string }) {
-  const { data } = useQuery<CampaignMetricsResponse>({
-    queryKey: ["campaign-metrics", campaignName],
-    queryFn: () => api.getCampaignMetrics(campaignName),
-  });
-
-  const steps = (data?.campaign as any)?.steps || [];
-
-  if (steps.length === 0) {
-    return (
-      <div className="text-center py-12 text-sm text-gray-500">
-        No sequence steps defined.
-      </div>
-    );
-  }
-
+function SequenceTab() {
   return (
-    <div className="space-y-2">
-      {steps.map((s: any, i: number) => (
-        <div
-          key={i}
-          className="flex items-center gap-4 p-4 border border-gray-200 rounded-lg"
-        >
-          <span className="text-xs text-gray-400 w-14">Day {s.delay_days}</span>
-          <span
-            className={`text-xs font-medium px-2 py-0.5 rounded ${
-              s.channel === "email"
-                ? "bg-blue-100 text-blue-700"
-                : "bg-indigo-100 text-indigo-700"
-            }`}
-          >
-            {s.channel.replace(/_/g, " ")}
-          </span>
-          <span className="text-sm text-gray-600 flex-1">Step {s.step_order}</span>
-        </div>
-      ))}
+    <div className="text-center py-12 text-sm text-gray-500">
+      No sequence steps defined.
     </div>
   );
 }
@@ -344,7 +307,7 @@ function AnalyticsTab({ metricsData }: { metricsData: CampaignMetricsResponse })
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {variants.map((v: any) => (
+              {variants.map((v) => (
                 <tr key={v.variant}>
                   <td className="px-5 py-3 font-medium">{v.variant}</td>
                   <td className="px-5 py-3 text-right">{v.total}</td>
