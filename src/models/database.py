@@ -73,6 +73,37 @@ def get_cursor(conn):
         cursor.close()
 
 
+OWNED_TABLES = frozenset({
+    "companies", "contacts", "campaigns", "templates", "tags",
+    "products", "newsletters", "research_jobs", "deep_research",
+    "deals", "events", "dedup_log", "engine_config",
+})
+
+
+def scoped_query(conn, user_id, sql, params=()):
+    """Execute a query with user_id appended to params. Returns all rows."""
+    with get_cursor(conn) as cur:
+        cur.execute(sql, (*params, user_id))
+        return cur.fetchall()
+
+
+def scoped_query_one(conn, user_id, sql, params=()):
+    """Execute a query with user_id appended to params. Returns one row or None."""
+    with get_cursor(conn) as cur:
+        cur.execute(sql, (*params, user_id))
+        return cur.fetchone()
+
+
+def verify_ownership(conn, table, record_id, user_id):
+    """Return True if record belongs to user, None otherwise.
+    Table name validated against allowlist to prevent SQL injection."""
+    if table not in OWNED_TABLES:
+        raise ValueError(f"Unknown owned table: {table}")
+    with get_cursor(conn) as cur:
+        cur.execute(f"SELECT id FROM {table} WHERE id = %s AND user_id = %s", (record_id, user_id))
+        return True if cur.fetchone() else None
+
+
 def run_migrations(conn) -> None:
     """Run pending SQL migrations from the pg/ directory.
 
