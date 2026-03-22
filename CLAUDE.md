@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Multi-channel outreach campaign manager for crypto fund allocators. Python CLI tool built with Typer that manages email and LinkedIn outreach sequences with GDPR/CAN-SPAM compliance, A/B testing, deduplication, and email verification. Uses PostgreSQL (Supabase) for storage.
+Multi-channel outreach campaign manager for crypto fund allocators. Multi-tenant Python web app (FastAPI + React) with CLI tool (Typer) that manages email and LinkedIn outreach sequences with GDPR/CAN-SPAM compliance, A/B testing, deduplication, and email verification. Uses PostgreSQL (Supabase) for storage. Supports multiple users with complete data isolation via per-row `user_id` scoping. Email sending via Gmail OAuth or per-user SMTP.
 
 ## Commands
 
@@ -56,23 +56,29 @@ CSV/email import → deduplication (3-pass: email, LinkedIn, fuzzy) → email ve
 - **`services/template_engine.py`** — Jinja2 rendering with compliance integration. Injects `deep_research` key into template context when available.
 - **`services/deep_research_service.py`** — Per-company deep research pipeline. Runs parallel Perplexity Sonar queries, synthesizes with Claude Sonnet into structured JSON (talking points, key people, crypto signals), enriches CRM contacts from output. Statuses: pending → researching → synthesizing → completed/failed/cancelled.
 - **`web/routes/deep_research.py`** — Deep research API: POST trigger, GET latest, POST cancel (prefix: `/research/deep`).
-- **`models/campaigns.py`** — All CRUD for companies, contacts, campaigns, templates, enrollment, events.
+- **`models/campaigns.py`** — All CRUD for companies, contacts, campaigns, templates, enrollment, events. All functions require `user_id` keyword argument for data isolation.
+- **`services/gmail_sender.py`** — Gmail API email sending via OAuth tokens. Token refresh handled by caller (`email_sender.py`).
+- **`services/token_encryption.py`** — Fernet encrypt/decrypt for OAuth tokens and SMTP passwords at rest. Requires `TOKEN_ENCRYPTION_KEY` env var.
+- **`web/routes/gmail_oauth.py`** — Gmail OAuth connect/callback/disconnect flow. CSRF protection via `oauth_states` table.
 
 ### Database
 
-PostgreSQL on Supabase via `psycopg2` with `RealDictCursor`. Key tables: `companies`, `contacts`, `campaigns`, `sequence_steps`, `templates`, `contact_campaign_status`, `events`, `dedup_log`, `deep_research`. Schema in `migrations/pg/001_initial_schema.sql`. Deep research schema in `migrations/pg/016_deep_research.sql`. Migrations run automatically on every CLI command. Connection URL configured via `SUPABASE_DB_URL` env var.
+PostgreSQL on Supabase via `psycopg2` with `RealDictCursor`. Key tables: `companies`, `contacts`, `campaigns`, `sequence_steps`, `templates`, `contact_campaign_status`, `events`, `dedup_log`, `deep_research`, `users`, `oauth_states`. Schema in `migrations/pg/001_initial_schema.sql`. Multi-tenancy schema in `migrations/pg/014_multi_tenancy.sql` and `migrations/pg/017_full_multi_tenancy.sql`. Deep research schema in `migrations/pg/016_deep_research.sql`. Migrations run automatically on every CLI command. Connection URL configured via `SUPABASE_DB_URL` env var.
 
 Normalized fields (`email_normalized`, `linkedin_url_normalized`, `name_normalized`) are used for dedup and lookups — always populate these alongside raw fields.
+
+**Multi-tenancy**: All root tables have `user_id NOT NULL` column. Tables with direct `user_id`: companies, contacts, campaigns, templates, tags, products, newsletters, research_jobs, deep_research, deals, events, dedup_log, engine_config. Child tables (sequence_steps, contact_campaign_status, entity_tags, etc.) inherit isolation via FK. Unique constraints are per-user (e.g., `UNIQUE(user_id, email_normalized)` on contacts). Registration is invite-only via `allowed_emails` table.
 
 ### Config
 
 - `config.yaml` — SMTP settings, calendly URL, physical address, GDPR country list (see `config.yaml.example`)
-- `.env` — SUPABASE_DB_URL, SMTP_PASSWORD, EMAIL_VERIFY_API_KEY, ANTHROPIC_API_KEY, PERPLEXITY_API_KEY (see `.env.example`)
-- CLI loads config in `src/cli.py` and injects SMTP password from env
+- `.env` — SUPABASE_DB_URL, SMTP_PASSWORD, EMAIL_VERIFY_API_KEY, ANTHROPIC_API_KEY, PERPLEXITY_API_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, TOKEN_ENCRYPTION_KEY (see `.env.example`)
+- CLI loads config in `src/cli.py` and injects SMTP password from env. CLI uses `CLI_USER_ID = 1` (founder's tool, single-user).
 
 ## Conventions
 
-- **Database access**: Use `psycopg2.extras.RealDictCursor` (rows are dicts). Use `%s` placeholders (not `?`). Call `run_migrations(conn)` before any DB operations. Use `cursor = conn.cursor(); cursor.execute(...)` pattern (not `conn.execute()`).
+- **Database access**: Use `psycopg2.extras.RealDictCursor` (rows are dicts). Use `%s` placeholders (not `?`). Call `run_migrations(conn)` before any DB operations. Use `cursor = conn.cursor(); cursor.execute(...)` pattern (not `conn.execute()`). Use `scoped_query()`/`scoped_query_one()`/`verify_ownership()` helpers from `models/database.py` for user-scoped queries.
+- **Multi-tenancy**: ALL model functions require `user_id` as keyword-only parameter. ALL database queries on user-owned tables MUST include `WHERE user_id = %s`. ALL `INSERT` statements on user-owned tables MUST include `user_id`. In routes, get user_id from `user["id"]` via `get_current_user()`. In CLI, use `CLI_USER_ID = 1`. In services, accept `user_id` parameter and pass through to model calls.
 - **CLI commands**: Hyphenated names (`import-csv`), Python functions underscored (`import_csv`). All defined in `src/cli.py`.
 - **GDPR handling**: Companies and contacts carry `is_gdpr` flag. Sequence steps have `gdpr_only`/`non_gdpr_only` flags to skip steps per jurisdiction.
 - **A/B testing**: Templates use `variant_group` and `variant_label`. Contacts assigned variant on enrollment via round-robin.
