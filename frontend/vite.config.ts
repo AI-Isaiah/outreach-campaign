@@ -14,4 +14,9 @@ export default defineConfig({
       ignored: ["**/tsconfig.tsbuildinfo", "**/node_modules/**"],
     },
   },
+  test: {
+    environment: "jsdom",
+    globals: true,
+    setupFiles: ["./src/test-setup.ts"],
+  },
 });

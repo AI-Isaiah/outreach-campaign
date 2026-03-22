@@ -11,14 +11,15 @@ import Register from "./pages/Register";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 
-// Eager-load the dashboard (most common landing page)
-import Dashboard from "./pages/Dashboard";
+// Eager-load the campaigns list (landing page)
+import CampaignList from "./pages/CampaignList";
 
 // Lazy-load all other pages for code splitting
+const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Queue = lazy(() => import("./pages/Queue"));
-const CampaignList = lazy(() => import("./pages/CampaignList"));
 const CampaignDetail = lazy(() => import("./pages/CampaignDetail"));
 const CampaignBuilder = lazy(() => import("./pages/CampaignBuilder"));
+const CampaignWizard = lazy(() => import("./pages/CampaignWizard"));
 const ContactList = lazy(() => import("./pages/ContactList"));
 const ContactDetail = lazy(() => import("./pages/ContactDetail"));
 const Templates = lazy(() => import("./pages/Templates"));
@@ -75,11 +76,13 @@ export default function App() {
                 </RequireAuth>
               }
             >
-              <Route path="/" element={<Page><Dashboard /></Page>} />
+              <Route path="/" element={<Page><CampaignList /></Page>} />
               <Route path="/queue" element={<Page><Queue /></Page>} />
-              <Route path="/campaigns" element={<Page><CampaignList /></Page>} />
+              <Route path="/campaigns" element={<Navigate to="/" replace />} />
               <Route path="/campaigns/new" element={<Page><CampaignBuilder /></Page>} />
+              <Route path="/campaigns/wizard" element={<Page><CampaignWizard /></Page>} />
               <Route path="/campaigns/:name" element={<Page><CampaignDetail /></Page>} />
+              <Route path="/dashboard" element={<Page><Dashboard /></Page>} />
               <Route path="/contacts" element={<Page><ContactList /></Page>} />
               <Route path="/contacts/:id" element={<Page><ContactDetail /></Page>} />
               <Route path="/templates" element={<Page><Templates /></Page>} />

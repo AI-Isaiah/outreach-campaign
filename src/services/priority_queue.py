@@ -3,7 +3,7 @@
 Determines which contacts should be acted upon each day.
 Core rules:
 - One contact per company at a time (lowest priority_rank)
-- Companies ordered by AUM descending
+- Contacts ordered by sequence step ascending, then by action date ascending
 - Only verified emails for email steps
 - Only contacts with LinkedIn URLs for LinkedIn steps
 - Respects GDPR step filtering
@@ -57,7 +57,8 @@ def get_daily_queue(
             comp.aum_millions,
             comp.firm_type,
             ccs.current_step,
-            ccs.status AS ccs_status
+            ccs.status AS ccs_status,
+            ccs.next_action_date
         FROM contact_campaign_status ccs
         JOIN contacts c ON c.id = ccs.contact_id
         JOIN companies comp ON comp.id = c.company_id
@@ -109,8 +110,8 @@ def get_daily_queue(
         AND (ss.non_gdpr_only = false OR ac.contact_is_gdpr = false)
         AND (ss.gdpr_only = false OR ac.contact_is_gdpr = true)
     ORDER BY
-        CASE WHEN ac.aum_millions IS NULL THEN 1 ELSE 0 END,
-        ac.aum_millions DESC
+        ac.current_step ASC,
+        ac.next_action_date ASC
     LIMIT %s
     """
 

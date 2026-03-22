@@ -1,228 +1,177 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle } from "lucide-react";
+import { CheckCircle, Inbox } from "lucide-react";
+import { queueApi } from "../api/queue";
 import { api } from "../api/client";
-import type { QueueItem, QueueResponse, Campaign } from "../types";
+import type { QueueItem, QueueResponse } from "../types";
 import QueueEmailCard from "../components/QueueEmailCard";
 import QueueLinkedInCard from "../components/QueueLinkedInCard";
 import { SkeletonCard } from "../components/Skeleton";
-import EmptyState from "../components/EmptyState";
 import ErrorCard from "../components/ui/ErrorCard";
 import Button from "../components/ui/Button";
-import Select from "../components/ui/Select";
-import { DEFAULT_CAMPAIGN } from "../constants";
 
-const AUM_RANGES: { label: string; min?: number; max?: number }[] = [
-  { label: "All AUM" },
-  { label: "$0-100M", min: 0, max: 100 },
-  { label: "$100M-500M", min: 100, max: 500 },
-  { label: "$500M-1B", min: 500, max: 1000 },
-  { label: "$1B+", min: 1000 },
-];
+type ChannelFilter = "all" | "email" | "linkedin";
 
 export default function Queue() {
-  const [campaign, setCampaign] = useState(DEFAULT_CAMPAIGN);
-  const [activeFirmType, setActiveFirmType] = useState<string | null>(null);
-  const [aumRangeIdx, setAumRangeIdx] = useState(0);
+  const [channelFilter, setChannelFilter] = useState<ChannelFilter>("all");
+  const [campaignFilter, setCampaignFilter] = useState<string>("");
   const queryClient = useQueryClient();
 
-  const aumRange = AUM_RANGES[aumRangeIdx];
-
   const { data, isLoading, isError, error, refetch } = useQuery<QueueResponse>({
-    queryKey: ["queue", campaign, activeFirmType, aumRangeIdx],
-    queryFn: () =>
-      api.getQueue(campaign, {
-        firm_type: activeFirmType || undefined,
-        aum_min: aumRange.min,
-        aum_max: aumRange.max,
-      }),
-  });
-
-  const campaigns = useQuery<Campaign[]>({
-    queryKey: ["campaigns"],
-    queryFn: api.listCampaigns,
+    queryKey: ["queue-all"],
+    queryFn: () => queueApi.getAllQueues({ limit: 50 }),
   });
 
   const batchDraft = useMutation({
-    mutationFn: () => api.createBatchDrafts(campaign),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["queue"] }),
+    mutationFn: () => api.createBatchDrafts(""),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["queue-all"] }),
   });
 
-  const items: QueueItem[] = data?.items || [];
-  const firmTypeCounts = data?.firm_type_counts || {};
+  const allItems: QueueItem[] = data?.items || [];
+
+  // Apply filters
+  let items = allItems;
+  if (channelFilter === "email") {
+    items = items.filter((i) => i.channel === "email");
+  } else if (channelFilter === "linkedin") {
+    items = items.filter((i) => i.channel.startsWith("linkedin"));
+  }
+  if (campaignFilter) {
+    items = items.filter((i) => (i as any).campaign_name === campaignFilter);
+  }
+
   const emailItems = items.filter((i) => i.channel === "email");
   const linkedinItems = items.filter((i) => i.channel.startsWith("linkedin"));
 
-  // Build tabs sorted by count DESC
-  const totalCount = Object.values(firmTypeCounts).reduce((a, b) => a + b, 0);
-  const sortedTypes = Object.entries(firmTypeCounts).sort(
-    ([, a], [, b]) => b - a,
-  );
+  // Get unique campaign names from items
+  const campaignNames = [...new Set(allItems.map((i) => (i as any).campaign_name).filter(Boolean))];
 
   return (
     <div className="space-y-6">
-      {/* Header row */}
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Today's Queue</h1>
           <p className="text-sm text-gray-500 mt-1">
-            {items.length} action{items.length !== 1 ? "s" : ""} ready
+            {allItems.length} action{allItems.length !== 1 ? "s" : ""} across {campaignNames.length} campaign{campaignNames.length !== 1 ? "s" : ""}
+            {emailItems.length > 0 && ` \u00b7 ${emailItems.length} email`}
+            {linkedinItems.length > 0 && ` \u00b7 ${linkedinItems.length} LinkedIn`}
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <Select
-            value={campaign}
-            onChange={(e) => {
-              setCampaign(e.target.value);
-              setActiveFirmType(null);
-              setAumRangeIdx(0);
-            }}
+        {emailItems.length > 0 && (
+          <Button
+            variant="primary"
+            size="md"
+            onClick={() => batchDraft.mutate()}
+            loading={batchDraft.isPending}
+            leftIcon={<CheckCircle size={16} />}
           >
-            {campaigns.data?.map((c) => (
-              <option key={c.name} value={c.name}>
-                {c.name}
-              </option>
-            )) || <option value={DEFAULT_CAMPAIGN}>{DEFAULT_CAMPAIGN}</option>}
-          </Select>
-          <Select
-            value={aumRangeIdx}
-            onChange={(e) => {
-              setAumRangeIdx(Number(e.target.value));
-              setActiveFirmType(null);
-            }}
-          >
-            {AUM_RANGES.map((r, i) => (
-              <option key={r.label} value={i}>
-                {r.label}
-              </option>
-            ))}
-          </Select>
-          {emailItems.length > 0 && (
-            <Button
-              variant="accent"
-              size="md"
-              onClick={() => batchDraft.mutate()}
-              loading={batchDraft.isPending}
-            >
-              Push All Drafts ({emailItems.length})
-            </Button>
-          )}
-        </div>
+            Create All Drafts
+          </Button>
+        )}
       </div>
 
-      {/* Firm type tabs */}
-      {sortedTypes.length > 0 && (
-        <div className="flex flex-wrap gap-1 border-b border-gray-200 pb-px">
+      {/* Filters */}
+      <div className="flex gap-2 flex-wrap">
+        {/* Channel filter */}
+        {(["all", "email", "linkedin"] as ChannelFilter[]).map((f) => (
           <button
-            onClick={() => setActiveFirmType(null)}
-            className={`px-3 py-1.5 text-sm font-medium rounded-t-md transition-colors ${
-              activeFirmType === null
-                ? "bg-white text-blue-600 border border-b-white border-gray-200 -mb-px"
-                : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+            key={f}
+            className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+              channelFilter === f
+                ? "bg-gray-900 text-white"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
             }`}
+            onClick={() => setChannelFilter(f)}
           >
-            All ({totalCount})
+            {f === "all" ? "All channels" : f === "email" ? "Email" : "LinkedIn"}
           </button>
-          {sortedTypes.map(([type, count]) => (
-            <button
-              key={type}
-              onClick={() =>
-                setActiveFirmType(activeFirmType === type ? null : type)
-              }
-              className={`px-3 py-1.5 text-sm font-medium rounded-t-md transition-colors ${
-                activeFirmType === type
-                  ? "bg-white text-blue-600 border border-b-white border-gray-200 -mb-px"
-                  : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
-              }`}
-            >
-              {type} ({count})
-            </button>
-          ))}
-        </div>
-      )}
+        ))}
 
-      {/* Loading */}
+        {/* Campaign filter */}
+        {campaignNames.length > 1 && (
+          <>
+            <div className="w-px bg-gray-200 mx-1" />
+            <button
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                !campaignFilter ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              }`}
+              onClick={() => setCampaignFilter("")}
+            >
+              All campaigns
+            </button>
+            {campaignNames.map((cn) => (
+              <button
+                key={cn}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                  campaignFilter === cn
+                    ? "bg-gray-900 text-white"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}
+                onClick={() => setCampaignFilter(cn)}
+              >
+                {cn}
+              </button>
+            ))}
+          </>
+        )}
+      </div>
+
       {isLoading && (
         <div className="space-y-4">
-          <SkeletonCard />
-          <SkeletonCard />
-          <SkeletonCard />
+          <SkeletonCard /><SkeletonCard /><SkeletonCard />
         </div>
       )}
 
-      {/* Error */}
       {isError && (
-        <ErrorCard
-          message={(error as Error).message}
-          onRetry={() => refetch()}
-        />
+        <ErrorCard message={(error as Error).message} onRetry={() => refetch()} />
       )}
 
-      {/* Empty state */}
       {!isLoading && !isError && items.length === 0 && (
-        <EmptyState
-          icon={<CheckCircle size={40} />}
-          title={
-            activeFirmType || aumRangeIdx > 0
-              ? "No actions match these filters"
-              : "Queue is clear"
-          }
-          description={
-            activeFirmType || aumRangeIdx > 0
-              ? "Try adjusting your filters."
-              : "No actions scheduled for today. Check back tomorrow."
-          }
-        />
-      )}
-
-      {/* LinkedIn actions */}
-      {linkedinItems.length > 0 && (
-        <div>
-          <div className="flex items-center gap-2 mb-3">
-            <span className="w-2.5 h-2.5 rounded-full bg-green-500" />
-            <h2 className="text-lg font-semibold text-gray-900">
-              LinkedIn ({linkedinItems.length})
-            </h2>
+        <div className="text-center py-16">
+          <div className="w-16 h-16 rounded-full bg-green-50 flex items-center justify-center mx-auto mb-4">
+            <Inbox size={28} className="text-green-500" />
           </div>
-          <div className="space-y-4">
-            {linkedinItems.map((item) => (
-              <QueueLinkedInCard
-                key={item.contact_id}
-                item={item}
-                campaign={campaign}
-              />
-            ))}
-          </div>
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">All caught up!</h2>
+          <p className="text-sm text-gray-500">No actions for today. Check back tomorrow.</p>
         </div>
       )}
 
-      {/* Email actions */}
+      {/* Email section */}
       {emailItems.length > 0 && (
         <div>
-          <div className="flex items-center gap-2 mb-3">
-            <span className="w-2.5 h-2.5 rounded-full bg-blue-500" />
-            <h2 className="text-lg font-semibold text-gray-900">
-              Email ({emailItems.length})
-            </h2>
-          </div>
-          <div className="space-y-4">
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+            Email ({emailItems.length})
+          </h2>
+          <div className="space-y-3">
             {emailItems.map((item) => (
               <QueueEmailCard
-                key={item.contact_id}
+                key={`${item.contact_id}-email`}
                 item={item}
-                campaign={campaign}
+                campaign={(item as any).campaign_name || ""}
+                onAction={() => queryClient.invalidateQueries({ queryKey: ["queue-all"] })}
               />
             ))}
           </div>
         </div>
       )}
 
-      {batchDraft.isError && (
-        <ErrorCard message={`Batch draft error: ${(batchDraft.error as Error).message}`} />
-      )}
-      {batchDraft.isSuccess && (
-        <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-green-700 text-sm">
-          Batch drafts created successfully.
+      {/* LinkedIn section */}
+      {linkedinItems.length > 0 && (
+        <div>
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+            LinkedIn ({linkedinItems.length})
+          </h2>
+          <div className="space-y-3">
+            {linkedinItems.map((item) => (
+              <QueueLinkedInCard
+                key={`${item.contact_id}-li`}
+                item={item}
+                campaign={(item as any).campaign_name || ""}
+                onAction={() => queryClient.invalidateQueries({ queryKey: ["queue-all"] })}
+              />
+            ))}
+          </div>
         </div>
       )}
     </div>

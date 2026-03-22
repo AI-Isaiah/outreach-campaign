@@ -2,6 +2,12 @@ import type { QueueResponse, DeferStatsResponse } from "../types";
 import { request } from "./request";
 
 export const queueApi = {
+  getAllQueues: (options?: { date?: string; limit?: number }) => {
+    const params = new URLSearchParams({ limit: String(options?.limit ?? 50) });
+    if (options?.date) params.set("date", options.date);
+    return request<QueueResponse>(`/queue/all?${params}`);
+  },
+
   getQueue: (campaign: string, options?: {
     date?: string; limit?: number; firm_type?: string; aum_min?: number; aum_max?: number;
   }) => {

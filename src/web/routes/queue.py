@@ -56,6 +56,52 @@ def defer_statistics(
     return get_defer_stats(conn, campaign_id=campaign_id, target_date=date)
 
 
+@router.get("/queue/all")
+def get_all_queues(
+    date: Optional[str] = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    conn=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Get today's action queue across ALL active campaigns for the user."""
+    # Find all active campaigns for this user
+    with get_cursor(conn) as cur:
+        cur.execute(
+            "SELECT id, name FROM campaigns WHERE user_id = %s AND status = 'active'",
+            (user["id"],),
+        )
+        active_campaigns = cur.fetchall()
+
+    if not active_campaigns:
+        return {"items": [], "total": 0}
+
+    # Collect queue items from each active campaign
+    merged: list[dict] = []
+    for camp in active_campaigns:
+        try:
+            result = get_enriched_queue(
+                conn, camp["name"], date=date, limit=limit, user_id=user["id"],
+            )
+        except ValueError:
+            continue
+
+        for item in result.get("items", []):
+            item["campaign_name"] = camp["name"]
+            item["campaign_id"] = camp["id"]
+            merged.append(item)
+
+    # Sort by step_order ASC, then by contact_name as tiebreaker
+    merged.sort(key=lambda x: (
+        x.get("step_order") or 0,
+        x.get("contact_name") or "",
+    ))
+
+    # Apply overall limit
+    merged = merged[:limit]
+
+    return {"items": merged, "total": len(merged)}
+
+
 @router.get("/queue/{campaign}")
 def get_queue(
     campaign: str,
