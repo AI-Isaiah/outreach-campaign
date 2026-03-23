@@ -4,6 +4,7 @@ import { useMutation } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { useToast } from "../components/Toast";
 import { Upload, FileText, CheckCircle, AlertCircle } from "lucide-react";
+import { splitCsvLine } from "../utils/parseCsv";
 
 type Step = "upload" | "preview" | "import";
 
@@ -16,26 +17,8 @@ function parseCsvPreview(text: string): ParsedCsv {
   const lines = text.trim().split("\n");
   if (lines.length === 0) return { headers: [], rows: [] };
 
-  const splitLine = (line: string): string[] => {
-    const result: string[] = [];
-    let current = "";
-    let inQuotes = false;
-    for (const char of line) {
-      if (char === '"') {
-        inQuotes = !inQuotes;
-      } else if (char === "," && !inQuotes) {
-        result.push(current.trim());
-        current = "";
-      } else {
-        current += char;
-      }
-    }
-    result.push(current.trim());
-    return result;
-  };
-
-  const headers = splitLine(lines[0]);
-  const rows = lines.slice(1, 6).map(splitLine);
+  const headers = splitCsvLine(lines[0]);
+  const rows = lines.slice(1, 6).map(splitCsvLine);
 
   return { headers, rows };
 }

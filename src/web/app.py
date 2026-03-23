@@ -57,6 +57,7 @@ from src.web.routes import (  # noqa: E402
     research,
     sequence_generator,
     settings,
+    smart_import,
     stats,
     tags,
     templates,
@@ -172,6 +173,7 @@ app.include_router(newsletters.router, prefix="/api", dependencies=_auth_deps)
 app.include_router(research.router, prefix="/api", dependencies=_auth_deps)
 app.include_router(deep_research.router, prefix="/api", dependencies=_auth_deps)
 app.include_router(sequence_generator.router, prefix="/api", dependencies=_auth_deps)
+app.include_router(smart_import.router, prefix="/api", dependencies=_auth_deps)
 
 # --- Static file serving (production: frontend/dist baked into image) ---
 _frontend_dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"

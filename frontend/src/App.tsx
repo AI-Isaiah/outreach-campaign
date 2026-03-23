@@ -31,6 +31,7 @@ const Inbox = lazy(() => import("./pages/Inbox"));
 const NewsletterList = lazy(() => import("./pages/NewsletterList"));
 const NewsletterComposer = lazy(() => import("./pages/NewsletterComposer"));
 const ImportWizard = lazy(() => import("./pages/ImportWizard"));
+const SmartImport = lazy(() => import("./pages/SmartImport"));
 const Research = lazy(() => import("./pages/Research"));
 const ResearchJobDetail = lazy(() => import("./pages/ResearchJobDetail"));
 const ResearchResultDetail = lazy(() => import("./pages/ResearchResultDetail"));
@@ -98,6 +99,7 @@ export default function App() {
               <Route path="/research/:id" element={<Page><ResearchJobDetail /></Page>} />
               <Route path="/research/results/:id" element={<Page><ResearchResultDetail /></Page>} />
               <Route path="/import" element={<Page><ImportWizard /></Page>} />
+              <Route path="/import/smart" element={<Page><SmartImport /></Page>} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           </Routes>
