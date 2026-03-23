@@ -13,6 +13,7 @@ import {
   AlertCircle,
   FileText,
   Loader2,
+  Sparkles,
 } from "lucide-react";
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
@@ -68,6 +69,8 @@ export default function CampaignWizard() {
   const [csvError, setCsvError] = useState("");
   const [csvFileName, setCsvFileName] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [showFormatHelp, setShowFormatHelp] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
 
   // Step 3: Sequence
   const [touchpoints, setTouchpoints] = useState(5);
@@ -167,12 +170,17 @@ export default function CampaignWizard() {
         const text = evt.target?.result as string;
         const parsed = parseCsv(text);
         if (parsed.length === 0) {
-          setCsvError("CSV is empty or has no valid rows.");
+          // Dumb parser failed — offer smart import or show format help
+          setPendingFile(file);
+          setCsvError("PARSE_FAILED");
         } else {
           setContacts(parsed);
+          setPendingFile(null);
+          setShowFormatHelp(false);
         }
       } catch {
-        setCsvError("Failed to parse CSV. Check the format.");
+        setPendingFile(file);
+        setCsvError("PARSE_FAILED");
       } finally {
         setUploading(false);
       }
@@ -274,9 +282,17 @@ export default function CampaignWizard() {
             csvError={csvError}
             csvFileName={csvFileName}
             uploading={uploading}
+            showFormatHelp={showFormatHelp}
+            pendingFile={pendingFile}
             onUpload={handleCsvUpload}
             onToggle={toggleContact}
             onToggleAll={toggleAll}
+            onShowFormatHelp={() => setShowFormatHelp(true)}
+            onSmartImport={() => {
+              if (pendingFile) {
+                window.open("/import/smart", "_blank");
+              }
+            }}
           />
         )}
         {step === 2 && (
@@ -422,17 +438,25 @@ function StepContacts({
   csvError,
   csvFileName,
   uploading,
+  showFormatHelp,
+  pendingFile,
   onUpload,
   onToggle,
   onToggleAll,
+  onShowFormatHelp,
+  onSmartImport,
 }: {
   contacts: ParsedContact[];
   csvError: string;
   csvFileName: string;
   uploading: boolean;
+  showFormatHelp: boolean;
+  pendingFile: File | null;
   onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onToggle: (i: number) => void;
   onToggleAll: (selected: boolean) => void;
+  onShowFormatHelp: () => void;
+  onSmartImport: () => void;
 }) {
   const selectedCount = contacts.filter((c) => c.selected).length;
 
@@ -440,7 +464,7 @@ function StepContacts({
     <div className="space-y-4">
       <h2 className="text-lg font-semibold">Add contacts</h2>
       <p className="text-sm text-gray-500">
-        Upload a CSV with columns: first_name, last_name, email, linkedin_url, company, title
+        Upload a CSV file with your contacts. We'll try to auto-detect the columns.
       </p>
 
       {/* CSV upload zone */}
@@ -465,10 +489,79 @@ function StepContacts({
         />
       </label>
 
-      {csvError && (
+      {/* Parse failed — offer smart import or show format help */}
+      {csvError === "PARSE_FAILED" && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-3">
+          <div className="flex items-start gap-2">
+            <AlertCircle size={16} className="text-amber-600 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-amber-800">
+                Couldn't auto-detect the columns in this file.
+              </p>
+              <p className="text-sm text-amber-700 mt-1">
+                Your CSV may use non-standard column names or have multiple contacts per row.
+                You have two options:
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2 ml-6">
+            <button
+              onClick={onSmartImport}
+              className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <Sparkles size={14} />
+              Use AI Smart Import
+            </button>
+            <button
+              onClick={onShowFormatHelp}
+              className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              Show expected format
+            </button>
+          </div>
+          <p className="text-xs text-amber-600 ml-6">
+            Smart Import uses an LLM (Anthropic, OpenAI, or Gemini) to map any column format. Requires an API key in Settings.
+          </p>
+        </div>
+      )}
+
+      {/* Regular errors (not parse failure) */}
+      {csvError && csvError !== "PARSE_FAILED" && (
         <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 p-3 rounded-lg">
           <AlertCircle size={16} />
           {csvError}
+        </div>
+      )}
+
+      {/* Format help panel */}
+      {showFormatHelp && (
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3">
+          <h3 className="text-sm font-semibold text-gray-800">Expected CSV format</h3>
+          <p className="text-xs text-gray-600">
+            Your CSV should have a header row with columns matching these names (case-insensitive):
+          </p>
+          <div className="overflow-x-auto">
+            <table className="text-xs w-full">
+              <thead>
+                <tr className="border-b border-gray-200">
+                  <th className="text-left py-1 pr-4 font-medium text-gray-700">Field</th>
+                  <th className="text-left py-1 font-medium text-gray-700">Accepted column names</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                <tr><td className="py-1 pr-4 text-gray-600">Name</td><td className="py-1"><code className="bg-gray-100 px-1 rounded">first_name</code>, <code className="bg-gray-100 px-1 rounded">Primary Contact</code>, <code className="bg-gray-100 px-1 rounded">Vorname</code></td></tr>
+                <tr><td className="py-1 pr-4 text-gray-600">Last name</td><td className="py-1"><code className="bg-gray-100 px-1 rounded">last_name</code>, <code className="bg-gray-100 px-1 rounded">Last Name</code>, <code className="bg-gray-100 px-1 rounded">Nachname</code></td></tr>
+                <tr><td className="py-1 pr-4 text-gray-600">Email</td><td className="py-1"><code className="bg-gray-100 px-1 rounded">email</code>, <code className="bg-gray-100 px-1 rounded">Primary Email</code>, <code className="bg-gray-100 px-1 rounded">E-Mail</code></td></tr>
+                <tr><td className="py-1 pr-4 text-gray-600">LinkedIn</td><td className="py-1"><code className="bg-gray-100 px-1 rounded">linkedin_url</code>, <code className="bg-gray-100 px-1 rounded">Primary LinkedIn</code>, <code className="bg-gray-100 px-1 rounded">LinkedIn</code></td></tr>
+                <tr><td className="py-1 pr-4 text-gray-600">Company</td><td className="py-1"><code className="bg-gray-100 px-1 rounded">company</code>, <code className="bg-gray-100 px-1 rounded">Firm Name</code>, <code className="bg-gray-100 px-1 rounded">Firma</code></td></tr>
+                <tr><td className="py-1 pr-4 text-gray-600">Title</td><td className="py-1"><code className="bg-gray-100 px-1 rounded">title</code>, <code className="bg-gray-100 px-1 rounded">Position</code>, <code className="bg-gray-100 px-1 rounded">Job Title</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-gray-500">
+            Each row = one contact. Extra columns are ignored. Need multiple contacts per company row?
+            Use <button onClick={onSmartImport} className="text-blue-600 hover:underline font-medium">Smart Import</button> instead.
+          </p>
         </div>
       )}
 
