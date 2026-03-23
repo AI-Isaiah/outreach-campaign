@@ -1,10 +1,15 @@
 """Smart CSV import engine — LLM-powered column mapping, transform, preview, execute.
 
 Provides the core pipeline for the smart import feature:
-  analyze_csv()    — Call Claude Haiku to map CSV columns to CRM fields
+  analyze_csv()    — Call LLM (Anthropic / OpenAI / Gemini) to map CSV columns
   transform_rows() — Apply mapping + multi-contact explosion + normalization
   preview_import() — SELECT-only duplicate check against existing contacts
   execute_import() — INSERT companies and contacts, then run dedup
+
+LLM provider priority: uses whichever API key is configured, in order:
+  1. ANTHROPIC_API_KEY  → Claude Haiku (fast, ~$0.01/import)
+  2. OPENAI_API_KEY     → GPT-4o-mini (cheap, ~$0.003/import)
+  3. GEMINI_API_KEY     → Gemini Flash (free tier: 15 RPM)
 """
 
 from __future__ import annotations
@@ -14,6 +19,8 @@ import logging
 import os
 import re
 from typing import Optional
+
+import httpx
 
 from src.models.database import get_cursor
 from src.services.normalization_utils import (
@@ -25,42 +32,15 @@ from src.services.normalization_utils import (
 
 logger = logging.getLogger(__name__)
 
-_ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"
-
 
 # ---------------------------------------------------------------------------
-# analyze_csv — LLM column mapping
+# LLM provider abstraction
 # ---------------------------------------------------------------------------
 
-
-def analyze_csv(
-    headers: list[str],
-    sample_rows: list[dict],
-    *,
-    user_id: int,
-    conn,
-) -> dict:
-    """Call Claude Haiku to map CSV columns to CRM target fields.
-
-    Parameters
-    ----------
-    headers : list[str]
-        CSV header names.
-    sample_rows : list[dict]
-        First 5 rows of data for context.
-    user_id : int
-        Owner user ID (for future schema template lookup).
-    conn
-        Database connection (for future schema template lookup).
-
-    Returns
-    -------
-    dict
-        ``{"column_map": {...}, "unmapped": [...], "multi_contact": {...}, "confidence": float}``
-    """
+def _build_prompt(headers: list[str], sample_rows: list[dict]) -> str:
+    """Build the column-mapping prompt sent to any LLM provider."""
     sample_rows_json = json.dumps(sample_rows[:5], default=str, indent=2)
-
-    prompt = f"""You are a CSV column mapper for a CRM that tracks companies and contacts.
+    return f"""You are a CSV column mapper for a CRM that tracks companies and contacts.
 
 Target fields:
 COMPANY: name, country, aum_millions, firm_type, website, address
@@ -86,30 +66,130 @@ Return ONLY valid JSON (no markdown, no explanation):
   "confidence": 0.0-1.0
 }}"""
 
+
+def _call_anthropic(prompt: str, api_key: str) -> str:
+    """Call Anthropic Messages API and return the raw text response."""
+    resp = httpx.post(
+        "https://api.anthropic.com/v1/messages",
+        headers={
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        },
+        json={
+            "model": "claude-haiku-4-5-20251001",
+            "max_tokens": 2000,
+            "temperature": 0,
+            "messages": [{"role": "user", "content": prompt}],
+        },
+        timeout=30.0,
+    )
+    resp.raise_for_status()
+    return resp.json()["content"][0]["text"]
+
+
+def _call_openai(prompt: str, api_key: str) -> str:
+    """Call OpenAI Chat Completions API and return the raw text response."""
+    resp = httpx.post(
+        "https://api.openai.com/v1/chat/completions",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": "gpt-4o-mini",
+            "temperature": 0,
+            "max_tokens": 2000,
+            "messages": [{"role": "user", "content": prompt}],
+        },
+        timeout=30.0,
+    )
+    resp.raise_for_status()
+    return resp.json()["choices"][0]["message"]["content"]
+
+
+def _call_gemini(prompt: str, api_key: str) -> str:
+    """Call Google Gemini API and return the raw text response."""
+    resp = httpx.post(
+        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}",
+        headers={"Content-Type": "application/json"},
+        json={
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0, "maxOutputTokens": 2000},
+        },
+        timeout=30.0,
+    )
+    resp.raise_for_status()
+    return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+
+
+def _detect_provider() -> tuple[str, str] | None:
+    """Detect which LLM API key is available. Returns (provider_name, api_key) or None."""
+    for env_var, name in [
+        ("ANTHROPIC_API_KEY", "anthropic"),
+        ("OPENAI_API_KEY", "openai"),
+        ("GEMINI_API_KEY", "gemini"),
+    ]:
+        key = os.getenv(env_var, "").strip()
+        if key:
+            return (name, key)
+    return None
+
+
+def _call_llm(prompt: str) -> tuple[str, str]:
+    """Call the first available LLM provider. Returns (raw_text, provider_name).
+
+    Raises RuntimeError if no API key is configured.
+    """
+    provider = _detect_provider()
+    if not provider:
+        raise RuntimeError("No LLM API key configured (set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY)")
+
+    name, api_key = provider
+    callers = {
+        "anthropic": _call_anthropic,
+        "openai": _call_openai,
+        "gemini": _call_gemini,
+    }
+    raw_text = callers[name](prompt, api_key)
+    return raw_text, name
+
+
+# ---------------------------------------------------------------------------
+# analyze_csv — LLM column mapping
+# ---------------------------------------------------------------------------
+
+
+def analyze_csv(
+    headers: list[str],
+    sample_rows: list[dict],
+    *,
+    user_id: int,
+    conn,
+) -> dict:
+    """Call LLM to map CSV columns to CRM target fields.
+
+    Tries providers in order: Anthropic → OpenAI → Gemini (whichever key is set).
+
+    Returns
+    -------
+    dict
+        ``{"column_map": {...}, "unmapped": [...], "multi_contact": {...},
+          "confidence": float, "provider": str}``
+    """
     fallback = {
         "column_map": {},
         "unmapped": list(headers),
         "multi_contact": {"detected": False, "contact_groups": []},
         "confidence": 0.0,
+        "provider": None,
     }
 
     try:
-        import anthropic
+        prompt = _build_prompt(headers, sample_rows)
+        raw_text, provider_name = _call_llm(prompt)
 
-        api_key = os.getenv("ANTHROPIC_API_KEY")
-        if not api_key:
-            logger.warning("ANTHROPIC_API_KEY not set — returning fallback mapping")
-            return fallback
-
-        client = anthropic.Anthropic(api_key=api_key)
-        response = client.messages.create(
-            model=_ANTHROPIC_MODEL,
-            max_tokens=2000,
-            temperature=0,
-            messages=[{"role": "user", "content": prompt}],
-        )
-
-        raw_text = response.content[0].text.strip()
+        raw_text = raw_text.strip()
 
         # Strip markdown fences if present
         if raw_text.startswith("```"):
@@ -127,17 +207,23 @@ Return ONLY valid JSON (no markdown, no explanation):
         result.setdefault("unmapped", [])
         result.setdefault("multi_contact", {"detected": False, "contact_groups": []})
         result.setdefault("confidence", 0.5)
+        result["provider"] = provider_name
 
+        logger.info("analyze_csv: mapped %d columns via %s (confidence: %.2f)",
+                     len(result["column_map"]), provider_name, result["confidence"])
         return result
 
+    except RuntimeError as exc:
+        logger.warning("No LLM provider available: %s", exc)
+        return fallback
     except json.JSONDecodeError as exc:
         logger.warning("Failed to parse LLM JSON response: %s", exc)
         return fallback
-    except anthropic.APIError as exc:
-        logger.warning("Anthropic API error during analyze_csv: %s", exc)
+    except httpx.HTTPStatusError as exc:
+        logger.warning("LLM API HTTP error: %s %s", exc.response.status_code, exc.response.text[:200])
         return fallback
-    except ImportError:
-        logger.warning("anthropic SDK not installed — returning fallback mapping")
+    except httpx.TimeoutException:
+        logger.warning("LLM API call timed out (30s)")
         return fallback
     except Exception as exc:
         logger.exception("Unexpected error during analyze_csv: %s", exc)
