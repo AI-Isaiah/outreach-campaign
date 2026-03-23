@@ -19,6 +19,7 @@ import Input from "../components/ui/Input";
 import { campaignsApi } from "../api/campaigns";
 import type { GeneratedStep } from "../api/campaigns";
 import { useToast } from "../components/Toast";
+import { splitCsvLine } from "../utils/parseCsv";
 
 /*
  * Campaign Wizard — 5-step guided flow
@@ -766,15 +767,15 @@ export function parseCsv(text: string): ParsedContact[] {
   const lines = text.trim().split("\n");
   if (lines.length < 2) return [];
 
-  const headers = lines[0].split(",").map((h) => h.trim().toLowerCase().replace(/['"]/g, ""));
+  const headers = splitCsvLine(lines[0]).map((h) => h.trim().toLowerCase().replace(/['"]/g, ""));
 
   const colMap: Record<string, string[]> = {
-    first_name: ["first_name", "first name", "firstname", "first"],
+    first_name: ["first_name", "first name", "firstname", "first", "primary contact", "contact name", "contact 1"],
     last_name: ["last_name", "last name", "lastname", "last"],
-    email: ["email", "email_address", "e-mail"],
-    linkedin_url: ["linkedin_url", "linkedin", "linkedin url", "linkedin_profile"],
-    company: ["company", "company_name", "organization", "org"],
-    title: ["title", "job_title", "position", "role"],
+    email: ["email", "email_address", "e-mail", "primary email", "contact email"],
+    linkedin_url: ["linkedin_url", "linkedin", "linkedin url", "linkedin_profile", "primary linkedin"],
+    company: ["company", "company_name", "organization", "org", "firm name", "firm", "firma", "unternehmen"],
+    title: ["title", "job_title", "position", "role", "titel", "funktion"],
   };
 
   const findCol = (field: string): number => {
@@ -793,7 +794,7 @@ export function parseCsv(text: string): ParsedContact[] {
 
   const contacts: ParsedContact[] = [];
   for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split(",").map((c) => c.trim().replace(/^["']|["']$/g, ""));
+    const cols = splitCsvLine(lines[i]);
     if (cols.length < 2) continue;
 
     const get = (field: keyof typeof indices) =>
