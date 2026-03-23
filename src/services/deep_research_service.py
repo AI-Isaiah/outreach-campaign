@@ -220,8 +220,8 @@ def _synthesize_with_sonnet(
     web_search_raw = ""
     website_crawl_raw = ""
     if bulk_research:
-        web_search_raw = bulk_research.get("web_search_raw") or ""
-        website_crawl_raw = bulk_research.get("website_crawl_raw") or ""
+        web_search_raw = (bulk_research.get("web_search_raw") or "")[:8000]
+        website_crawl_raw = (bulk_research.get("website_crawl_raw") or "")[:8000]
 
     prompt = SYNTHESIS_PROMPT.format(
         company_name=company_name,
@@ -357,6 +357,17 @@ def _enrich_contacts(conn, company_id: int, key_people: list[dict], user_id: int
                     )
                 affected += 1
                 continue
+
+            # Validate LLM-supplied email and linkedin_url
+            if email and not ("@" in email and "." in email.split("@")[-1]):
+                email = None
+                email_norm = None
+            if linkedin_url and not (
+                linkedin_url.startswith("https://linkedin.com/in/")
+                or linkedin_url.startswith("https://www.linkedin.com/in/")
+            ):
+                linkedin_url = None
+                linkedin_norm = ""
 
             # No match — create new contact
             first_name, last_name = split_name(name)
@@ -621,7 +632,7 @@ def _execute_deep_research(conn, deep_research_id: int, api_keys: dict) -> None:
         talking_points=synthesis.get("talking_points"),
         risk_factors=synthesis.get("risk_factors"),
         updated_crypto_score=validated_score,
-        confidence=synthesis.get("confidence"),
+        confidence=synthesis.get("confidence") if synthesis.get("confidence") in ("high", "medium", "low") else None,
         actual_cost_usd=round(total_cost, 4),
         query_count=len(queries),
         previous_crypto_score=previous_score,

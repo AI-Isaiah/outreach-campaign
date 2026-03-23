@@ -16,8 +16,9 @@ _security = HTTPBearer(auto_error=False)
 _JWT_SECRET = os.getenv("JWT_SECRET", "")
 _JWT_ALGORITHM = "HS256"
 
-if os.getenv("ENVIRONMENT", "").lower() == "production" and not _JWT_SECRET:
-    raise RuntimeError("JWT_SECRET must be set in production environment")
+_ENVIRONMENT = os.getenv("ENVIRONMENT", "").lower()
+if _ENVIRONMENT in ("production", "staging") and not _JWT_SECRET:
+    raise RuntimeError("JWT_SECRET must be set in production/staging environments")
 
 
 class CurrentUser(dict):

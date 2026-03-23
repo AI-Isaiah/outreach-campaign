@@ -153,7 +153,7 @@ def create_deal(
 
         # Verify contact if provided
         if body.contact_id is not None:
-            cur.execute("SELECT id FROM contacts WHERE id = %s", (body.contact_id,))
+            cur.execute("SELECT id FROM contacts WHERE id = %s AND user_id = %s", (body.contact_id, user["id"]))
             if not cur.fetchone():
                 raise HTTPException(404, f"Contact {body.contact_id} not found")
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   DndContext,
@@ -43,9 +43,15 @@ function DraggableDealCard({
   deal: Deal;
   onClick: () => void;
 }) {
+  const wasDragging = useRef(false);
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: deal.id,
   });
+
+  // Track when a drag occurs so we can suppress the subsequent click
+  if (isDragging) {
+    wasDragging.current = true;
+  }
 
   const style = transform
     ? { transform: `translate(${transform.x}px, ${transform.y}px)` }
@@ -57,9 +63,12 @@ function DraggableDealCard({
       style={style}
       {...listeners}
       {...attributes}
-      onClick={(e) => {
-        // Don't open detail if dragging
-        if (!isDragging) onClick();
+      onClick={() => {
+        if (wasDragging.current) {
+          wasDragging.current = false;
+          return;
+        }
+        onClick();
       }}
       className={`bg-white rounded-md border border-gray-200 p-3 shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow select-none ${
         isDragging ? "opacity-50" : ""

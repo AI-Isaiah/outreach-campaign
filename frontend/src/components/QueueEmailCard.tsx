@@ -99,10 +99,15 @@ function QueueEmailCard({
     if (editLinkedIn !== (item.linkedin_url || "")) {
       promises.push(linkedInMutation.mutateAsync());
     }
-    if (promises.length > 0) {
-      await Promise.all(promises);
+    try {
+      if (promises.length > 0) {
+        await Promise.all(promises);
+      }
+    } catch {
+      // Error is surfaced via nameMutation.error / linkedInMutation.error
+    } finally {
+      setShowEdit(false);
     }
-    setShowEdit(false);
   };
 
   const handleCancelEdit = () => {

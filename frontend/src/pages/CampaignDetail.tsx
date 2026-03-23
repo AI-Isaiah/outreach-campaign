@@ -144,7 +144,7 @@ function ContactsTab({ campaignName, campaignId }: { campaignName: string; campa
     <div className="space-y-4">
       {/* Filter */}
       <div className="flex gap-2">
-        {["", "queued", "in_progress", "replied_positive", "replied_negative", "no_response", "bounced"].map((s) => (
+        {["", "queued", "in_progress", "replied_positive", "replied_negative", "no_response", "bounced", "completed", "unsubscribed"].map((s) => (
           <button
             key={s}
             className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${

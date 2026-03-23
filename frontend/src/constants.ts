@@ -14,6 +14,7 @@ export const STATUS_COLORS: Record<string, string> = {
   completed: "bg-gray-100 text-gray-700",
   drafted: "bg-blue-100 text-blue-700",
   sent: "bg-green-100 text-green-800",
+  paused: "bg-amber-100 text-amber-700",
 };
 
 /** Lifecycle stages → Tailwind classes */

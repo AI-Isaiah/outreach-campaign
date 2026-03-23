@@ -101,10 +101,10 @@ def create_contact(
 
         # Check for duplicate email
         if email_norm:
-            cur.execute("SELECT id FROM contacts WHERE email_normalized = %s", (email_norm,))
+            cur.execute("SELECT id FROM contacts WHERE email_normalized = %s AND user_id = %s", (email_norm, user["id"]))
             existing = cur.fetchone()
             if existing:
-                raise HTTPException(409, f"Contact with email '{body.email}' already exists (id={existing['id']})")
+                raise HTTPException(409, f"Contact with email '{body.email}' already exists")
 
         newsletter_status = "subscribed" if body.newsletter_opt_in else "none"
 
@@ -155,8 +155,7 @@ def update_lifecycle_stage(
     with get_cursor(conn) as cur:
         cur.execute(
             """SELECT c.id, c.lifecycle_stage FROM contacts c
-               JOIN companies co ON co.id = c.company_id
-               WHERE c.id = %s AND co.user_id = %s""",
+               WHERE c.id = %s AND c.user_id = %s""",
             (contact_id, user["id"]),
         )
         contact = cur.fetchone()
@@ -195,8 +194,8 @@ def list_contacts(
             query = """
             SELECT c.*, co.name AS company_name, co.aum_millions
             FROM contacts c
-            JOIN companies co ON co.id = c.company_id
-            WHERE co.user_id = %s
+            LEFT JOIN companies co ON co.id = c.company_id
+            WHERE c.user_id = %s
               AND (c.full_name LIKE %s OR c.email LIKE %s
                OR co.name LIKE %s OR c.first_name LIKE %s OR c.last_name LIKE %s)
             ORDER BY co.aum_millions DESC NULLS LAST
@@ -208,8 +207,8 @@ def list_contacts(
 
             count_query = """
             SELECT COUNT(*) AS cnt FROM contacts c
-            JOIN companies co ON co.id = c.company_id
-            WHERE co.user_id = %s
+            LEFT JOIN companies co ON co.id = c.company_id
+            WHERE c.user_id = %s
               AND (c.full_name LIKE %s OR c.email LIKE %s
                OR co.name LIKE %s OR c.first_name LIKE %s OR c.last_name LIKE %s)
             """
@@ -219,8 +218,8 @@ def list_contacts(
             query = """
             SELECT c.*, co.name AS company_name, co.aum_millions
             FROM contacts c
-            JOIN companies co ON co.id = c.company_id
-            WHERE co.user_id = %s
+            LEFT JOIN companies co ON co.id = c.company_id
+            WHERE c.user_id = %s
             ORDER BY co.aum_millions DESC NULLS LAST
             LIMIT %s OFFSET %s
             """
@@ -228,8 +227,7 @@ def list_contacts(
             rows = cur.fetchall()
             cur.execute(
                 """SELECT COUNT(*) AS cnt FROM contacts c
-                   JOIN companies co ON co.id = c.company_id
-                   WHERE co.user_id = %s""",
+                   WHERE c.user_id = %s""",
                 (user["id"],),
             )
             total = cur.fetchone()["cnt"]
@@ -255,8 +253,8 @@ def get_contact(
             """SELECT c.*, co.name AS company_name, co.aum_millions,
                       co.firm_type, co.country, co.website, co.is_gdpr AS company_is_gdpr
                FROM contacts c
-               JOIN companies co ON co.id = c.company_id
-               WHERE c.id = %s AND co.user_id = %s""",
+               LEFT JOIN companies co ON co.id = c.company_id
+               WHERE c.id = %s AND c.user_id = %s""",
             (contact_id, user["id"]),
         )
         contact = cur.fetchone()
@@ -311,8 +309,7 @@ def get_contact_events(
         # Verify contact belongs to user
         cur.execute(
             """SELECT c.id FROM contacts c
-               JOIN companies co ON co.id = c.company_id
-               WHERE c.id = %s AND co.user_id = %s""",
+               WHERE c.id = %s AND c.user_id = %s""",
             (contact_id, user["id"]),
         )
         if not cur.fetchone():
@@ -343,8 +340,7 @@ def update_contact_status(
     with get_cursor(conn) as cur:
         cur.execute(
             """SELECT c.id FROM contacts c
-               JOIN companies co ON co.id = c.company_id
-               WHERE c.id = %s AND co.user_id = %s""",
+               WHERE c.id = %s AND c.user_id = %s""",
             (contact_id, user["id"]),
         )
         if not cur.fetchone():
@@ -382,8 +378,7 @@ def add_response_note(
     with get_cursor(conn) as cur:
         cur.execute(
             """SELECT c.id FROM contacts c
-               JOIN companies co ON co.id = c.company_id
-               WHERE c.id = %s AND co.user_id = %s""",
+               WHERE c.id = %s AND c.user_id = %s""",
             (contact_id, user["id"]),
         )
         contact = cur.fetchone()
@@ -417,8 +412,7 @@ def update_phone(
     with get_cursor(conn) as cur:
         cur.execute(
             """SELECT c.id FROM contacts c
-               JOIN companies co ON co.id = c.company_id
-               WHERE c.id = %s AND co.user_id = %s""",
+               WHERE c.id = %s AND c.user_id = %s""",
             (contact_id, user["id"]),
         )
         if not cur.fetchone():
@@ -453,8 +447,7 @@ def update_linkedin_url(
     with get_cursor(conn) as cur:
         cur.execute(
             """SELECT c.id FROM contacts c
-               JOIN companies co ON co.id = c.company_id
-               WHERE c.id = %s AND co.user_id = %s""",
+               WHERE c.id = %s AND c.user_id = %s""",
             (contact_id, user["id"]),
         )
         if not cur.fetchone():
@@ -487,8 +480,7 @@ def update_contact_name(
     with get_cursor(conn) as cur:
         cur.execute(
             """SELECT c.id FROM contacts c
-               JOIN companies co ON co.id = c.company_id
-               WHERE c.id = %s AND co.user_id = %s""",
+               WHERE c.id = %s AND c.user_id = %s""",
             (contact_id, user["id"]),
         )
         if not cur.fetchone():
@@ -530,8 +522,7 @@ def bulk_update_lifecycle(
         placeholders = ", ".join(["%s"] * len(body.contact_ids))
         cur.execute(
             f"""SELECT c.id, c.lifecycle_stage FROM contacts c
-                JOIN companies co ON co.id = c.company_id
-                WHERE c.id IN ({placeholders}) AND co.user_id = %s""",
+                WHERE c.id IN ({placeholders}) AND c.user_id = %s""",
             body.contact_ids + [user["id"]],
         )
         found = cur.fetchall()
@@ -542,8 +533,8 @@ def bulk_update_lifecycle(
 
         # Update all
         cur.execute(
-            f"UPDATE contacts SET lifecycle_stage = %s WHERE id IN ({placeholders})",
-            [body.lifecycle_stage] + body.contact_ids,
+            f"UPDATE contacts SET lifecycle_stage = %s WHERE id IN ({placeholders}) AND user_id = %s",
+            [body.lifecycle_stage] + body.contact_ids + [user["id"]],
         )
 
         # Log events

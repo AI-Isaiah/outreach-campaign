@@ -25,6 +25,8 @@ class ContactStatus(StrEnum):
     REPLIED_NEGATIVE = "replied_negative"
     NO_RESPONSE = "no_response"
     BOUNCED = "bounced"
+    COMPLETED = "completed"
+    UNSUBSCRIBED = "unsubscribed"
 
 
 class Channel(StrEnum):

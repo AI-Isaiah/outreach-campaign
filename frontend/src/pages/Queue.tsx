@@ -23,7 +23,7 @@ export default function Queue() {
   });
 
   const batchDraft = useMutation({
-    mutationFn: () => api.createBatchDrafts(""),
+    mutationFn: () => api.createBatchDrafts(campaignFilter),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["queue-all"] }),
   });
 
