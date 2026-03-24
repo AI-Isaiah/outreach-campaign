@@ -14,6 +14,8 @@ LLM provider priority: uses whichever API key is configured, in order:
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import logging
 import os
@@ -153,6 +155,113 @@ def _call_llm(prompt: str) -> tuple[str, str]:
     }
     raw_text = callers[name](prompt, api_key)
     return raw_text, name
+
+
+# ---------------------------------------------------------------------------
+# CSV header detection (moved from routes layer)
+# ---------------------------------------------------------------------------
+
+# Keywords that suggest a row is a header (lowercased)
+_HEADER_KEYWORDS = {
+    "name", "email", "company", "firm", "contact", "phone", "title",
+    "address", "country", "website", "url", "linkedin", "aum", "type",
+    "industry", "position", "first", "last", "domain", "notes", "tier",
+    "fund", "status", "source", "date", "id", "organization",
+}
+
+
+def _detect_header_row(content: str, max_scan: int = 20) -> int:
+    """Scan the first *max_scan* rows and return the 0-based index of the most
+    likely header row.
+
+    Scoring heuristics:
+      +2  per non-empty cell
+      +3  per cell that contains a known CRM keyword
+      +1  per unique cell value (penalises repeated blanks)
+      -2  per cell that looks purely numeric or is a date
+      -5  if the row has fewer than 3 non-empty cells
+      -10 if any cell is longer than 80 chars (headers are short)
+      -20 if the row contains a copyright symbol or "notes:" marker (footer/metadata)
+    """
+    reader = csv.reader(io.StringIO(content))
+    candidates: list[tuple[int, float, list[str]]] = []
+
+    for idx, row in enumerate(reader):
+        if idx >= max_scan:
+            break
+        if not row:
+            continue
+
+        non_empty = [c.strip() for c in row if c.strip()]
+        score = 0.0
+
+        if len(non_empty) < 3:
+            score -= 5
+
+        if any(len(c) > 80 for c in non_empty):
+            score -= 10
+
+        row_text = " ".join(non_empty).lower()
+        if "\u00a9" in row_text or "copyright" in row_text or row_text.startswith("notes:"):
+            score -= 20
+
+        uniq = set()
+        for cell in non_empty:
+            score += 2
+            low = cell.lower()
+            uniq.add(low)
+            for kw in _HEADER_KEYWORDS:
+                if kw in low:
+                    score += 3
+                    break
+            stripped = cell.replace(",", "").replace(".", "").replace("$", "").replace("%", "").strip()
+            if stripped.isdigit():
+                score -= 2
+
+        score += len(uniq)
+
+        candidates.append((idx, score, row))
+
+    if not candidates:
+        return 0
+
+    best_idx, _best_score, _best_row = max(candidates, key=lambda t: t[1])
+    return best_idx
+
+
+def parse_csv_with_header_detection(content: str) -> tuple[list[str], list[dict]]:
+    """Parse a CSV string, auto-detecting which row contains the headers.
+
+    Returns (headers, rows) where rows are list[dict] keyed by header names.
+    """
+    header_idx = _detect_header_row(content)
+
+    raw_reader = csv.reader(io.StringIO(content))
+    for _ in range(header_idx):
+        try:
+            next(raw_reader)
+        except StopIteration:
+            break
+
+    try:
+        raw_headers = next(raw_reader)
+    except StopIteration:
+        return [], []
+
+    headers = [h.strip() for h in raw_headers]
+
+    rows: list[dict] = []
+    for raw_row in raw_reader:
+        cleaned = {h: (raw_row[i] if i < len(raw_row) else "") for i, h in enumerate(headers)}
+        values = [v for v in cleaned.values() if v and v.strip()]
+        if not values:
+            continue
+        row_text = " ".join(values).lower()
+        if "\u00a9" in row_text or "copyright" in row_text:
+            continue
+        rows.append(cleaned)
+
+    return headers, rows
 
 
 # ---------------------------------------------------------------------------
@@ -529,8 +638,49 @@ def transform_rows(
 
 
 # ---------------------------------------------------------------------------
-# preview_import — SELECT-only duplicate check
+# preview_import — SELECT-only duplicate check with field-level diffs
 # ---------------------------------------------------------------------------
+
+
+def _build_field_diffs(import_row: dict, existing: dict) -> dict:
+    """Compare import row vs CRM contact, field by field.
+
+    Returns dict of field_name -> "new" | "conflict" | "same" | "empty".
+    """
+    COMPARE_FIELDS = [
+        ("first_name", "first_name"),
+        ("last_name", "last_name"),
+        ("email", "email"),
+        ("title", "title"),
+        ("linkedin_url", "linkedin_url"),
+    ]
+    diffs = {}
+    for import_key, crm_key in COMPARE_FIELDS:
+        import_val = (import_row.get(import_key) or "").strip()
+        crm_val = (existing.get(crm_key) or "").strip()
+        if not import_val and not crm_val:
+            diffs[import_key] = "empty"
+        elif import_val and not crm_val:
+            diffs[import_key] = "new"
+        elif not import_val and crm_val:
+            diffs[import_key] = "empty"
+        elif import_val.lower() == crm_val.lower():
+            diffs[import_key] = "same"
+        else:
+            diffs[import_key] = "conflict"
+    return diffs
+
+
+def _existing_contact_dict(match: dict) -> dict:
+    """Build the existing_contact summary dict from a DB row."""
+    return {
+        "first_name": match["first_name"],
+        "last_name": match["last_name"],
+        "email": match["email"],
+        "title": match["title"],
+        "linkedin_url": match["linkedin_url"],
+        "company_name": match["company_name"],
+    }
 
 
 def preview_import(
@@ -541,11 +691,13 @@ def preview_import(
 ) -> dict:
     """Check transformed contacts for duplicates without writing anything.
 
-    Duplicate logic:
-      - BOTH email AND LinkedIn match same existing contact → true duplicate
-      - Only email matches → auto-clear email from import row (keep contact)
-      - Only LinkedIn matches → auto-clear LinkedIn from import row
-      - Neither matches → new contact
+    Returns field-level diffs for each match instead of auto-clearing fields.
+    Match types:
+      - "exact" — both email AND LinkedIn match same CRM contact
+      - "email_only" — only email matches
+      - "linkedin_only" — only LinkedIn matches
+      - "both_different_contacts" — email matches contact A, LinkedIn matches B
+      - None — new contact, no match
     """
     emails_to_check = [
         r["email_normalized"]
@@ -583,7 +735,7 @@ def preview_import(
 
     company_names = {r["company_name_normalized"] for r in transformed if r.get("company_name_normalized")}
 
-    # Build ALL rows with duplicate/overlap info
+    # Build ALL rows with match info and field-level diffs
     all_rows = []
     exact_duplicates = 0
 
@@ -597,53 +749,70 @@ def preview_import(
         linkedin_match = linkedin_existing.get(linkedin_norm) if linkedin_norm else None
 
         if email_match and linkedin_match:
-            # Both match — true duplicate only if same existing contact
             if email_match["id"] == linkedin_match["id"]:
+                # Both fields match same CRM contact — exact duplicate
+                row_copy["match_type"] = "exact"
+                row_copy["existing_contact_id"] = email_match["id"]
+                row_copy["existing_contact"] = _existing_contact_dict(email_match)
+                row_copy["field_diffs"] = _build_field_diffs(r, email_match)
                 row_copy["is_duplicate"] = True
-                row_copy["duplicate_type"] = "exact"
-                row_copy["existing_contact"] = {
-                    "first_name": email_match["first_name"],
-                    "last_name": email_match["last_name"],
-                    "email": email_match["email"],
-                    "title": email_match["title"],
-                    "linkedin_url": email_match["linkedin_url"],
-                    "company_name": email_match["company_name"],
-                }
-                row_copy["overlap_cleared"] = None
                 exact_duplicates += 1
             else:
-                # Different existing contacts — clear both overlaps
+                # Email matches contact A, LinkedIn matches contact B
+                row_copy["match_type"] = "both_different_contacts"
+                row_copy["existing_contact_id"] = email_match["id"]
+                row_copy["existing_contact"] = _existing_contact_dict(email_match)
+                row_copy["field_diffs"] = _build_field_diffs(r, email_match)
                 row_copy["is_duplicate"] = False
-                row_copy["duplicate_type"] = "both_overlap"
-                row_copy["existing_contact"] = None
-                row_copy["overlap_cleared"] = "email+linkedin"
-                row_copy["email"] = None
-                row_copy["email_normalized"] = None
-                row_copy["linkedin_url"] = None
-                row_copy["linkedin_url_normalized"] = None
         elif email_match:
-            # Only email matches — clear email, keep contact for LinkedIn outreach
+            row_copy["match_type"] = "email_only"
+            row_copy["existing_contact_id"] = email_match["id"]
+            row_copy["existing_contact"] = _existing_contact_dict(email_match)
+            row_copy["field_diffs"] = _build_field_diffs(r, email_match)
             row_copy["is_duplicate"] = False
-            row_copy["duplicate_type"] = "email_overlap"
-            row_copy["existing_contact"] = None
-            row_copy["overlap_cleared"] = "email"
-            row_copy["email"] = None
-            row_copy["email_normalized"] = None
         elif linkedin_match:
-            # Only LinkedIn matches — clear LinkedIn, keep contact for email outreach
+            row_copy["match_type"] = "linkedin_only"
+            row_copy["existing_contact_id"] = linkedin_match["id"]
+            row_copy["existing_contact"] = _existing_contact_dict(linkedin_match)
+            row_copy["field_diffs"] = _build_field_diffs(r, linkedin_match)
             row_copy["is_duplicate"] = False
-            row_copy["duplicate_type"] = "linkedin_overlap"
-            row_copy["existing_contact"] = None
-            row_copy["overlap_cleared"] = "linkedin"
-            row_copy["linkedin_url"] = None
-            row_copy["linkedin_url_normalized"] = None
         else:
-            row_copy["is_duplicate"] = False
-            row_copy["duplicate_type"] = None
+            row_copy["match_type"] = None
+            row_copy["existing_contact_id"] = None
             row_copy["existing_contact"] = None
-            row_copy["overlap_cleared"] = None
+            row_copy["field_diffs"] = None
+            row_copy["is_duplicate"] = False
+
+        # Legacy compat fields
+        row_copy["duplicate_type"] = row_copy["match_type"]
+        row_copy["overlap_cleared"] = None
 
         all_rows.append(row_copy)
+
+    # Within-file duplicate detection
+    seen_emails: dict[str, int] = {}
+    seen_linkedins: dict[str, int] = {}
+    for row in all_rows:
+        idx = row["_index"]
+        email_n = row.get("email_normalized")
+        linkedin_n = row.get("linkedin_url_normalized")
+        dup_of = None
+        if email_n and email_n in seen_emails:
+            dup_of = seen_emails[email_n]
+        elif linkedin_n and linkedin_n in seen_linkedins:
+            dup_of = seen_linkedins[linkedin_n]
+
+        if dup_of is not None:
+            row["within_file_duplicate"] = True
+            row["within_file_duplicate_of"] = dup_of
+        else:
+            row["within_file_duplicate"] = False
+            row["within_file_duplicate_of"] = None
+
+        if email_n and email_n not in seen_emails:
+            seen_emails[email_n] = idx
+        if linkedin_n and linkedin_n not in seen_linkedins:
+            seen_linkedins[linkedin_n] = idx
 
     return {
         "total_contacts": len(transformed),
@@ -664,6 +833,8 @@ def execute_import(
     transformed: list[dict],
     *,
     user_id: int,
+    row_decisions: dict[int, dict] | None = None,
+    campaign_id: int | None = None,
 ) -> dict:
     """Insert companies and contacts from transformed rows.
 
@@ -675,28 +846,37 @@ def execute_import(
         Output of transform_rows().
     user_id : int
         Owner user ID for multi-tenant scoping.
+    row_decisions : dict[int, dict] | None
+        Per-row decisions from the frontend. Key is row index, value is
+        ``{"action": "import"|"merge"|"skip"|"enroll", "existing_contact_id": N}``.
+        When None, uses legacy behavior (INSERT with ON CONFLICT DO NOTHING).
+    campaign_id : int | None
+        Optional campaign to enroll all processed contacts in.
 
     Returns
     -------
     dict
-        ``{"companies_created": N, "contacts_created": M, "duplicates_skipped": K}``
+        Import stats including created, merged, enrolled, and skipped counts.
     """
     companies_created = 0
     contacts_created = 0
     duplicates_skipped = 0
+    contacts_merged = 0
+    contacts_enrolled = 0
+    contacts_skipped = 0
+    all_contact_ids: list[int] = []  # for campaign enrollment
 
     # Group by company_name_normalized
-    company_groups: dict[str, list[dict]] = {}
-    for row in transformed:
+    company_groups: dict[str, list[tuple[int, dict]]] = {}
+    for idx, row in enumerate(transformed):
         key = row.get("company_name_normalized", "")
         if not key:
             continue
-        company_groups.setdefault(key, []).append(row)
+        company_groups.setdefault(key, []).append((idx, row))
 
     with get_cursor(conn) as cursor:
-        for company_norm, contacts in company_groups.items():
-            # Use first row for company data
-            sample = contacts[0]
+        for company_norm, indexed_contacts in company_groups.items():
+            sample = indexed_contacts[0][1]
 
             # INSERT company with ON CONFLICT DO NOTHING
             cursor.execute(
@@ -723,7 +903,6 @@ def execute_import(
                 company_id = row["id"]
                 companies_created += 1
             else:
-                # Company already exists — fetch its id
                 cursor.execute(
                     "SELECT id FROM companies WHERE user_id = %s AND name_normalized = %s",
                     (user_id, company_norm),
@@ -733,14 +912,34 @@ def execute_import(
                 if not company_id:
                     continue
 
-            # INSERT contacts
-            for contact in contacts:
-                email_norm = contact.get("email_normalized")
-
+            for idx, contact in indexed_contacts:
                 # Skip contacts with no identifiers
                 if not contact.get("full_name") and not contact.get("email") and not contact.get("first_name"):
                     continue
 
+                decision = (row_decisions or {}).get(idx)
+                action = decision["action"] if decision else None
+
+                if action == "skip":
+                    contacts_skipped += 1
+                    continue
+
+                if action == "merge" and decision.get("existing_contact_id"):
+                    # UPDATE existing CRM contact — enrich null fields
+                    existing_id = decision["existing_contact_id"]
+                    _merge_contact(cursor, existing_id, contact)
+                    contacts_merged += 1
+                    all_contact_ids.append(existing_id)
+                    continue
+
+                if action == "enroll" and decision.get("existing_contact_id"):
+                    # Don't create — just collect ID for enrollment
+                    contacts_enrolled += 1
+                    all_contact_ids.append(decision["existing_contact_id"])
+                    continue
+
+                # Default: INSERT new contact (action == "import" or no decision)
+                email_norm = contact.get("email_normalized")
                 cursor.execute(
                     """INSERT INTO contacts
                        (company_id, first_name, last_name, full_name,
@@ -769,10 +968,30 @@ def execute_import(
                 )
                 if cursor.rowcount > 0:
                     contacts_created += 1
+                    # Get the new contact ID for enrollment
+                    if campaign_id and email_norm:
+                        cursor.execute(
+                            "SELECT id FROM contacts WHERE user_id = %s AND email_normalized = %s",
+                            (user_id, email_norm),
+                        )
+                        new_row = cursor.fetchone()
+                        if new_row:
+                            all_contact_ids.append(new_row["id"])
                 else:
                     duplicates_skipped += 1
 
     conn.commit()
+
+    # Enroll all collected contacts in campaign
+    if campaign_id and all_contact_ids:
+        try:
+            from src.models.campaigns import bulk_enroll_contacts
+            enrolled = bulk_enroll_contacts(
+                conn, campaign_id, all_contact_ids, user_id=user_id,
+            )
+            contacts_enrolled += enrolled
+        except Exception as exc:
+            logger.warning("Campaign enrollment after smart import failed: %s", exc)
 
     # Run dedup pipeline
     try:
@@ -785,4 +1004,37 @@ def execute_import(
         "companies_created": companies_created,
         "contacts_created": contacts_created,
         "duplicates_skipped": duplicates_skipped,
+        "contacts_merged": contacts_merged,
+        "contacts_enrolled": contacts_enrolled,
+        "contacts_skipped": contacts_skipped,
     }
+
+
+def _merge_contact(cursor, existing_contact_id: int, import_data: dict):
+    """Update an existing CRM contact with non-null fields from import data.
+
+    Only fills in fields that are currently NULL in the CRM — does not overwrite.
+    """
+    MERGE_FIELDS = [
+        ("title", "title"),
+        ("linkedin_url", "linkedin_url"),
+        ("linkedin_url_normalized", "linkedin_url_normalized"),
+        ("email", "email"),
+        ("email_normalized", "email_normalized"),
+    ]
+    set_parts = []
+    values = []
+    for import_key, db_col in MERGE_FIELDS:
+        val = import_data.get(import_key)
+        if val:
+            set_parts.append(f"{db_col} = COALESCE({db_col}, %s)")
+            values.append(val)
+
+    if not set_parts:
+        return
+
+    values.append(existing_contact_id)
+    cursor.execute(
+        f"UPDATE contacts SET {', '.join(set_parts)} WHERE id = %s",
+        values,
+    )

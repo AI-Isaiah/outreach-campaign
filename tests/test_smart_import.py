@@ -11,6 +11,12 @@ from src.services.smart_import import (
     preview_import,
     execute_import,
     _parse_aum,
+    parse_csv_with_header_detection,
+)
+from src.services.normalization_utils import (
+    normalize_email,
+    normalize_linkedin_url,
+    normalize_company_name,
 )
 from src.models.database import get_connection, get_cursor, run_migrations
 from tests.conftest import TEST_USER_ID, insert_company, insert_contact
@@ -426,10 +432,12 @@ def test_parse_aum(raw, expected):
 
 
 def test_preview_import_duplicate_detection(tmp_db):
-    """Insert an existing contact, preview detects it as duplicate."""
+    """Insert an existing contact, preview detects email-only match."""
     conn = _setup_db(tmp_db)
 
-    # Insert a company and contact that will collide with the transformed data
+    # Insert a company and contact that will collide with the transformed data.
+    # insert_contact() auto-generates a LinkedIn URL, but the import row has none,
+    # so this is an email_only match (not exact).
     company_id = insert_company(conn, "Existing Corp")
     insert_contact(
         conn, company_id,
@@ -437,7 +445,7 @@ def test_preview_import_duplicate_detection(tmp_db):
         email="alice@existing.com",
     )
 
-    # Build transformed rows -- one duplicate, one new
+    # Build transformed rows -- one email-only match, one new
     transformed = [
         {
             "company_name": "Existing Corp",
@@ -484,14 +492,19 @@ def test_preview_import_duplicate_detection(tmp_db):
     result = preview_import(conn, transformed, user_id=TEST_USER_ID)
 
     assert result["total_contacts"] == 2
-    assert result["duplicates"] == 1
-    assert result["new_contacts"] == 1
+    # Email-only match is not an exact duplicate — only exact matches count
+    assert result["duplicates"] == 0
+    assert result["new_contacts"] == 2
     assert result["total_companies"] == 2
 
-    # Check that preview_rows marks the duplicate correctly
+    # Check that preview_rows marks the match correctly
     alice_row = [r for r in result["preview_rows"] if r["email"] == "alice@existing.com"][0]
     bob_row = [r for r in result["preview_rows"] if r["email"] == "bob@newcorp.com"][0]
-    assert alice_row["is_duplicate"] is True
+    assert alice_row["match_type"] == "email_only"
+    assert alice_row["is_duplicate"] is False
+    assert alice_row["existing_contact_id"] is not None
+    assert alice_row["field_diffs"] is not None
+    assert bob_row["match_type"] is None
     assert bob_row["is_duplicate"] is False
 
     conn.close()
@@ -569,7 +582,7 @@ def test_execute_import_creates_records(tmp_db):
         },
     ]
 
-    with patch("src.services.smart_import.run_dedup"):
+    with patch("src.services.deduplication.run_dedup"):
         stats = execute_import(conn, transformed, user_id=TEST_USER_ID)
 
     assert stats["companies_created"] == 2
@@ -671,3 +684,354 @@ def test_state_machine_re_preview(tmp_db):
     assert stored_mapping == column_mapping
 
     conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Helpers for new duplicate redesign tests
+# ---------------------------------------------------------------------------
+
+
+def _make_transformed_row(
+    company="Acme Corp",
+    email="alice@acme.com",
+    linkedin="https://linkedin.com/in/alice",
+    first_name="Alice",
+    last_name="Smith",
+    title="CEO",
+    **overrides,
+):
+    """Helper to build a transformed row dict."""
+    row = {
+        "company_name": company,
+        "company_name_normalized": normalize_company_name(company),
+        "country": None,
+        "aum_millions": None,
+        "firm_type": None,
+        "is_gdpr": False,
+        "first_name": first_name,
+        "last_name": last_name,
+        "full_name": f"{first_name} {last_name}",
+        "email": email,
+        "email_normalized": normalize_email(email) if email else None,
+        "linkedin_url": linkedin,
+        "linkedin_url_normalized": normalize_linkedin_url(linkedin) if linkedin else None,
+        "title": title,
+        "priority_rank": 1,
+        "email_status": "unknown",
+        "website": None,
+        "address": None,
+    }
+    row.update(overrides)
+    return row
+
+
+def _insert_existing_contact(conn, *, email=None, linkedin_url=None, title=None,
+                              first_name="Alice", last_name="Smith"):
+    """Insert a company + contact into the DB, return (company_id, contact_id)."""
+    email_norm = normalize_email(email) if email else None
+    linkedin_norm = normalize_linkedin_url(linkedin_url) if linkedin_url else None
+    with get_cursor(conn) as cur:
+        # Use upsert: try insert, fetch if exists
+        cur.execute(
+            "SELECT id FROM companies WHERE name_normalized = 'acme corp' AND user_id = %s",
+            (TEST_USER_ID,),
+        )
+        existing = cur.fetchone()
+        if existing:
+            co_id_result = existing
+        else:
+            cur.execute(
+                """INSERT INTO companies (name, name_normalized, user_id)
+                   VALUES ('Acme Corp', 'acme corp', %s) RETURNING id""",
+                (TEST_USER_ID,),
+            )
+            co_id_result = cur.fetchone()
+        co_id = co_id_result["id"]
+        cur.execute(
+            """INSERT INTO contacts
+               (company_id, first_name, last_name, full_name,
+                email, email_normalized,
+                linkedin_url, linkedin_url_normalized,
+                title, user_id)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+            (co_id, first_name, last_name, f"{first_name} {last_name}",
+             email, email_norm, linkedin_url, linkedin_norm, title, TEST_USER_ID),
+        )
+        contact_id = cur.fetchone()["id"]
+    conn.commit()
+    return co_id, contact_id
+
+
+# ---------------------------------------------------------------------------
+# 16. preview_import field-level diffs (P0)
+# ---------------------------------------------------------------------------
+
+
+class TestPreviewImportFieldDiffs:
+    """preview_import should return field-level diffs instead of auto-clearing."""
+
+    def test_new_contact_has_no_diffs(self, tmp_db):
+        conn = _setup_db(tmp_db)
+        try:
+            row = _make_transformed_row()
+            result = preview_import(conn, [row], user_id=TEST_USER_ID)
+            r = result["preview_rows"][0]
+            assert r["match_type"] is None
+            assert r["field_diffs"] is None
+            assert r["existing_contact"] is None
+            assert r["existing_contact_id"] is None
+            assert r["email"] == "alice@acme.com"
+            assert r["linkedin_url"] == "https://linkedin.com/in/alice"
+        finally:
+            conn.close()
+
+    def test_exact_match_returns_diffs(self, tmp_db):
+        conn = _setup_db(tmp_db)
+        try:
+            _co_id, contact_id = _insert_existing_contact(
+                conn, email="alice@acme.com",
+                linkedin_url="https://linkedin.com/in/alice", title="CFO",
+            )
+            row = _make_transformed_row(title="CEO")
+            result = preview_import(conn, [row], user_id=TEST_USER_ID)
+            r = result["preview_rows"][0]
+            assert r["match_type"] == "exact"
+            assert r["existing_contact_id"] == contact_id
+            assert r["existing_contact"]["title"] == "CFO"
+            assert r["field_diffs"]["title"] == "conflict"
+            assert r["field_diffs"]["email"] == "same"
+            assert r["email"] == "alice@acme.com"
+            assert r["linkedin_url"] == "https://linkedin.com/in/alice"
+        finally:
+            conn.close()
+
+    def test_email_only_match_shows_enrichable_fields(self, tmp_db):
+        conn = _setup_db(tmp_db)
+        try:
+            _co_id, contact_id = _insert_existing_contact(
+                conn, email="alice@acme.com", linkedin_url=None, title=None,
+            )
+            row = _make_transformed_row(title="CEO")
+            result = preview_import(conn, [row], user_id=TEST_USER_ID)
+            r = result["preview_rows"][0]
+            assert r["match_type"] == "email_only"
+            assert r["existing_contact_id"] == contact_id
+            assert r["field_diffs"]["linkedin_url"] == "new"
+            assert r["field_diffs"]["title"] == "new"
+            assert r["email"] == "alice@acme.com"
+            assert r["linkedin_url"] == "https://linkedin.com/in/alice"
+        finally:
+            conn.close()
+
+    def test_linkedin_only_match(self, tmp_db):
+        conn = _setup_db(tmp_db)
+        try:
+            _co_id, contact_id = _insert_existing_contact(
+                conn, email=None, linkedin_url="https://linkedin.com/in/alice",
+            )
+            row = _make_transformed_row()
+            result = preview_import(conn, [row], user_id=TEST_USER_ID)
+            r = result["preview_rows"][0]
+            assert r["match_type"] == "linkedin_only"
+            assert r["existing_contact_id"] == contact_id
+            assert r["field_diffs"]["email"] == "new"
+        finally:
+            conn.close()
+
+    def test_both_match_different_contacts(self, tmp_db):
+        """Email matches contact A, LinkedIn matches contact B."""
+        conn = _setup_db(tmp_db)
+        try:
+            _insert_existing_contact(
+                conn, email="alice@acme.com", linkedin_url=None,
+                first_name="Alice", last_name="A",
+            )
+            _insert_existing_contact(
+                conn, email=None, linkedin_url="https://linkedin.com/in/alice",
+                first_name="Alice", last_name="B",
+            )
+            row = _make_transformed_row()
+            result = preview_import(conn, [row], user_id=TEST_USER_ID)
+            r = result["preview_rows"][0]
+            assert r["match_type"] == "both_different_contacts"
+            assert r["existing_contact_id"] is not None
+            assert r["is_duplicate"] is False
+            # Import data preserved
+            assert r["email"] == "alice@acme.com"
+            assert r["linkedin_url"] == "https://linkedin.com/in/alice"
+        finally:
+            conn.close()
+
+
+# ---------------------------------------------------------------------------
+# 17. execute_import with row decisions (P0)
+# ---------------------------------------------------------------------------
+
+
+class TestExecuteImportWithDecisions:
+    """execute_import should handle per-row merge/skip/enroll decisions."""
+
+    def test_merge_enriches_existing_contact(self, tmp_db):
+        conn = _setup_db(tmp_db)
+        try:
+            _co_id, contact_id = _insert_existing_contact(
+                conn, email="alice@acme.com", linkedin_url=None, title=None,
+            )
+            row = _make_transformed_row(title="CEO")
+            decisions = {0: {"action": "merge", "existing_contact_id": contact_id}}
+            with patch("src.services.deduplication.run_dedup"):
+                result = execute_import(conn, [row], user_id=TEST_USER_ID, row_decisions=decisions)
+            assert result["contacts_merged"] == 1
+
+            with get_cursor(conn) as cur:
+                cur.execute("SELECT title, linkedin_url FROM contacts WHERE id = %s", (contact_id,))
+                updated = cur.fetchone()
+            assert updated["title"] == "CEO"
+            assert updated["linkedin_url"] == "https://linkedin.com/in/alice"
+        finally:
+            conn.close()
+
+    def test_skip_decision_does_not_create(self, tmp_db):
+        conn = _setup_db(tmp_db)
+        try:
+            row = _make_transformed_row()
+            decisions = {0: {"action": "skip"}}
+            with patch("src.services.deduplication.run_dedup"):
+                result = execute_import(conn, [row], user_id=TEST_USER_ID, row_decisions=decisions)
+            assert result["contacts_created"] == 0
+            assert result["contacts_skipped"] == 1
+        finally:
+            conn.close()
+
+    def test_enroll_decision_enrolls_existing(self, tmp_db):
+        conn = _setup_db(tmp_db)
+        try:
+            _co_id, contact_id = _insert_existing_contact(
+                conn, email="alice@acme.com",
+            )
+            with get_cursor(conn) as cur:
+                cur.execute(
+                    "INSERT INTO campaigns (name, user_id) VALUES ('Q1', %s) RETURNING id",
+                    (TEST_USER_ID,),
+                )
+                campaign_id = cur.fetchone()["id"]
+            conn.commit()
+
+            row = _make_transformed_row()
+            decisions = {0: {"action": "enroll", "existing_contact_id": contact_id}}
+            with patch("src.services.deduplication.run_dedup"):
+                result = execute_import(
+                    conn, [row], user_id=TEST_USER_ID,
+                    row_decisions=decisions, campaign_id=campaign_id,
+                )
+            assert result["contacts_enrolled"] >= 1
+
+            with get_cursor(conn) as cur:
+                cur.execute(
+                    "SELECT * FROM contact_campaign_status WHERE contact_id = %s AND campaign_id = %s",
+                    (contact_id, campaign_id),
+                )
+                assert cur.fetchone() is not None
+        finally:
+            conn.close()
+
+    def test_no_decisions_uses_legacy_behavior(self, tmp_db):
+        conn = _setup_db(tmp_db)
+        try:
+            row = _make_transformed_row(email="new@example.com", linkedin=None)
+            with patch("src.services.deduplication.run_dedup"):
+                result = execute_import(conn, [row], user_id=TEST_USER_ID)
+            assert result["contacts_created"] == 1
+        finally:
+            conn.close()
+
+    def test_new_contact_enrolled_in_campaign(self, tmp_db):
+        """New contact created with campaign_id gets enrolled."""
+        conn = _setup_db(tmp_db)
+        try:
+            with get_cursor(conn) as cur:
+                cur.execute(
+                    "INSERT INTO campaigns (name, user_id) VALUES ('Q2', %s) RETURNING id",
+                    (TEST_USER_ID,),
+                )
+                campaign_id = cur.fetchone()["id"]
+            conn.commit()
+
+            row = _make_transformed_row(email="brand-new@example.com", linkedin=None)
+            decisions = {0: {"action": "import"}}
+            with patch("src.services.deduplication.run_dedup"):
+                result = execute_import(
+                    conn, [row], user_id=TEST_USER_ID,
+                    row_decisions=decisions, campaign_id=campaign_id,
+                )
+            assert result["contacts_created"] == 1
+            assert result["contacts_enrolled"] >= 1
+
+            # Verify enrollment exists
+            with get_cursor(conn) as cur:
+                cur.execute(
+                    """SELECT ccs.* FROM contact_campaign_status ccs
+                       JOIN contacts c ON c.id = ccs.contact_id
+                       WHERE c.email_normalized = %s AND ccs.campaign_id = %s""",
+                    ("brand-new@example.com", campaign_id),
+                )
+                assert cur.fetchone() is not None
+        finally:
+            conn.close()
+
+
+# ---------------------------------------------------------------------------
+# 18. Header detection (moved to services, P2)
+# ---------------------------------------------------------------------------
+
+
+class TestHeaderDetection:
+    def test_detect_header_row_with_metadata_prefix(self):
+        csv_content = (
+            "Report generated 2026-03-24,,,,\n"
+            "Source: LinkedIn Export,,,,\n"
+            "Firm Name,Country,Primary Contact,Primary Email,Position\n"
+            "Acme Corp,USA,Alice Smith,alice@acme.com,CEO\n"
+        )
+        headers, rows = parse_csv_with_header_detection(csv_content)
+        assert "Firm Name" in headers
+        assert len(rows) == 1
+        assert rows[0]["Primary Contact"] == "Alice Smith"
+
+    def test_detect_header_row_first_row(self):
+        csv_content = "Name,Email,Company\nAlice,alice@test.com,Acme\n"
+        headers, rows = parse_csv_with_header_detection(csv_content)
+        assert headers == ["Name", "Email", "Company"]
+        assert len(rows) == 1
+
+
+# ---------------------------------------------------------------------------
+# 19. Within-file duplicate detection (P1)
+# ---------------------------------------------------------------------------
+
+
+class TestWithinFileDuplicates:
+    def test_same_email_twice_in_file(self, tmp_db):
+        conn = _setup_db(tmp_db)
+        try:
+            row1 = _make_transformed_row(first_name="Alice", email="alice@acme.com")
+            row2 = _make_transformed_row(first_name="Alicia", email="alice@acme.com", title="VP")
+            result = preview_import(conn, [row1, row2], user_id=TEST_USER_ID)
+            rows = result["preview_rows"]
+            assert rows[0].get("within_file_duplicate") is False
+            assert rows[1]["within_file_duplicate"] is True
+            assert rows[1]["within_file_duplicate_of"] == 0
+        finally:
+            conn.close()
+
+    def test_different_emails_not_flagged(self, tmp_db):
+        conn = _setup_db(tmp_db)
+        try:
+            row1 = _make_transformed_row(email="alice@acme.com", linkedin="https://linkedin.com/in/alice")
+            row2 = _make_transformed_row(email="bob@acme.com", first_name="Bob", linkedin="https://linkedin.com/in/bob")
+            result = preview_import(conn, [row1, row2], user_id=TEST_USER_ID)
+            rows = result["preview_rows"]
+            assert rows[0].get("within_file_duplicate") is False
+            assert rows[1].get("within_file_duplicate") is False
+        finally:
+            conn.close()
