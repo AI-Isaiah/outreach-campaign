@@ -541,58 +541,116 @@ def preview_import(
 ) -> dict:
     """Check transformed contacts for duplicates without writing anything.
 
-    Parameters
-    ----------
-    conn
-        Database connection.
-    transformed : list[dict]
-        Output of transform_rows().
-    user_id : int
-        Owner user ID for scoped duplicate lookup.
-
-    Returns
-    -------
-    dict
-        ``{"total_contacts": N, "total_companies": M, "duplicates": K,
-          "new_contacts": N-K, "preview_rows": first_20_rows}``
+    Duplicate logic:
+      - BOTH email AND LinkedIn match same existing contact → true duplicate
+      - Only email matches → auto-clear email from import row (keep contact)
+      - Only LinkedIn matches → auto-clear LinkedIn from import row
+      - Neither matches → new contact
     """
-    duplicates = 0
     emails_to_check = [
         r["email_normalized"]
         for r in transformed
         if r.get("email_normalized")
     ]
+    linkedins_to_check = [
+        r["linkedin_url_normalized"]
+        for r in transformed
+        if r.get("linkedin_url_normalized")
+    ]
 
-    existing: set = set()
-    if emails_to_check:
+    # Single batch lookup for both email and LinkedIn matches
+    email_existing: dict[str, dict] = {}
+    linkedin_existing: dict[str, dict] = {}
+    if emails_to_check or linkedins_to_check:
         with get_cursor(conn) as cursor:
-            # Use ANY(%s) for efficient batch lookup
             cursor.execute(
-                "SELECT email_normalized FROM contacts "
-                "WHERE user_id = %s AND email_normalized = ANY(%s)",
-                (user_id, emails_to_check),
+                """SELECT c.id, c.email_normalized, c.linkedin_url_normalized,
+                          c.first_name, c.last_name, c.email, c.title,
+                          c.linkedin_url, co.name AS company_name
+                   FROM contacts c
+                   LEFT JOIN companies co ON co.id = c.company_id AND co.user_id = %s
+                   WHERE c.user_id = %s
+                     AND (c.email_normalized = ANY(%s)
+                          OR c.linkedin_url_normalized = ANY(%s))""",
+                (user_id, user_id,
+                 emails_to_check or [], linkedins_to_check or []),
             )
-            existing = {row["email_normalized"] for row in cursor.fetchall()}
-            duplicates = len(existing)
+            for row in cursor.fetchall():
+                if row["email_normalized"] and row["email_normalized"] in set(emails_to_check):
+                    email_existing[row["email_normalized"]] = row
+                if row["linkedin_url_normalized"] and row["linkedin_url_normalized"] in set(linkedins_to_check):
+                    linkedin_existing[row["linkedin_url_normalized"]] = row
 
     company_names = {r["company_name_normalized"] for r in transformed if r.get("company_name_normalized")}
 
-    # Mark duplicates on preview rows
-    preview_rows = []
-    for r in transformed[:20]:
+    # Build ALL rows with duplicate/overlap info
+    all_rows = []
+    exact_duplicates = 0
+
+    for idx, r in enumerate(transformed):
         row_copy = dict(r)
-        row_copy["is_duplicate"] = (
-            r.get("email_normalized") is not None
-            and r["email_normalized"] in existing
-        ) if emails_to_check else False
-        preview_rows.append(row_copy)
+        row_copy["_index"] = idx
+
+        email_norm = r.get("email_normalized")
+        linkedin_norm = r.get("linkedin_url_normalized")
+        email_match = email_existing.get(email_norm) if email_norm else None
+        linkedin_match = linkedin_existing.get(linkedin_norm) if linkedin_norm else None
+
+        if email_match and linkedin_match:
+            # Both match — true duplicate only if same existing contact
+            if email_match["id"] == linkedin_match["id"]:
+                row_copy["is_duplicate"] = True
+                row_copy["duplicate_type"] = "exact"
+                row_copy["existing_contact"] = {
+                    "first_name": email_match["first_name"],
+                    "last_name": email_match["last_name"],
+                    "email": email_match["email"],
+                    "title": email_match["title"],
+                    "linkedin_url": email_match["linkedin_url"],
+                    "company_name": email_match["company_name"],
+                }
+                row_copy["overlap_cleared"] = None
+                exact_duplicates += 1
+            else:
+                # Different existing contacts — clear both overlaps
+                row_copy["is_duplicate"] = False
+                row_copy["duplicate_type"] = "both_overlap"
+                row_copy["existing_contact"] = None
+                row_copy["overlap_cleared"] = "email+linkedin"
+                row_copy["email"] = None
+                row_copy["email_normalized"] = None
+                row_copy["linkedin_url"] = None
+                row_copy["linkedin_url_normalized"] = None
+        elif email_match:
+            # Only email matches — clear email, keep contact for LinkedIn outreach
+            row_copy["is_duplicate"] = False
+            row_copy["duplicate_type"] = "email_overlap"
+            row_copy["existing_contact"] = None
+            row_copy["overlap_cleared"] = "email"
+            row_copy["email"] = None
+            row_copy["email_normalized"] = None
+        elif linkedin_match:
+            # Only LinkedIn matches — clear LinkedIn, keep contact for email outreach
+            row_copy["is_duplicate"] = False
+            row_copy["duplicate_type"] = "linkedin_overlap"
+            row_copy["existing_contact"] = None
+            row_copy["overlap_cleared"] = "linkedin"
+            row_copy["linkedin_url"] = None
+            row_copy["linkedin_url_normalized"] = None
+        else:
+            row_copy["is_duplicate"] = False
+            row_copy["duplicate_type"] = None
+            row_copy["existing_contact"] = None
+            row_copy["overlap_cleared"] = None
+
+        all_rows.append(row_copy)
 
     return {
         "total_contacts": len(transformed),
         "total_companies": len(company_names),
-        "duplicates": duplicates,
-        "new_contacts": len(transformed) - duplicates,
-        "preview_rows": preview_rows,
+        "duplicates": exact_duplicates,
+        "new_contacts": len(transformed) - exact_duplicates,
+        "preview_rows": all_rows,
     }
 
 

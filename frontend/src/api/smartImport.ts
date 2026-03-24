@@ -16,12 +16,42 @@ export interface AnalyzeResult {
   row_count: number;
 }
 
+export interface ExistingContact {
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+  title: string | null;
+  linkedin_url: string | null;
+  company_name: string | null;
+}
+
+export interface PreviewRow {
+  _index: number;
+  company_name: string;
+  full_name: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+  email_normalized: string | null;
+  title: string | null;
+  linkedin_url: string | null;
+  country: string | null;
+  aum_millions: number | null;
+  firm_type: string | null;
+  is_gdpr: boolean;
+  is_duplicate: boolean;
+  duplicate_type: "exact" | "email_overlap" | "linkedin_overlap" | "both_overlap" | null;
+  overlap_cleared: "email" | "linkedin" | "email+linkedin" | null;
+  existing_contact: ExistingContact | null;
+  [key: string]: unknown;
+}
+
 export interface PreviewResult {
   total_contacts: number;
   total_companies: number;
   duplicates: number;
   new_contacts: number;
-  preview_rows: Record<string, string>[];
+  preview_rows: PreviewRow[];
 }
 
 export interface ImportResult {
@@ -60,9 +90,12 @@ export const smartImportApi = {
       }),
     }),
 
-  execute: async (jobId: string): Promise<ImportResult> =>
+  execute: async (jobId: string, excludedIndices?: number[]): Promise<ImportResult> =>
     request<ImportResult>("/import/execute", {
       method: "POST",
-      body: JSON.stringify({ import_job_id: jobId }),
+      body: JSON.stringify({
+        import_job_id: jobId,
+        excluded_indices: excludedIndices?.length ? excludedIndices : undefined,
+      }),
     }),
 };

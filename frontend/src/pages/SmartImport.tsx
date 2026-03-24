@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import {
@@ -9,13 +9,19 @@ import {
   Loader2,
   Info,
   RotateCcw,
+  Search,
+  ChevronDown,
+  ChevronRight,
+  X,
 } from "lucide-react";
 import {
   smartImportApi,
   type AnalyzeResult,
   type PreviewResult,
+  type PreviewRow,
   type ImportResult,
 } from "../api/smartImport";
+import Pagination from "../components/Pagination";
 
 type Step = "upload" | "mapping" | "preview";
 
@@ -46,6 +52,16 @@ const STEPS: { key: Step; label: string }[] = [
   { key: "mapping", label: "Map Columns" },
   { key: "preview", label: "Preview & Import" },
 ];
+
+const PREVIEW_COLUMNS = [
+  { key: "company_name", label: "Company" },
+  { key: "full_name", label: "Name" },
+  { key: "email", label: "Email" },
+  { key: "title", label: "Title" },
+  { key: "country", label: "Country" },
+  { key: "linkedin_url", label: "LinkedIn" },
+  { key: "aum_millions", label: "AUM ($M)" },
+] as const;
 
 function confidenceColor(c: number): string {
   if (c >= 0.8) return "text-green-600 bg-green-50 border-green-200";
@@ -80,6 +96,166 @@ function AnalysisStatus() {
   return <p className="text-sm text-gray-500">{messages[msgIndex]}</p>;
 }
 
+/** Single row in the preview table with optional duplicate expansion. */
+function PreviewTableRow({
+  row,
+  columns,
+  isExcluded,
+  isSelected,
+  isExpanded,
+  onToggleExclude,
+  onToggleSelect,
+  onToggleExpand,
+}: {
+  row: PreviewRow;
+  columns: { key: string; label: string }[];
+  isExcluded: boolean;
+  isSelected: boolean;
+  isExpanded: boolean;
+  onToggleExclude: () => void;
+  onToggleSelect: () => void;
+  onToggleExpand: () => void;
+}) {
+  const rowOpacity = isExcluded ? "opacity-40" : "";
+
+  return (
+    <>
+      <tr
+        className={`hover:bg-gray-50 transition-colors ${rowOpacity} ${
+          row.is_duplicate ? "bg-yellow-50/50" : ""
+        }`}
+      >
+        {/* Select checkbox */}
+        <td className="px-3 py-3">
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={onToggleSelect}
+            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          />
+        </td>
+        {/* Import toggle */}
+        <td className="px-3 py-3 text-center">
+          <input
+            type="checkbox"
+            checked={!isExcluded}
+            onChange={onToggleExclude}
+            className="rounded border-gray-300 text-green-600 focus:ring-green-500"
+          />
+        </td>
+        {/* Status */}
+        <td className="px-3 py-3">
+          {row.is_duplicate ? (
+            <button
+              onClick={onToggleExpand}
+              className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-800 hover:bg-yellow-200 transition-colors"
+            >
+              {isExpanded ? (
+                <ChevronDown size={12} />
+              ) : (
+                <ChevronRight size={12} />
+              )}
+              Already in CRM
+            </button>
+          ) : row.overlap_cleared ? (
+            <span className="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-700">
+              {row.overlap_cleared === "email"
+                ? "Email cleared"
+                : row.overlap_cleared === "linkedin"
+                  ? "LinkedIn cleared"
+                  : row.overlap_cleared === "email+linkedin"
+                    ? "Both cleared"
+                    : "Overlap"}
+            </span>
+          ) : (
+            <span className="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-green-100 text-green-700">
+              New
+            </span>
+          )}
+        </td>
+        {/* Data columns */}
+        {columns.map((col) => {
+          const val = row[col.key];
+          return (
+            <td
+              key={col.key}
+              className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap max-w-[200px] truncate"
+              title={val != null ? String(val) : undefined}
+            >
+              {val != null && val !== "" ? (
+                String(val)
+              ) : (
+                <span className="text-gray-300">&mdash;</span>
+              )}
+            </td>
+          );
+        })}
+      </tr>
+
+      {/* Expanded duplicate comparison */}
+      {isExpanded && row.is_duplicate && row.existing_contact && (
+        <tr className="bg-yellow-50 border-l-4 border-l-yellow-400">
+          <td colSpan={columns.length + 3} className="px-5 py-4">
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-yellow-800 uppercase tracking-wide">
+                This contact already exists in your CRM
+              </p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                {row.existing_contact.company_name && (
+                  <div>
+                    <span className="text-gray-400 text-xs">Company</span>
+                    <p className="text-gray-700">
+                      {row.existing_contact.company_name}
+                    </p>
+                  </div>
+                )}
+                <div>
+                  <span className="text-gray-400 text-xs">Name</span>
+                  <p className="text-gray-700">
+                    {[
+                      row.existing_contact.first_name,
+                      row.existing_contact.last_name,
+                    ]
+                      .filter(Boolean)
+                      .join(" ") || "\u2014"}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-gray-400 text-xs">Email</span>
+                  <p className="text-gray-700">
+                    {row.existing_contact.email || "\u2014"}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-gray-400 text-xs">Title</span>
+                  <p className="text-gray-700">
+                    {row.existing_contact.title || "\u2014"}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 pt-1">
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isExcluded}
+                    onChange={onToggleExclude}
+                    className="rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
+                  />
+                  <span className="text-yellow-800">
+                    {isExcluded
+                      ? "Excluded from import"
+                      : "Uncheck to exclude this row"}
+                  </span>
+                </label>
+              </div>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
 export default function SmartImport() {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -93,6 +269,17 @@ export default function SmartImport() {
   const [sourceLabel, setSourceLabel] = useState("");
   const [previewData, setPreviewData] = useState<PreviewResult | null>(null);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
+
+  // Preview table state
+  const [previewPage, setPreviewPage] = useState(1);
+  const [previewPageSize, setPreviewPageSize] = useState(50);
+  const [previewSortBy, setPreviewSortBy] = useState<string>("");
+  const [previewSortDir, setPreviewSortDir] = useState<"asc" | "desc">("asc");
+  const [previewFilter, setPreviewFilter] = useState("");
+  const [previewShowFilter, setPreviewShowFilter] = useState<"all" | "new" | "duplicates">("all");
+  const [excludedIndices, setExcludedIndices] = useState<Set<number>>(new Set());
+  const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
+  const [expandedDuplicate, setExpandedDuplicate] = useState<number | null>(null);
 
   // Accept file from ImportWizard navigation state
   const location = useLocation();
@@ -117,7 +304,6 @@ export default function SmartImport() {
     if (locationStateFile && !file) {
       setFile(locationStateFile);
       analyzeMutation.mutate(locationStateFile);
-      window.history.replaceState({}, document.title);
     }
   }, [locationStateFile]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -135,7 +321,11 @@ export default function SmartImport() {
   });
 
   const executeMutation = useMutation({
-    mutationFn: () => smartImportApi.execute(analysis!.import_job_id),
+    mutationFn: () =>
+      smartImportApi.execute(
+        analysis!.import_job_id,
+        excludedIndices.size > 0 ? [...excludedIndices] : undefined,
+      ),
     onSuccess: (data) => {
       setImportResult(data);
     },
@@ -185,6 +375,15 @@ export default function SmartImport() {
     setSourceLabel("");
     setPreviewData(null);
     setImportResult(null);
+    setPreviewPage(1);
+    setPreviewPageSize(50);
+    setPreviewSortBy("");
+    setPreviewSortDir("asc");
+    setPreviewFilter("");
+    setPreviewShowFilter("all");
+    setExcludedIndices(new Set());
+    setSelectedIndices(new Set());
+    setExpandedDuplicate(null);
     analyzeMutation.reset();
     previewMutation.reset();
     executeMutation.reset();
@@ -192,6 +391,124 @@ export default function SmartImport() {
 
   // Derived
   const stepIndex = STEPS.findIndex((s) => s.key === step);
+
+  // Filtered, sorted, paginated preview rows
+  const filteredPreviewRows = useMemo(() => {
+    if (!previewData) return [];
+    let rows = previewData.preview_rows;
+
+    // Status filter
+    if (previewShowFilter === "new")
+      rows = rows.filter((r) => !r.is_duplicate);
+    else if (previewShowFilter === "duplicates")
+      rows = rows.filter((r) => r.is_duplicate);
+
+    // Text search
+    if (previewFilter.trim()) {
+      const q = previewFilter.toLowerCase();
+      rows = rows.filter((r) =>
+        PREVIEW_COLUMNS.some((col) => {
+          const val = r[col.key];
+          return val != null && String(val).toLowerCase().includes(q);
+        }),
+      );
+    }
+
+    // Sort
+    if (previewSortBy) {
+      const dir = previewSortDir === "asc" ? 1 : -1;
+      rows = [...rows].sort((a, b) => {
+        const av = a[previewSortBy] ?? "";
+        const bv = b[previewSortBy] ?? "";
+        if (typeof av === "number" && typeof bv === "number")
+          return (av - bv) * dir;
+        return String(av).localeCompare(String(bv)) * dir;
+      });
+    }
+
+    return rows;
+  }, [previewData, previewFilter, previewShowFilter, previewSortBy, previewSortDir]);
+
+  const previewTotalPages = useMemo(() => {
+    if (previewPageSize === Infinity) return 1;
+    return Math.max(1, Math.ceil(filteredPreviewRows.length / previewPageSize));
+  }, [filteredPreviewRows.length, previewPageSize]);
+
+  const paginatedPreviewRows = useMemo(() => {
+    if (previewPageSize === Infinity) return filteredPreviewRows;
+    const start = (previewPage - 1) * previewPageSize;
+    return filteredPreviewRows.slice(start, start + previewPageSize);
+  }, [filteredPreviewRows, previewPage, previewPageSize]);
+
+  // Effective duplicate/new counts after exclusions
+  const effectiveDuplicates = useMemo(() => {
+    if (!previewData) return 0;
+    return previewData.preview_rows.filter(
+      (r) => r.is_duplicate && !excludedIndices.has(r._index),
+    ).length;
+  }, [previewData, excludedIndices]);
+
+  const effectiveImportCount = useMemo(() => {
+    if (!previewData) return 0;
+    // Count non-excluded, non-duplicate rows
+    return previewData.preview_rows.filter(
+      (r) => !excludedIndices.has(r._index) && !r.is_duplicate,
+    ).length;
+  }, [previewData, excludedIndices]);
+
+  const handlePreviewSort = (key: string) => {
+    if (previewSortBy === key) {
+      setPreviewSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setPreviewSortBy(key);
+      setPreviewSortDir("asc");
+    }
+    setPreviewPage(1);
+  };
+
+  const toggleExcluded = (idx: number) => {
+    setExcludedIndices((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  };
+
+  const toggleSelected = (idx: number) => {
+    setSelectedIndices((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIndices.size === paginatedPreviewRows.length) {
+      setSelectedIndices(new Set());
+    } else {
+      setSelectedIndices(new Set(paginatedPreviewRows.map((r) => r._index)));
+    }
+  };
+
+  const bulkExclude = () => {
+    setExcludedIndices((prev) => {
+      const next = new Set(prev);
+      selectedIndices.forEach((idx) => next.add(idx));
+      return next;
+    });
+    setSelectedIndices(new Set());
+  };
+
+  const bulkInclude = () => {
+    setExcludedIndices((prev) => {
+      const next = new Set(prev);
+      selectedIndices.forEach((idx) => next.delete(idx));
+      return next;
+    });
+    setSelectedIndices(new Set());
+  };
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -291,6 +608,17 @@ export default function SmartImport() {
                     {formatBytes(file.size)}
                   </p>
                 </div>
+                <button
+                  onClick={() => {
+                    setFile(null);
+                    setAnalysis(null);
+                    analyzeMutation.reset();
+                  }}
+                  className="text-gray-300 hover:text-gray-500 transition-colors"
+                  title="Remove file"
+                >
+                  <X size={16} />
+                </button>
               </div>
               <button
                 onClick={handleAnalyze}
@@ -518,7 +846,7 @@ export default function SmartImport() {
           {/* Summary stats */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-white rounded-lg shadow-sm border-l-4 border-l-blue-400 p-4">
-              <p className="text-sm font-medium text-gray-500">Contacts</p>
+              <p className="text-sm font-medium text-gray-500">Total contacts</p>
               <p className="text-2xl font-bold text-gray-900">
                 {previewData.total_contacts}
               </p>
@@ -530,59 +858,207 @@ export default function SmartImport() {
               </p>
             </div>
             <div className="bg-white rounded-lg shadow-sm border-l-4 border-l-gray-200 p-4">
-              <p className="text-sm font-medium text-gray-500">New contacts</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {previewData.new_contacts}
+              <p className="text-sm font-medium text-gray-500">Will import</p>
+              <p className="text-2xl font-bold text-green-700">
+                {effectiveImportCount}
               </p>
             </div>
-            <div className="bg-white rounded-lg shadow-sm border-l-4 border-l-yellow-400 p-4">
+            <button
+              onClick={() =>
+                setPreviewShowFilter((f) => (f === "duplicates" ? "all" : "duplicates"))
+              }
+              className="bg-white rounded-lg shadow-sm border-l-4 border-l-yellow-400 p-4 text-left hover:bg-yellow-50 transition-colors"
+            >
               <p className="text-sm font-medium text-gray-500">
-                Duplicates skipped
+                Already in CRM
               </p>
-              <p className="text-2xl font-bold text-gray-900">
-                {previewData.duplicates}
+              <p className="text-2xl font-bold text-yellow-700">
+                {effectiveDuplicates}
               </p>
+              {previewData.duplicates > 0 && (
+                <p className="text-xs text-gray-400 mt-0.5">Click to review</p>
+              )}
+            </button>
+          </div>
+
+          {excludedIndices.size > 0 && (
+            <div className="flex items-center gap-2 text-sm text-gray-500">
+              <Info size={14} className="shrink-0" />
+              {excludedIndices.size} row{excludedIndices.size !== 1 ? "s" : ""} excluded
+              <button
+                onClick={() => setExcludedIndices(new Set())}
+                className="text-blue-600 hover:text-blue-800 underline"
+              >
+                Reset
+              </button>
             </div>
+          )}
+
+          {/* Toolbar: search + status filter + bulk ops */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search
+                size={16}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+              />
+              <input
+                type="text"
+                value={previewFilter}
+                onChange={(e) => {
+                  setPreviewFilter(e.target.value);
+                  setPreviewPage(1);
+                }}
+                placeholder="Search contacts..."
+                className="w-full pl-9 pr-8 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+              />
+              {previewFilter && (
+                <button
+                  onClick={() => {
+                    setPreviewFilter("");
+                    setPreviewPage(1);
+                  }}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center bg-white border border-gray-200 rounded-lg overflow-hidden text-sm">
+              {(["all", "new", "duplicates"] as const).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => {
+                    setPreviewShowFilter(f);
+                    setPreviewPage(1);
+                  }}
+                  className={`px-3 py-2 capitalize transition-colors ${
+                    previewShowFilter === f
+                      ? "bg-gray-900 text-white"
+                      : "text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  {f === "all" ? "All" : f === "new" ? "To Import" : `In CRM (${previewData.duplicates})`}
+                </button>
+              ))}
+            </div>
+
+            {/* Bulk operations */}
+            {selectedIndices.size > 0 && (
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-gray-500">
+                  {selectedIndices.size} selected
+                </span>
+                <button
+                  onClick={bulkExclude}
+                  className="px-2.5 py-1.5 bg-red-50 text-red-700 border border-red-200 rounded-md hover:bg-red-100 transition-colors"
+                >
+                  Exclude
+                </button>
+                <button
+                  onClick={bulkInclude}
+                  className="px-2.5 py-1.5 bg-green-50 text-green-700 border border-green-200 rounded-md hover:bg-green-100 transition-colors"
+                >
+                  Include
+                </button>
+                <button
+                  onClick={() => setSelectedIndices(new Set())}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Preview table */}
-          {previewData.preview_rows.length > 0 && (
-            <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200">
-                    {Object.keys(previewData.preview_rows[0]).map((col) => (
-                      <th
-                        key={col}
-                        className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide whitespace-nowrap"
-                      >
-                        {col}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {previewData.preview_rows.slice(0, 20).map((row, ri) => (
-                    <tr
-                      key={ri}
-                      className="hover:bg-gray-50 transition-colors"
+          <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="px-3 py-3 w-10">
+                    <input
+                      type="checkbox"
+                      checked={
+                        paginatedPreviewRows.length > 0 &&
+                        selectedIndices.size === paginatedPreviewRows.length
+                      }
+                      onChange={toggleSelectAll}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                  </th>
+                  <th className="px-3 py-3 w-10 text-xs font-medium text-gray-500 uppercase tracking-wide">
+                    Import
+                  </th>
+                  <th className="px-3 py-3 w-10 text-xs font-medium text-gray-500 uppercase tracking-wide">
+                    Status
+                  </th>
+                  {PREVIEW_COLUMNS.map((col) => (
+                    <th
+                      key={col.key}
+                      onClick={() => handlePreviewSort(col.key)}
+                      className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide whitespace-nowrap cursor-pointer select-none hover:text-gray-700"
                     >
-                      {Object.values(row).map((val, ci) => (
-                        <td
-                          key={ci}
-                          className="px-5 py-4 text-sm text-gray-600 whitespace-nowrap"
-                        >
-                          {val || (
-                            <span className="text-gray-300">&mdash;</span>
-                          )}
-                        </td>
-                      ))}
-                    </tr>
+                      <span className="inline-flex items-center gap-1">
+                        {col.label}
+                        {previewSortBy === col.key && (
+                          <span className="text-gray-400">
+                            {previewSortDir === "asc" ? "\u25B2" : "\u25BC"}
+                          </span>
+                        )}
+                      </span>
+                    </th>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {paginatedPreviewRows.map((row) => {
+                  const isExcluded = excludedIndices.has(row._index);
+                  const isSelected = selectedIndices.has(row._index);
+                  const isExpanded = expandedDuplicate === row._index;
+
+                  return (
+                    <PreviewTableRow
+                      key={row._index}
+                      row={row}
+                      columns={PREVIEW_COLUMNS}
+                      isExcluded={isExcluded}
+                      isSelected={isSelected}
+                      isExpanded={isExpanded}
+                      onToggleExclude={() => toggleExcluded(row._index)}
+                      onToggleSelect={() => toggleSelected(row._index)}
+                      onToggleExpand={() =>
+                        setExpandedDuplicate(isExpanded ? null : row._index)
+                      }
+                    />
+                  );
+                })}
+                {paginatedPreviewRows.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={PREVIEW_COLUMNS.length + 3}
+                      className="px-5 py-8 text-center text-sm text-gray-400"
+                    >
+                      No contacts match your filters
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination */}
+          <Pagination
+            page={previewPage}
+            totalPages={previewTotalPages}
+            onPageChange={setPreviewPage}
+            totalItems={filteredPreviewRows.length}
+            pageSize={previewPageSize}
+            onPageSizeChange={(size) => {
+              setPreviewPageSize(size);
+              setPreviewPage(1);
+            }}
+          />
 
           {/* Actions */}
           <div className="flex gap-3">
@@ -597,13 +1073,16 @@ export default function SmartImport() {
                   Importing...
                 </>
               ) : (
-                "Import Contacts"
+                `Import ${effectiveImportCount} Contacts`
               )}
             </button>
             <button
               onClick={() => {
                 setStep("mapping");
                 setPreviewData(null);
+                setExcludedIndices(new Set());
+                setSelectedIndices(new Set());
+                setExpandedDuplicate(null);
                 previewMutation.reset();
               }}
               className="px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"

@@ -49,6 +49,7 @@ export interface CampaignContact {
 }
 
 export interface GeneratedStep {
+  _id: string;
   step_order: number;
   channel: string;
   delay_days: number;

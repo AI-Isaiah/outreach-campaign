@@ -33,14 +33,17 @@ def generate_sequence(touchpoints: int, channels: list[str]) -> list[dict]:
     has_email = "email" in channels
     has_linkedin = "linkedin" in channels
     single_channel = len(channels) == 1
-    linkedin_toggle = False  # alternates connect / message
+    linkedin_connect_used = False  # only one connect allowed per sequence
 
     for i in range(touchpoints):
         # Determine channel
         if single_channel:
             if channels[0] == "linkedin":
-                channel = "linkedin_connect" if not linkedin_toggle else "linkedin_message"
-                linkedin_toggle = not linkedin_toggle
+                if not linkedin_connect_used:
+                    channel = "linkedin_connect"
+                    linkedin_connect_used = True
+                else:
+                    channel = "linkedin_message"
             else:
                 channel = "email"
         else:
@@ -49,8 +52,11 @@ def generate_sequence(touchpoints: int, channels: list[str]) -> list[dict]:
             if is_email_turn:
                 channel = "email"
             else:
-                channel = "linkedin_connect" if not linkedin_toggle else "linkedin_message"
-                linkedin_toggle = not linkedin_toggle
+                if not linkedin_connect_used:
+                    channel = "linkedin_connect"
+                    linkedin_connect_used = True
+                else:
+                    channel = "linkedin_message"
 
         # Determine delay
         if i == 0:

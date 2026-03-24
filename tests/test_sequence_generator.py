@@ -45,7 +45,8 @@ class TestGenerateSequence:
         assert len(steps) == 3
         assert steps[0]["channel"] == "linkedin_connect"
         assert steps[1]["channel"] == "linkedin_message"
-        assert steps[2]["channel"] == "linkedin_connect"
+        # Only one connect per sequence — subsequent steps are all messages
+        assert steps[2]["channel"] == "linkedin_message"
 
     def test_linkedin_connect_first_then_message(self):
         steps = generate_sequence(5, ["email", "linkedin"])

@@ -14,7 +14,27 @@ import {
   FileText,
   Loader2,
   Sparkles,
+  GripVertical,
+  Plus,
+  Trash2,
 } from "lucide-react";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
 import { campaignsApi } from "../api/campaigns";
@@ -86,7 +106,7 @@ export default function CampaignWizard() {
       campaignsApi.launchCampaign({
         name,
         description,
-        steps: generatedSteps.map((s) => ({
+        steps: generatedSteps.map(({ _id: _, ...s }) => ({
           ...s,
           template_id: stepTemplates[s.step_order] ?? null,
         })),
@@ -290,7 +310,7 @@ export default function CampaignWizard() {
             onShowFormatHelp={() => setShowFormatHelp(true)}
             onSmartImport={() => {
               if (pendingFile) {
-                window.open("/import/smart", "_blank");
+                navigate("/import/smart", { state: { file: pendingFile } });
               }
             }}
           />
@@ -302,6 +322,7 @@ export default function CampaignWizard() {
             channels={channels}
             toggleChannel={toggleChannel}
             steps={generatedSteps}
+            onStepsChange={setGeneratedSteps}
           />
         )}
         {step === 3 && (
@@ -640,31 +661,182 @@ const TOUCHPOINT_OPTIONS = [
   { value: 7, label: "Thorough", desc: "7 touchpoints" },
 ];
 
+const CHANNEL_OPTIONS = [
+  { value: "email", label: "Email" },
+  { value: "linkedin_connect", label: "LinkedIn Connect" },
+  { value: "linkedin_message", label: "LinkedIn Message" },
+] as const;
+
+function channelBadgeClass(ch: string): string {
+  return ch === "email" ? "bg-blue-100 text-blue-700" : "bg-indigo-100 text-indigo-700";
+}
+
+/** Single sortable step row in the sequence editor. */
+function SortableStep({
+  step,
+  index,
+  totalSteps,
+  hasLinkedInConnect,
+  onChangeChannel,
+  onDelete,
+}: {
+  step: GeneratedStep;
+  index: number;
+  totalSteps: number;
+  hasLinkedInConnect: boolean;
+  onChangeChannel: (channel: string) => void;
+  onDelete: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: step._id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex items-center gap-3 py-2.5 px-2 rounded-lg ${
+        isDragging ? "bg-white shadow-md" : "hover:bg-white/60"
+      } ${index < totalSteps - 1 ? "border-b border-gray-100" : ""}`}
+    >
+      {/* Drag handle */}
+      <button
+        {...attributes}
+        {...listeners}
+        className="text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing shrink-0"
+        tabIndex={-1}
+      >
+        <GripVertical size={16} />
+      </button>
+
+      {/* Day */}
+      <span className="text-xs text-gray-400 w-14 shrink-0">
+        Day {step.delay_days}
+      </span>
+
+      {/* Channel selector */}
+      <select
+        value={step.channel}
+        onChange={(e) => onChangeChannel(e.target.value)}
+        className={`text-xs font-medium px-2 py-1 rounded border-0 cursor-pointer ${channelBadgeClass(step.channel)}`}
+      >
+        {CHANNEL_OPTIONS.map((opt) => {
+          // Disable linkedin_connect if already used by another step
+          const disabled =
+            opt.value === "linkedin_connect" &&
+            hasLinkedInConnect &&
+            step.channel !== "linkedin_connect";
+          return (
+            <option key={opt.value} value={opt.value} disabled={disabled}>
+              {opt.label}
+            </option>
+          );
+        })}
+      </select>
+
+      {/* Step number */}
+      <span className="text-xs text-gray-500 flex-1">
+        Step {index + 1}
+      </span>
+
+      {/* Delete */}
+      {totalSteps > 1 && (
+        <button
+          onClick={onDelete}
+          className="text-gray-300 hover:text-red-500 transition-colors shrink-0"
+          title="Remove step"
+        >
+          <Trash2 size={14} />
+        </button>
+      )}
+    </div>
+  );
+}
+
 function StepSequence({
   touchpoints,
   setTouchpoints,
   channels,
   toggleChannel,
   steps,
+  onStepsChange,
 }: {
   touchpoints: number;
   setTouchpoints: (v: number) => void;
   channels: Set<string>;
   toggleChannel: (c: string) => void;
   steps: GeneratedStep[];
+  onStepsChange: (steps: GeneratedStep[]) => void;
 }) {
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const hasLinkedInConnect = steps.some((s) => s.channel === "linkedin_connect");
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = steps.findIndex((s) => s._id === active.id);
+    const newIndex = steps.findIndex((s) => s._id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = arrayMove(steps, oldIndex, newIndex);
+    // Recalculate step_order and delay_days
+    onStepsChange(recalcSteps(reordered));
+  };
+
+  const handleChangeChannel = (index: number, channel: string) => {
+    const updated = steps.map((s, i) =>
+      i === index ? { ...s, channel } : s,
+    );
+    onStepsChange(recalcSteps(updated));
+  };
+
+  const handleDelete = (index: number) => {
+    const updated = steps.filter((_, i) => i !== index);
+    onStepsChange(recalcSteps(updated));
+  };
+
+  const handleAdd = () => {
+    // Default to email, or linkedin_message if no email channel
+    const defaultChannel = channels.has("email") ? "email" : "linkedin_message";
+    const lastDelay = steps.length > 0 ? steps[steps.length - 1].delay_days : 0;
+    const newStep: GeneratedStep = {
+      _id: crypto.randomUUID(),
+      step_order: steps.length + 1,
+      channel: defaultChannel,
+      delay_days: lastDelay + 3,
+      template_id: null,
+    };
+    onStepsChange(recalcSteps([...steps, newStep]));
+  };
+
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-lg font-semibold">Build your sequence</h2>
         <p className="text-sm text-gray-500 mt-1">
-          We'll generate a sequence with optimal spacing. You can adjust after.
+          Generate a starting sequence, then drag to reorder and customize.
         </p>
       </div>
 
       {/* Touchpoint selector */}
       <div>
-        <h3 className="text-sm font-medium text-gray-700 mb-3">How many touchpoints?</h3>
+        <h3 className="text-sm font-medium text-gray-700 mb-3">Start with a template</h3>
         <div className="grid grid-cols-3 gap-3">
           {TOUCHPOINT_OPTIONS.map((opt) => (
             <button
@@ -708,42 +880,73 @@ function StepSequence({
         </div>
       </div>
 
-      {/* Generated sequence preview */}
+      {/* Sequence editor */}
       {steps.length > 0 && (
         <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
           <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-            Generated Sequence
+            Sequence &mdash; drag to reorder
           </h4>
-          <div className="space-y-0">
-            {steps.map((s, i) => (
-              <div
-                key={i}
-                className={`flex items-center gap-3 py-2 ${
-                  i < steps.length - 1 ? "border-b border-gray-100" : ""
-                }`}
-              >
-                <span className="text-xs text-gray-400 w-14 shrink-0">
-                  Day {s.delay_days}
-                </span>
-                <span
-                  className={`text-xs font-medium px-2 py-0.5 rounded ${
-                    s.channel === "email"
-                      ? "bg-blue-100 text-blue-700"
-                      : "bg-indigo-100 text-indigo-700"
-                  }`}
-                >
-                  {s.channel === "email" ? "Email" : s.channel === "linkedin_connect" ? "LinkedIn Connect" : "LinkedIn Message"}
-                </span>
-                <span className="text-xs text-gray-500">
-                  Step {s.step_order}
-                </span>
+
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext
+              items={steps.map((s) => s._id)}
+              strategy={verticalListSortingStrategy}
+            >
+              <div className="space-y-0">
+                {steps.map((s, i) => (
+                  <SortableStep
+                    key={s._id}
+                    step={s}
+                    index={i}
+                    totalSteps={steps.length}
+                    hasLinkedInConnect={hasLinkedInConnect}
+                    onChangeChannel={(ch) => handleChangeChannel(i, ch)}
+                    onDelete={() => handleDelete(i)}
+                  />
+                ))}
               </div>
-            ))}
-          </div>
+            </SortableContext>
+          </DndContext>
+
+          {/* Add step button */}
+          <button
+            onClick={handleAdd}
+            className="mt-3 flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors w-full justify-center py-2 border border-dashed border-gray-200 rounded-lg hover:border-gray-400"
+          >
+            <Plus size={14} />
+            Add step
+          </button>
         </div>
       )}
     </div>
   );
+}
+
+/** Recalculate step_order (1-indexed) and delay_days after reorder/edit. */
+function recalcSteps(steps: GeneratedStep[]): GeneratedStep[] {
+  return steps.map((s, i) => {
+    let delay: number;
+    if (i === 0) {
+      delay = 0;
+    } else {
+      const prev = steps[i - 1];
+      const sameType =
+        (s.channel === "email" && prev.channel === "email") ||
+        (s.channel !== "email" && prev.channel !== "email");
+      const minGap = sameType ? 3 : 2;
+      const backoff = Math.floor(i / 3);
+      delay = prev.delay_days + minGap + backoff;
+    }
+    return {
+      ...s,
+      step_order: i + 1,
+      delay_days: delay,
+    };
+  });
 }
 
 // ─── Step 4: Messages ──────────────────────────────────────────────
@@ -919,30 +1122,31 @@ export function generateLocalSequence(touchpoints: number, channels: string[]): 
   const hasLinkedin = channels.includes("linkedin");
   const isSingleChannel = channels.length === 1;
 
-  let linkedinToggle = false; // alternates between connect and message
+  let linkedinConnectUsed = false; // only one connect allowed per sequence
 
   for (let i = 0; i < touchpoints; i++) {
     let channel: string;
     let delay: number;
 
     if (isSingleChannel) {
-      channel = channels[0] === "linkedin"
-        ? (!linkedinToggle ? "linkedin_connect" : "linkedin_message")
-        : channels[0];
+      if (channels[0] === "linkedin") {
+        channel = !linkedinConnectUsed ? "linkedin_connect" : "linkedin_message";
+        linkedinConnectUsed = true;
+      } else {
+        channel = "email";
+      }
       // Increasing gaps for single channel
       if (i === 0) delay = 0;
       else if (i <= 2) delay = steps[i - 1].delay_days + 3 + i;
       else delay = steps[i - 1].delay_days + 4 + i;
-
-      if (channels[0] === "linkedin") linkedinToggle = !linkedinToggle;
     } else {
       // Alternate email and linkedin
       const isEmail = i % 2 === 0 ? hasEmail : !hasEmail;
       if (isEmail) {
         channel = "email";
       } else {
-        channel = !linkedinToggle ? "linkedin_connect" : "linkedin_message";
-        linkedinToggle = !linkedinToggle;
+        channel = !linkedinConnectUsed ? "linkedin_connect" : "linkedin_message";
+        linkedinConnectUsed = true;
       }
 
       if (i === 0) delay = 0;
@@ -957,6 +1161,7 @@ export function generateLocalSequence(touchpoints: number, channels: string[]): 
     }
 
     steps.push({
+      _id: crypto.randomUUID(),
       step_order: i + 1,
       channel,
       delay_days: delay,
