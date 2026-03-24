@@ -480,14 +480,6 @@ def _parse_aum(raw: str) -> Optional[float]:
         return None
 
 
-def _get_field(row: dict, mapping: dict, target: str) -> str:
-    """Look up the CSV column mapped to a target field, return its value."""
-    for csv_col, mapped_target in mapping.items():
-        if mapped_target == target:
-            return (row.get(csv_col) or "").strip()
-    return ""
-
-
 def transform_rows(
     rows: list[dict],
     mapping: dict,
@@ -727,10 +719,12 @@ def preview_import(
                 (user_id, user_id,
                  emails_to_check or [], linkedins_to_check or []),
             )
+            emails_set = set(emails_to_check)
+            linkedins_set = set(linkedins_to_check)
             for row in cursor.fetchall():
-                if row["email_normalized"] and row["email_normalized"] in set(emails_to_check):
+                if row["email_normalized"] and row["email_normalized"] in emails_set:
                     email_existing[row["email_normalized"]] = row
-                if row["linkedin_url_normalized"] and row["linkedin_url_normalized"] in set(linkedins_to_check):
+                if row["linkedin_url_normalized"] and row["linkedin_url_normalized"] in linkedins_set:
                     linkedin_existing[row["linkedin_url_normalized"]] = row
 
     company_names = {r["company_name_normalized"] for r in transformed if r.get("company_name_normalized")}
@@ -949,7 +943,8 @@ def execute_import(
                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                                'csv_smart', %s, %s, %s)
                        ON CONFLICT (user_id, email_normalized)
-                       DO NOTHING""",
+                       DO NOTHING
+                       RETURNING id""",
                     (
                         company_id,
                         contact.get("first_name"),
@@ -966,17 +961,11 @@ def execute_import(
                         user_id,
                     ),
                 )
-                if cursor.rowcount > 0:
+                new_row = cursor.fetchone()
+                if new_row:
                     contacts_created += 1
-                    # Get the new contact ID for enrollment
-                    if campaign_id and email_norm:
-                        cursor.execute(
-                            "SELECT id FROM contacts WHERE user_id = %s AND email_normalized = %s",
-                            (user_id, email_norm),
-                        )
-                        new_row = cursor.fetchone()
-                        if new_row:
-                            all_contact_ids.append(new_row["id"])
+                    if campaign_id:
+                        all_contact_ids.append(new_row["id"])
                 else:
                     duplicates_skipped += 1
 

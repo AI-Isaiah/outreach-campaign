@@ -86,19 +86,20 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+const ANALYSIS_MESSAGES = [
+  "Reading CSV structure...",
+  "Detecting column patterns...",
+  "Matching to CRM fields...",
+  "Analyzing contact layout...",
+] as const;
+
 function AnalysisStatus() {
   const [msgIndex, setMsgIndex] = useState(0);
-  const messages = [
-    "Reading CSV structure...",
-    "Detecting column patterns...",
-    "Matching to CRM fields...",
-    "Analyzing contact layout...",
-  ];
   useEffect(() => {
-    const timer = setInterval(() => setMsgIndex((i) => (i + 1) % messages.length), 2500);
+    const timer = setInterval(() => setMsgIndex((i) => (i + 1) % ANALYSIS_MESSAGES.length), 2500);
     return () => clearInterval(timer);
   }, []);
-  return <p className="text-sm text-gray-500">{messages[msgIndex]}</p>;
+  return <p className="text-sm text-gray-500">{ANALYSIS_MESSAGES[msgIndex]}</p>;
 }
 
 /** Single row in the preview table with comparison panel for matches. */
@@ -905,13 +906,12 @@ export default function SmartImport() {
 
             <div className="flex items-center bg-white border border-gray-200 rounded-lg overflow-hidden text-sm">
               {(["all", "new", "matches", "file_dupes"] as const).map((f) => {
-                const matchCount = previewData.preview_rows.filter((r) => r.match_type).length;
-                const fileDupeCount = previewData.preview_rows.filter((r) => r.within_file_duplicate).length;
+                const totalMatches = effectiveCounts.matches + effectiveCounts.toMerge + effectiveCounts.toEnroll;
                 const label = f === "all" ? "All"
                   : f === "new" ? "New"
-                  : f === "matches" ? `Matches (${matchCount})`
-                  : `File Dupes (${fileDupeCount})`;
-                if (f === "file_dupes" && fileDupeCount === 0) return null;
+                  : f === "matches" ? `Matches (${totalMatches})`
+                  : `File Dupes (${effectiveCounts.fileDupes})`;
+                if (f === "file_dupes" && effectiveCounts.fileDupes === 0) return null;
                 return (
                   <button
                     key={f}
@@ -959,7 +959,7 @@ export default function SmartImport() {
             )}
 
             {/* Bulk match actions */}
-            {previewData.preview_rows.some((r) => r.match_type) && (
+            {(effectiveCounts.matches + effectiveCounts.toMerge + effectiveCounts.toEnroll) > 0 && (
               <div className="flex items-center gap-2 text-sm">
                 <span className="text-gray-400">|</span>
                 <button

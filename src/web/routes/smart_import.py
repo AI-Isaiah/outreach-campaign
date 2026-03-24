@@ -90,13 +90,10 @@ async def smart_import_upload(
             raise HTTPException(400, "Unable to decode CSV file — unsupported encoding")
 
     # Parse CSV with smart header detection
-    try:
-        from src.services.smart_import import parse_csv_with_header_detection
-        headers, rows = parse_csv_with_header_detection(content)
-        if not headers:
-            raise HTTPException(400, "CSV has no headers")
-    except csv.Error as exc:
-        raise HTTPException(400, f"Invalid CSV format: {exc}")
+    from src.services.smart_import import parse_csv_with_header_detection
+    headers, rows = parse_csv_with_header_detection(content)
+    if not headers:
+        raise HTTPException(400, "CSV has no headers")
 
     if not rows:
         raise HTTPException(400, "CSV has no data rows")
