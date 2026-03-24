@@ -562,40 +562,43 @@ export default function SmartImport() {
       {/* Step 1: Upload */}
       {step === "upload" && (
         <div className="space-y-4">
-          <div
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragOver(true);
-            }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={handleDrop}
-            className={`border-2 border-dashed rounded-lg p-12 text-center transition-colors ${
-              dragOver
-                ? "border-blue-400 bg-blue-50"
-                : "border-gray-200 bg-white"
-            }`}
-          >
-            <Upload className="mx-auto text-gray-300 mb-4" size={48} />
-            <p className="text-gray-600 font-medium mb-1">
-              Drag and drop your CSV file here
-            </p>
-            <p className="text-sm text-gray-400 mb-4">or click to browse</p>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".csv"
-              onChange={handleInputChange}
-              className="hidden"
-            />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="px-4 py-2.5 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors"
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv"
+            onChange={handleInputChange}
+            className="hidden"
+          />
+          {/* Drop zone — only when no file is loaded */}
+          {!file && !analyzeMutation.isPending && (
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragOver(true);
+              }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={handleDrop}
+              className={`border-2 border-dashed rounded-lg p-12 text-center transition-colors ${
+                dragOver
+                  ? "border-blue-400 bg-blue-50"
+                  : "border-gray-200 bg-white"
+              }`}
             >
-              Choose File
-            </button>
-          </div>
+              <Upload className="mx-auto text-gray-300 mb-4" size={48} />
+              <p className="text-gray-600 font-medium mb-1">
+                Drag and drop your CSV file here
+              </p>
+              <p className="text-sm text-gray-400 mb-4">or click to browse</p>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="px-4 py-2.5 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors"
+              >
+                Choose File
+              </button>
+            </div>
+          )}
 
-          {/* Selected file info */}
+          {/* File loaded, ready to analyze */}
           {file && !analyzeMutation.isPending && (
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -608,24 +611,26 @@ export default function SmartImport() {
                     {formatBytes(file.size)}
                   </p>
                 </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleAnalyze}
+                  className="px-4 py-2.5 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors"
+                >
+                  Analyze
+                </button>
                 <button
                   onClick={() => {
                     setFile(null);
                     setAnalysis(null);
                     analyzeMutation.reset();
                   }}
-                  className="text-gray-300 hover:text-gray-500 transition-colors"
+                  className="p-2 text-gray-300 hover:text-gray-500 transition-colors rounded-lg hover:bg-gray-50"
                   title="Remove file"
                 >
                   <X size={16} />
                 </button>
               </div>
-              <button
-                onClick={handleAnalyze}
-                className="px-4 py-2.5 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors"
-              >
-                Analyze
-              </button>
             </div>
           )}
 
