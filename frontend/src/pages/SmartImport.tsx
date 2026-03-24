@@ -1,5 +1,5 @@
-import { useState, useCallback, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useCallback, useRef, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import {
   Upload,
@@ -28,8 +28,12 @@ const TARGET_FIELDS = [
   { value: "company.country", label: "Country" },
   { value: "company.aum", label: "AUM" },
   { value: "company.tier", label: "Tier" },
+  { value: "company.firm_type", label: "Firm Type" },
+  { value: "company.website", label: "Website" },
+  { value: "company.address", label: "Address" },
   { value: "contact.first_name", label: "First Name" },
   { value: "contact.last_name", label: "Last Name" },
+  { value: "contact.full_name", label: "Full Name" },
   { value: "contact.email", label: "Email" },
   { value: "contact.title", label: "Title" },
   { value: "contact.linkedin_url", label: "LinkedIn URL" },
@@ -61,6 +65,21 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function AnalysisStatus() {
+  const [msgIndex, setMsgIndex] = useState(0);
+  const messages = [
+    "Reading CSV structure...",
+    "Detecting column patterns...",
+    "Matching to CRM fields...",
+    "Analyzing contact layout...",
+  ];
+  useEffect(() => {
+    const timer = setInterval(() => setMsgIndex((i) => (i + 1) % messages.length), 2500);
+    return () => clearInterval(timer);
+  }, []);
+  return <p className="text-sm text-gray-500">{messages[msgIndex]}</p>;
+}
+
 export default function SmartImport() {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -75,15 +94,32 @@ export default function SmartImport() {
   const [previewData, setPreviewData] = useState<PreviewResult | null>(null);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
 
+  // Accept file from ImportWizard navigation state
+  const location = useLocation();
+  const locationStateFile = (location.state as { file?: File } | null)?.file ?? null;
+
   // Mutations
   const analyzeMutation = useMutation({
     mutationFn: (f: File) => smartImportApi.analyze(f),
     onSuccess: (data) => {
       setAnalysis(data);
-      setMapping({ ...data.proposed_mapping });
+      // Build mapping from ALL headers, pre-select LLM matches
+      const fullMapping: Record<string, string> = {};
+      for (const h of data.headers ?? []) {
+        fullMapping[h] = data.proposed_mapping[h] || "";
+      }
+      setMapping(fullMapping);
       setStep("mapping");
     },
   });
+
+  useEffect(() => {
+    if (locationStateFile && !file) {
+      setFile(locationStateFile);
+      analyzeMutation.mutate(locationStateFile);
+      window.history.replaceState({}, document.title);
+    }
+  }, [locationStateFile]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const previewMutation = useMutation({
     mutationFn: () =>
@@ -243,7 +279,7 @@ export default function SmartImport() {
           </div>
 
           {/* Selected file info */}
-          {file && (
+          {file && !analyzeMutation.isPending && (
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <FileText size={20} className="text-gray-400" />
@@ -258,23 +294,34 @@ export default function SmartImport() {
               </div>
               <button
                 onClick={handleAnalyze}
-                disabled={analyzeMutation.isPending}
-                className="px-4 py-2.5 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 disabled:opacity-50 transition-colors flex items-center gap-2"
+                className="px-4 py-2.5 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors"
               >
-                {analyzeMutation.isPending ? (
-                  <>
-                    <Loader2 size={16} className="animate-spin" />
-                    Analyzing columns...
-                  </>
-                ) : (
-                  "Analyze"
-                )}
+                Analyze
               </button>
             </div>
           )}
 
+          {/* Animated progress bar during LLM analysis */}
+          {analyzeMutation.isPending && (
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-4">
+              <div className="flex items-center gap-3">
+                <FileText size={20} className="text-gray-400" />
+                <div>
+                  <p className="text-sm font-medium text-gray-900">{file!.name}</p>
+                  <p className="text-xs text-gray-500">{formatBytes(file!.size)}</p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-gray-900 rounded-full animate-progress-bar" />
+                </div>
+                <AnalysisStatus />
+              </div>
+            </div>
+          )}
+
           {/* Note about AI analysis */}
-          {file && (
+          {file && !analyzeMutation.isPending && (
             <p className="text-xs text-gray-400 flex items-center gap-1.5">
               <Info size={12} className="shrink-0" />
               Sample rows are sent to AI for column detection

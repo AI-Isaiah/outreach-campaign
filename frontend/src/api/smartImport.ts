@@ -2,6 +2,7 @@ import { BASE, authHeaders, request } from "./request";
 
 export interface AnalyzeResult {
   import_job_id: string;
+  headers: string[];
   proposed_mapping: Record<string, string>;
   sample_rows: Record<string, string>[];
   multi_contact: {

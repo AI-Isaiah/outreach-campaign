@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { useToast } from "../components/Toast";
-import { Upload, FileText, CheckCircle, AlertCircle } from "lucide-react";
+import { Upload, FileText, CheckCircle, AlertCircle, Info } from "lucide-react";
 import { splitCsvLine } from "../utils/parseCsv";
 
 type Step = "upload" | "preview" | "import";
@@ -271,6 +271,25 @@ export default function ImportWizard() {
             <p className="text-sm font-medium text-red-800">Import Failed</p>
             <p className="text-sm text-red-700 mt-1">{(importMutation.error as Error).message}</p>
           </div>
+        </div>
+      )}
+
+      {/* Smart Import suggestion */}
+      {step === "preview" && file && (
+        <div className="flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-lg p-4 mt-4">
+          <Info size={20} className="text-blue-600 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-blue-800">Complex CSV?</p>
+            <p className="text-sm text-blue-700 mt-0.5">
+              Smart Import uses AI to detect columns and handles multiple contacts per row.
+            </p>
+          </div>
+          <button
+            onClick={() => navigate("/import/smart", { state: { file } })}
+            className="px-3 py-1.5 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 shrink-0"
+          >
+            Try Smart Import
+          </button>
         </div>
       )}
     </div>

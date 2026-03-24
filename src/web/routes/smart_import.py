@@ -32,6 +32,20 @@ router = APIRouter(tags=["smart-import"])
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _get_gdpr_countries() -> list[str]:
+    """Load GDPR country list from config, returning empty list on missing config."""
+    try:
+        config = load_config()
+        return config.get("gdpr_countries", [])
+    except FileNotFoundError:
+        return []
+
+
+# ---------------------------------------------------------------------------
 # Request models
 # ---------------------------------------------------------------------------
 
@@ -160,17 +174,12 @@ def smart_import_preview(
     if not job:
         raise HTTPException(404, "Import job not found")
 
-    if job["status"] != "pending":
+    if job["status"] not in ("pending", "previewed"):
         raise HTTPException(
-            400, f"Import job is '{job['status']}' — expected 'pending'"
+            400, f"Import job is '{job['status']}' — expected 'pending' or 'previewed'"
         )
 
-    # Load GDPR countries from config
-    try:
-        config = load_config()
-        gdpr_countries = config.get("gdpr_countries", [])
-    except FileNotFoundError:
-        gdpr_countries = []
+    gdpr_countries = _get_gdpr_countries()
 
     # Determine multi-contact pattern: use from request body mapping
     # or fall back to what LLM detected
@@ -245,12 +254,7 @@ def smart_import_execute(
             400, f"Import job is '{job['status']}' — expected 'previewed'"
         )
 
-    # Load config for GDPR countries
-    try:
-        config = load_config()
-        gdpr_countries = config.get("gdpr_countries", [])
-    except FileNotFoundError:
-        gdpr_countries = []
+    gdpr_countries = _get_gdpr_countries()
 
     # Parse stored data
     column_mapping = job["column_mapping"]

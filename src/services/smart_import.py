@@ -43,8 +43,8 @@ def _build_prompt(headers: list[str], sample_rows: list[dict]) -> str:
     return f"""You are a CSV column mapper for a CRM that tracks companies and contacts.
 
 Target fields:
-COMPANY: name, country, aum_millions, firm_type, website, address
-CONTACT: first_name, last_name, full_name, email, linkedin_url, title, phone
+COMPANY: company.name, company.country, company.aum, company.firm_type, company.website, company.address
+CONTACT: contact.first_name, contact.last_name, contact.full_name, contact.email, contact.linkedin_url, contact.title, contact.phone
 
 Given these CSV headers and sample rows, return a JSON mapping.
 If one row contains multiple contacts for the same company (e.g., Contact1_Name, Contact2_Name),
@@ -60,7 +60,7 @@ Return ONLY valid JSON (no markdown, no explanation):
   "multi_contact": {{
     "detected": true/false,
     "contact_groups": [
-      {{"prefix": "Contact1", "fields": {{"full_name": "csv_col", "email": "csv_col", "title": "csv_col", "linkedin_url": "csv_col"}}}},
+      {{"prefix": "Contact1", "fields": {{"contact.full_name": "csv_col", "contact.email": "csv_col", "contact.title": "csv_col", "contact.linkedin_url": "csv_col"}}}},
     ]
   }},
   "confidence": 0.0-1.0
@@ -156,6 +156,119 @@ def _call_llm(prompt: str) -> tuple[str, str]:
 
 
 # ---------------------------------------------------------------------------
+# Heuristic (keyword-based) column mapping
+# ---------------------------------------------------------------------------
+
+
+def _heuristic_mapping(headers: list[str]) -> dict:
+    """Keyword-based column mapping fallback when LLM is unavailable or incomplete.
+
+    Returns the same dict shape as analyze_csv:
+        {"column_map": {...}, "multi_contact": {...}, "confidence": float, "unmapped": [...]}
+    """
+    RULES: list[tuple[list[str], str]] = [
+        # Company fields
+        (["firm name", "company name", "organization", "fund name"], "company.name"),
+        (["country"], "company.country"),
+        (["aum"], "company.aum"),
+        (["firm type"], "company.firm_type"),
+        (["url", "website"], "company.website"),
+        (["address"], "company.address"),
+        # Contact fields (primary only — multi-contact handled separately)
+        (["primary email"], "contact.email"),
+        (["primary linkedin"], "contact.linkedin_url"),
+        (["position"], "contact.title"),
+        (["phone"], "contact.phone"),
+        (["first name"], "contact.first_name"),
+        (["last name"], "contact.last_name"),
+        (["primary contact"], "contact.full_name"),
+    ]
+
+    column_map: dict[str, str] = {}
+    used_targets: set[str] = set()
+
+    for header in headers:
+        h_lower = header.strip().lower()
+        # Skip headers that look like secondary contacts (Contact 2, Contact 3, etc.)
+        if re.match(r"^contact\s*[2-9]", h_lower):
+            continue
+        for keywords, target in RULES:
+            if target in used_targets:
+                continue
+            if any(kw in h_lower for kw in keywords):
+                column_map[header] = target
+                used_targets.add(target)
+                break
+        # Catch generic "email" that's not a numbered contact email
+        if header not in column_map and "email" in h_lower and "contact" not in h_lower and "career" not in h_lower and "main email" not in h_lower:
+            if "contact.email" not in used_targets:
+                column_map[header] = "contact.email"
+                used_targets.add("contact.email")
+        # Catch generic "linkedin" that's not a numbered contact
+        if header not in column_map and "linkedin" in h_lower and "contact" not in h_lower and "company" not in h_lower:
+            if "contact.linkedin_url" not in used_targets:
+                column_map[header] = "contact.linkedin_url"
+                used_targets.add("contact.linkedin_url")
+
+    # Detect multi-contact pattern: "Contact 2", "Contact 3", "Contact 4" etc.
+    multi_contact: dict = {"detected": False, "contact_groups": []}
+    contact_groups: dict[str, dict[str, str]] = {}
+
+    for header in headers:
+        h_lower = header.strip().lower()
+        # Match patterns like "Contact 2", "Contact 2 Title", "Contact 2 Email", "Contact 2 LinkedIn"
+        m = re.match(r"^contact\s*(\d+)\s*(.*)?$", h_lower, re.IGNORECASE)
+        if m:
+            group_num = m.group(1)
+            suffix = (m.group(2) or "").strip().lower()
+            if group_num not in contact_groups:
+                contact_groups[group_num] = {}
+            if not suffix or suffix in ("name",):
+                contact_groups[group_num]["contact.full_name"] = header
+            elif "email" in suffix:
+                contact_groups[group_num]["contact.email"] = header
+            elif "title" in suffix or "position" in suffix:
+                contact_groups[group_num]["contact.title"] = header
+            elif "linkedin" in suffix:
+                contact_groups[group_num]["contact.linkedin_url"] = header
+
+    # Also detect primary contact as group 1
+    primary_group: dict[str, str] = {}
+    for header in headers:
+        h_lower = header.strip().lower()
+        if h_lower == "primary contact":
+            primary_group["contact.full_name"] = header
+        elif h_lower == "primary email":
+            primary_group["contact.email"] = header
+        elif h_lower == "primary linkedin":
+            primary_group["contact.linkedin_url"] = header
+        elif h_lower == "position" and "contact.title" not in primary_group:
+            primary_group["contact.title"] = header
+        elif h_lower.startswith("contact title"):
+            pass  # Skip salutation
+
+    if contact_groups:
+        groups = []
+        if primary_group:
+            groups.append({"prefix": "Primary", "fields": primary_group})
+        for num in sorted(contact_groups.keys()):
+            groups.append({"prefix": f"Contact {num}", "fields": contact_groups[num]})
+        multi_contact = {"detected": True, "contact_groups": groups}
+
+    unmapped = [h for h in headers if h not in column_map]
+    mapped_count = len(column_map) + sum(len(g["fields"]) for g in multi_contact.get("contact_groups", []))
+    total = len(headers)
+    confidence = min(mapped_count / total, 1.0) if total > 0 else 0.0
+
+    return {
+        "column_map": column_map,
+        "multi_contact": multi_contact,
+        "unmapped": unmapped,
+        "confidence": confidence,
+    }
+
+
+# ---------------------------------------------------------------------------
 # analyze_csv — LLM column mapping
 # ---------------------------------------------------------------------------
 
@@ -177,13 +290,9 @@ def analyze_csv(
         ``{"column_map": {...}, "unmapped": [...], "multi_contact": {...},
           "confidence": float, "provider": str}``
     """
-    fallback = {
-        "column_map": {},
-        "unmapped": list(headers),
-        "multi_contact": {"detected": False, "contact_groups": []},
-        "confidence": 0.0,
-        "provider": None,
-    }
+    heuristic = _heuristic_mapping(headers)
+    heuristic["provider"] = None
+    fallback = dict(heuristic)  # shallow copy so mutations don't affect fallback
 
     try:
         prompt = _build_prompt(headers, sample_rows)
@@ -209,7 +318,21 @@ def analyze_csv(
         result.setdefault("confidence", 0.5)
         result["provider"] = provider_name
 
-        logger.info("analyze_csv: mapped %d columns via %s (confidence: %.2f)",
+        # Merge heuristic results to fill LLM gaps
+        for col, target in heuristic["column_map"].items():
+            if col not in result["column_map"]:
+                result["column_map"][col] = target
+        # Use heuristic multi-contact if LLM didn't detect it
+        if not result.get("multi_contact", {}).get("detected") and heuristic["multi_contact"].get("detected"):
+            result["multi_contact"] = heuristic["multi_contact"]
+        # Recalculate confidence after merge
+        mapped_count = len(result["column_map"])
+        if heuristic["multi_contact"].get("contact_groups"):
+            mapped_count += sum(len(g["fields"]) for g in heuristic["multi_contact"]["contact_groups"])
+        total = len(headers)
+        result["confidence"] = max(result.get("confidence", 0), min(mapped_count / total, 1.0) if total > 0 else 0.0)
+
+        logger.info("analyze_csv: mapped %d columns via %s + heuristic (confidence: %.2f)",
                      len(result["column_map"]), provider_name, result["confidence"])
         return result
 
@@ -284,17 +407,27 @@ def transform_rows(
     gdpr_set = {c.strip().lower() for c in gdpr_countries}
     results = []
 
+    # Build reverse lookup: target_field -> csv_column_name (first match wins)
+    _target_to_col: dict[str, str] = {}
+    for csv_col, target in column_map.items():
+        if target and target not in _target_to_col:
+            _target_to_col[target] = csv_col
+
+    def _field(row: dict, target: str) -> str:
+        col = _target_to_col.get(target, "")
+        return (row.get(col) or "").strip() if col else ""
+
     for row in rows:
         # --- Company fields ---
-        company_name = _get_field(row, column_map, "name")
+        company_name = _field(row, "company.name")
         if not company_name:
             continue
 
-        country = _get_field(row, column_map, "country")
-        aum_raw = _get_field(row, column_map, "aum_millions")
-        firm_type = _get_field(row, column_map, "firm_type")
-        website = _get_field(row, column_map, "website")
-        address = _get_field(row, column_map, "address")
+        country = _field(row, "company.country")
+        aum_raw = _field(row, "company.aum")
+        firm_type = _field(row, "company.firm_type")
+        website = _field(row, "company.website")
+        address = _field(row, "company.address")
         is_gdpr = country.lower() in gdpr_set if country else False
         aum = _parse_aum(aum_raw)
         company_name_normalized = normalize_company_name(company_name)
@@ -305,12 +438,12 @@ def transform_rows(
         if multi_contact.get("detected") and multi_contact.get("contact_groups"):
             for group in multi_contact["contact_groups"]:
                 fields = group.get("fields", {})
-                full_name_col = fields.get("full_name", "")
-                email_col = fields.get("email", "")
-                title_col = fields.get("title", "")
-                linkedin_col = fields.get("linkedin_url", "")
-                first_name_col = fields.get("first_name", "")
-                last_name_col = fields.get("last_name", "")
+                full_name_col = fields.get("contact.full_name", "")
+                email_col = fields.get("contact.email", "")
+                title_col = fields.get("contact.title", "")
+                linkedin_col = fields.get("contact.linkedin_url", "")
+                first_name_col = fields.get("contact.first_name", "")
+                last_name_col = fields.get("contact.last_name", "")
 
                 full_name = (row.get(full_name_col) or "").strip() if full_name_col else ""
                 email_raw = (row.get(email_col) or "").strip() if email_col else ""
@@ -333,12 +466,12 @@ def transform_rows(
                 })
         else:
             # Single contact per row
-            full_name = _get_field(row, column_map, "full_name")
-            email_raw = _get_field(row, column_map, "email")
-            title = _get_field(row, column_map, "title")
-            linkedin_raw = _get_field(row, column_map, "linkedin_url")
-            first_name = _get_field(row, column_map, "first_name")
-            last_name = _get_field(row, column_map, "last_name")
+            full_name = _field(row, "contact.full_name")
+            email_raw = _field(row, "contact.email")
+            title = _field(row, "contact.title")
+            linkedin_raw = _field(row, "contact.linkedin_url")
+            first_name = _field(row, "contact.first_name")
+            last_name = _field(row, "contact.last_name")
 
             if full_name or email_raw or first_name or last_name:
                 contact_dicts.append({
@@ -430,6 +563,7 @@ def preview_import(
         if r.get("email_normalized")
     ]
 
+    existing: set = set()
     if emails_to_check:
         with get_cursor(conn) as cursor:
             # Use ANY(%s) for efficient batch lookup
