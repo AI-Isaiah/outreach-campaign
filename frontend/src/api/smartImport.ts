@@ -25,6 +25,24 @@ export interface ExistingContact {
   company_name: string | null;
 }
 
+export type DiffStatus = "new" | "conflict" | "same" | "empty";
+
+export interface FieldDiffs {
+  first_name: DiffStatus;
+  last_name: DiffStatus;
+  email: DiffStatus;
+  title: DiffStatus;
+  linkedin_url: DiffStatus;
+}
+
+export type MatchType = "exact" | "email_only" | "linkedin_only" | "both_different_contacts";
+export type RowAction = "import" | "merge" | "skip" | "enroll";
+
+export interface RowDecision {
+  action: RowAction;
+  existing_contact_id?: number;
+}
+
 export interface PreviewRow {
   _index: number;
   company_name: string;
@@ -35,14 +53,21 @@ export interface PreviewRow {
   email_normalized: string | null;
   title: string | null;
   linkedin_url: string | null;
+  linkedin_url_normalized: string | null;
   country: string | null;
   aum_millions: number | null;
   firm_type: string | null;
   is_gdpr: boolean;
   is_duplicate: boolean;
-  duplicate_type: "exact" | "email_overlap" | "linkedin_overlap" | "both_overlap" | null;
-  overlap_cleared: "email" | "linkedin" | "email+linkedin" | null;
+  match_type: MatchType | null;
+  existing_contact_id: number | null;
   existing_contact: ExistingContact | null;
+  field_diffs: FieldDiffs | null;
+  within_file_duplicate: boolean;
+  within_file_duplicate_of: number | null;
+  // Legacy compat
+  duplicate_type: string | null;
+  overlap_cleared: null;
   [key: string]: unknown;
 }
 
@@ -58,6 +83,9 @@ export interface ImportResult {
   companies_created: number;
   contacts_created: number;
   duplicates_skipped: number;
+  contacts_merged: number;
+  contacts_enrolled: number;
+  contacts_skipped: number;
 }
 
 export const smartImportApi = {
@@ -90,12 +118,19 @@ export const smartImportApi = {
       }),
     }),
 
-  execute: async (jobId: string, excludedIndices?: number[]): Promise<ImportResult> =>
+  execute: async (
+    jobId: string,
+    excludedIndices?: number[],
+    rowDecisions?: Record<number, RowDecision>,
+    campaignId?: number,
+  ): Promise<ImportResult> =>
     request<ImportResult>("/import/execute", {
       method: "POST",
       body: JSON.stringify({
         import_job_id: jobId,
         excluded_indices: excludedIndices?.length ? excludedIndices : undefined,
+        row_decisions: rowDecisions ?? undefined,
+        campaign_id: campaignId ?? undefined,
       }),
     }),
 };

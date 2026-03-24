@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Upload,
   FileText,
@@ -10,8 +10,6 @@ import {
   Info,
   RotateCcw,
   Search,
-  ChevronDown,
-  ChevronRight,
   X,
 } from "lucide-react";
 import {
@@ -20,7 +18,14 @@ import {
   type PreviewResult,
   type PreviewRow,
   type ImportResult,
+  type RowAction,
+  type RowDecision,
 } from "../api/smartImport";
+import { campaignsApi } from "../api/campaigns";
+import {
+  MatchStatusBadge,
+  ComparisonPanel,
+} from "../components/DuplicateComparisonPanel";
 import Pagination from "../components/Pagination";
 
 type Step = "upload" | "mapping" | "preview";
@@ -96,25 +101,29 @@ function AnalysisStatus() {
   return <p className="text-sm text-gray-500">{messages[msgIndex]}</p>;
 }
 
-/** Single row in the preview table with optional duplicate expansion. */
+/** Single row in the preview table with comparison panel for matches. */
 function PreviewTableRow({
   row,
   columns,
   isExcluded,
   isSelected,
   isExpanded,
+  decision,
   onToggleExclude,
   onToggleSelect,
   onToggleExpand,
+  onDecision,
 }: {
   row: PreviewRow;
-  columns: { key: string; label: string }[];
+  columns: readonly { readonly key: string; readonly label: string }[];
   isExcluded: boolean;
   isSelected: boolean;
   isExpanded: boolean;
+  decision?: RowDecision;
   onToggleExclude: () => void;
   onToggleSelect: () => void;
   onToggleExpand: () => void;
+  onDecision: (action: RowAction) => void;
 }) {
   const rowOpacity = isExcluded ? "opacity-40" : "";
 
@@ -125,7 +134,6 @@ function PreviewTableRow({
           row.is_duplicate ? "bg-yellow-50/50" : ""
         }`}
       >
-        {/* Select checkbox */}
         <td className="px-3 py-3">
           <input
             type="checkbox"
@@ -134,7 +142,6 @@ function PreviewTableRow({
             className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
           />
         </td>
-        {/* Import toggle */}
         <td className="px-3 py-3 text-center">
           <input
             type="checkbox"
@@ -143,37 +150,14 @@ function PreviewTableRow({
             className="rounded border-gray-300 text-green-600 focus:ring-green-500"
           />
         </td>
-        {/* Status */}
         <td className="px-3 py-3">
-          {row.is_duplicate ? (
-            <button
-              onClick={onToggleExpand}
-              className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-800 hover:bg-yellow-200 transition-colors"
-            >
-              {isExpanded ? (
-                <ChevronDown size={12} />
-              ) : (
-                <ChevronRight size={12} />
-              )}
-              Already in CRM
-            </button>
-          ) : row.overlap_cleared ? (
-            <span className="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-700">
-              {row.overlap_cleared === "email"
-                ? "Email cleared"
-                : row.overlap_cleared === "linkedin"
-                  ? "LinkedIn cleared"
-                  : row.overlap_cleared === "email+linkedin"
-                    ? "Both cleared"
-                    : "Overlap"}
-            </span>
-          ) : (
-            <span className="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-green-100 text-green-700">
-              New
-            </span>
-          )}
+          <MatchStatusBadge
+            row={row}
+            decision={decision}
+            isExpanded={isExpanded}
+            onToggleExpand={onToggleExpand}
+          />
         </td>
-        {/* Data columns */}
         {columns.map((col) => {
           const val = row[col.key];
           return (
@@ -192,65 +176,9 @@ function PreviewTableRow({
         })}
       </tr>
 
-      {/* Expanded duplicate comparison */}
-      {isExpanded && row.is_duplicate && row.existing_contact && (
-        <tr className="bg-yellow-50 border-l-4 border-l-yellow-400">
-          <td colSpan={columns.length + 3} className="px-5 py-4">
-            <div className="space-y-2">
-              <p className="text-xs font-semibold text-yellow-800 uppercase tracking-wide">
-                This contact already exists in your CRM
-              </p>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                {row.existing_contact.company_name && (
-                  <div>
-                    <span className="text-gray-400 text-xs">Company</span>
-                    <p className="text-gray-700">
-                      {row.existing_contact.company_name}
-                    </p>
-                  </div>
-                )}
-                <div>
-                  <span className="text-gray-400 text-xs">Name</span>
-                  <p className="text-gray-700">
-                    {[
-                      row.existing_contact.first_name,
-                      row.existing_contact.last_name,
-                    ]
-                      .filter(Boolean)
-                      .join(" ") || "\u2014"}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-gray-400 text-xs">Email</span>
-                  <p className="text-gray-700">
-                    {row.existing_contact.email || "\u2014"}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-gray-400 text-xs">Title</span>
-                  <p className="text-gray-700">
-                    {row.existing_contact.title || "\u2014"}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 pt-1">
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={isExcluded}
-                    onChange={onToggleExclude}
-                    className="rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
-                  />
-                  <span className="text-yellow-800">
-                    {isExcluded
-                      ? "Excluded from import"
-                      : "Uncheck to exclude this row"}
-                  </span>
-                </label>
-              </div>
-            </div>
-          </td>
-        </tr>
+      {/* Expandable comparison panel for any match */}
+      {isExpanded && row.existing_contact && (
+        <ComparisonPanel row={row} onDecision={onDecision} />
       )}
     </>
   );
@@ -276,14 +204,30 @@ export default function SmartImport() {
   const [previewSortBy, setPreviewSortBy] = useState<string>("");
   const [previewSortDir, setPreviewSortDir] = useState<"asc" | "desc">("asc");
   const [previewFilter, setPreviewFilter] = useState("");
-  const [previewShowFilter, setPreviewShowFilter] = useState<"all" | "new" | "duplicates">("all");
+  const [previewShowFilter, setPreviewShowFilter] = useState<"all" | "new" | "matches" | "file_dupes">("all");
   const [excludedIndices, setExcludedIndices] = useState<Set<number>>(new Set());
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
   const [expandedDuplicate, setExpandedDuplicate] = useState<number | null>(null);
+  const [rowDecisions, setRowDecisions] = useState<Record<number, RowDecision>>({});
+  const [selectedCampaignId, setSelectedCampaignId] = useState<number | null>(null);
 
   // Accept file from ImportWizard navigation state
   const location = useLocation();
   const locationStateFile = (location.state as { file?: File } | null)?.file ?? null;
+
+  // Campaigns for enrollment selector
+  const campaignsQuery = useQuery({
+    queryKey: ["campaigns"],
+    queryFn: campaignsApi.listCampaigns,
+    enabled: step === "preview",
+  });
+
+  const handleRowDecision = (index: number, action: RowAction, existingContactId?: number) => {
+    setRowDecisions((prev) => ({
+      ...prev,
+      [index]: { action, existing_contact_id: existingContactId },
+    }));
+  };
 
   // Mutations
   const analyzeMutation = useMutation({
@@ -325,6 +269,8 @@ export default function SmartImport() {
       smartImportApi.execute(
         analysis!.import_job_id,
         excludedIndices.size > 0 ? [...excludedIndices] : undefined,
+        Object.keys(rowDecisions).length > 0 ? rowDecisions : undefined,
+        selectedCampaignId ?? undefined,
       ),
     onSuccess: (data) => {
       setImportResult(data);
@@ -384,6 +330,8 @@ export default function SmartImport() {
     setExcludedIndices(new Set());
     setSelectedIndices(new Set());
     setExpandedDuplicate(null);
+    setRowDecisions({});
+    setSelectedCampaignId(null);
     analyzeMutation.reset();
     previewMutation.reset();
     executeMutation.reset();
@@ -399,9 +347,11 @@ export default function SmartImport() {
 
     // Status filter
     if (previewShowFilter === "new")
-      rows = rows.filter((r) => !r.is_duplicate);
-    else if (previewShowFilter === "duplicates")
-      rows = rows.filter((r) => r.is_duplicate);
+      rows = rows.filter((r) => !r.match_type && !r.within_file_duplicate);
+    else if (previewShowFilter === "matches")
+      rows = rows.filter((r) => r.match_type != null);
+    else if (previewShowFilter === "file_dupes")
+      rows = rows.filter((r) => r.within_file_duplicate);
 
     // Text search
     if (previewFilter.trim()) {
@@ -440,21 +390,27 @@ export default function SmartImport() {
     return filteredPreviewRows.slice(start, start + previewPageSize);
   }, [filteredPreviewRows, previewPage, previewPageSize]);
 
-  // Effective duplicate/new counts after exclusions
-  const effectiveDuplicates = useMemo(() => {
-    if (!previewData) return 0;
-    return previewData.preview_rows.filter(
-      (r) => r.is_duplicate && !excludedIndices.has(r._index),
-    ).length;
-  }, [previewData, excludedIndices]);
-
-  const effectiveImportCount = useMemo(() => {
-    if (!previewData) return 0;
-    // Count non-excluded, non-duplicate rows
-    return previewData.preview_rows.filter(
-      (r) => !excludedIndices.has(r._index) && !r.is_duplicate,
-    ).length;
-  }, [previewData, excludedIndices]);
+  // Effective counts with decisions
+  const effectiveCounts = useMemo(() => {
+    if (!previewData) return { toImport: 0, toMerge: 0, toEnroll: 0, toSkip: 0, matches: 0, fileDupes: 0 };
+    let toImport = 0, toMerge = 0, toEnroll = 0, toSkip = 0, matches = 0, fileDupes = 0;
+    for (const r of previewData.preview_rows) {
+      if (excludedIndices.has(r._index)) { toSkip++; continue; }
+      if (r.within_file_duplicate) { fileDupes++; continue; }
+      const decision = rowDecisions[r._index];
+      if (decision) {
+        if (decision.action === "merge") toMerge++;
+        else if (decision.action === "enroll") toEnroll++;
+        else if (decision.action === "skip") toSkip++;
+        else toImport++;
+      } else if (r.match_type) {
+        matches++;
+      } else {
+        toImport++;
+      }
+    }
+    return { toImport, toMerge, toEnroll, toSkip, matches, fileDupes };
+  }, [previewData, excludedIndices, rowDecisions]);
 
   const handlePreviewSort = (key: string) => {
     if (previewSortBy === key) {
@@ -857,33 +813,51 @@ export default function SmartImport() {
               </p>
             </div>
             <div className="bg-white rounded-lg shadow-sm border-l-4 border-l-green-400 p-4">
+              <p className="text-sm font-medium text-gray-500">New</p>
+              <p className="text-2xl font-bold text-green-700">
+                {effectiveCounts.toImport}
+              </p>
+            </div>
+            <button
+              onClick={() =>
+                setPreviewShowFilter((f) => (f === "matches" ? "all" : "matches"))
+              }
+              className="bg-white rounded-lg shadow-sm border-l-4 border-l-yellow-400 p-4 text-left hover:bg-yellow-50 transition-colors"
+            >
+              <p className="text-sm font-medium text-gray-500">CRM Matches</p>
+              <p className="text-2xl font-bold text-yellow-700">
+                {effectiveCounts.matches + effectiveCounts.toMerge + effectiveCounts.toEnroll}
+              </p>
+              {(effectiveCounts.matches > 0 || effectiveCounts.toMerge > 0) && (
+                <p className="text-xs text-gray-400 mt-0.5">Click to review</p>
+              )}
+            </button>
+            <div className="bg-white rounded-lg shadow-sm border-l-4 border-l-gray-200 p-4">
               <p className="text-sm font-medium text-gray-500">Companies</p>
               <p className="text-2xl font-bold text-gray-900">
                 {previewData.total_companies}
               </p>
             </div>
-            <div className="bg-white rounded-lg shadow-sm border-l-4 border-l-gray-200 p-4">
-              <p className="text-sm font-medium text-gray-500">Will import</p>
-              <p className="text-2xl font-bold text-green-700">
-                {effectiveImportCount}
-              </p>
-            </div>
-            <button
-              onClick={() =>
-                setPreviewShowFilter((f) => (f === "duplicates" ? "all" : "duplicates"))
-              }
-              className="bg-white rounded-lg shadow-sm border-l-4 border-l-yellow-400 p-4 text-left hover:bg-yellow-50 transition-colors"
+          </div>
+
+          {/* Campaign enrollment selector */}
+          <div className="flex items-center gap-3 bg-white rounded-lg border border-gray-200 p-4">
+            <label htmlFor="campaign-select" className="text-sm font-medium text-gray-700 whitespace-nowrap">
+              Enroll in campaign:
+            </label>
+            <select
+              id="campaign-select"
+              value={selectedCampaignId ?? ""}
+              onChange={(e) => setSelectedCampaignId(e.target.value ? Number(e.target.value) : null)}
+              className="flex-1 border border-gray-200 rounded-md px-2.5 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
             >
-              <p className="text-sm font-medium text-gray-500">
-                Already in CRM
-              </p>
-              <p className="text-2xl font-bold text-yellow-700">
-                {effectiveDuplicates}
-              </p>
-              {previewData.duplicates > 0 && (
-                <p className="text-xs text-gray-400 mt-0.5">Click to review</p>
-              )}
-            </button>
+              <option value="">No campaign (import only)</option>
+              {campaignsQuery.data?.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} ({c.contacts_count} contacts)
+                </option>
+              ))}
+            </select>
           </div>
 
           {excludedIndices.size > 0 && (
@@ -930,22 +904,31 @@ export default function SmartImport() {
             </div>
 
             <div className="flex items-center bg-white border border-gray-200 rounded-lg overflow-hidden text-sm">
-              {(["all", "new", "duplicates"] as const).map((f) => (
-                <button
-                  key={f}
-                  onClick={() => {
-                    setPreviewShowFilter(f);
-                    setPreviewPage(1);
-                  }}
-                  className={`px-3 py-2 capitalize transition-colors ${
-                    previewShowFilter === f
-                      ? "bg-gray-900 text-white"
-                      : "text-gray-600 hover:bg-gray-50"
-                  }`}
-                >
-                  {f === "all" ? "All" : f === "new" ? "To Import" : `In CRM (${previewData.duplicates})`}
-                </button>
-              ))}
+              {(["all", "new", "matches", "file_dupes"] as const).map((f) => {
+                const matchCount = previewData.preview_rows.filter((r) => r.match_type).length;
+                const fileDupeCount = previewData.preview_rows.filter((r) => r.within_file_duplicate).length;
+                const label = f === "all" ? "All"
+                  : f === "new" ? "New"
+                  : f === "matches" ? `Matches (${matchCount})`
+                  : `File Dupes (${fileDupeCount})`;
+                if (f === "file_dupes" && fileDupeCount === 0) return null;
+                return (
+                  <button
+                    key={f}
+                    onClick={() => {
+                      setPreviewShowFilter(f);
+                      setPreviewPage(1);
+                    }}
+                    className={`px-3 py-2 transition-colors ${
+                      previewShowFilter === f
+                        ? "bg-gray-900 text-white"
+                        : "text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
             </div>
 
             {/* Bulk operations */}
@@ -971,6 +954,41 @@ export default function SmartImport() {
                   className="text-gray-400 hover:text-gray-600"
                 >
                   <X size={14} />
+                </button>
+              </div>
+            )}
+
+            {/* Bulk match actions */}
+            {previewData.preview_rows.some((r) => r.match_type) && (
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-gray-400">|</span>
+                <button
+                  onClick={() => {
+                    const decisions: Record<number, RowDecision> = {};
+                    previewData.preview_rows.forEach((r) => {
+                      if (r.match_type && r.existing_contact_id) {
+                        decisions[r._index] = { action: "merge", existing_contact_id: r.existing_contact_id };
+                      }
+                    });
+                    setRowDecisions((prev) => ({ ...prev, ...decisions }));
+                  }}
+                  className="px-2.5 py-1.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-md hover:bg-blue-100 text-xs font-medium transition-colors"
+                >
+                  Merge All Matches
+                </button>
+                <button
+                  onClick={() => {
+                    const decisions: Record<number, RowDecision> = {};
+                    previewData.preview_rows.forEach((r) => {
+                      if (r.match_type) {
+                        decisions[r._index] = { action: "skip" };
+                      }
+                    });
+                    setRowDecisions((prev) => ({ ...prev, ...decisions }));
+                  }}
+                  className="px-2.5 py-1.5 bg-white text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 text-xs font-medium transition-colors"
+                >
+                  Skip All Matches
                 </button>
               </div>
             )}
@@ -1030,10 +1048,14 @@ export default function SmartImport() {
                       isExcluded={isExcluded}
                       isSelected={isSelected}
                       isExpanded={isExpanded}
+                      decision={rowDecisions[row._index]}
                       onToggleExclude={() => toggleExcluded(row._index)}
                       onToggleSelect={() => toggleSelected(row._index)}
                       onToggleExpand={() =>
                         setExpandedDuplicate(isExpanded ? null : row._index)
+                      }
+                      onDecision={(action: RowAction) =>
+                        handleRowDecision(row._index, action, row.existing_contact_id ?? undefined)
                       }
                     />
                   );
@@ -1078,7 +1100,7 @@ export default function SmartImport() {
                   Importing...
                 </>
               ) : (
-                `Import ${effectiveImportCount} Contacts`
+                `Import ${effectiveCounts.toImport} New${effectiveCounts.toMerge ? ` + Merge ${effectiveCounts.toMerge}` : ""}${effectiveCounts.toEnroll ? ` + Enroll ${effectiveCounts.toEnroll}` : ""}`
               )}
             </button>
             <button
@@ -1131,33 +1153,38 @@ export default function SmartImport() {
             <h3 className="text-lg font-semibold">Import Complete</h3>
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <div className="bg-green-50 rounded-lg p-4 text-center">
               <p className="text-2xl font-bold text-green-700">
                 {importResult.contacts_created}
               </p>
-              <p className="text-sm text-green-600">Contacts created</p>
+              <p className="text-sm text-green-600">Created</p>
             </div>
             <div className="bg-blue-50 rounded-lg p-4 text-center">
               <p className="text-2xl font-bold text-blue-700">
+                {importResult.contacts_merged || 0}
+              </p>
+              <p className="text-sm text-blue-600">Merged</p>
+            </div>
+            <div className="bg-indigo-50 rounded-lg p-4 text-center">
+              <p className="text-2xl font-bold text-indigo-700">
+                {importResult.contacts_enrolled || 0}
+              </p>
+              <p className="text-sm text-indigo-600">Enrolled</p>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-4 text-center">
+              <p className="text-2xl font-bold text-gray-700">
                 {importResult.companies_created}
               </p>
-              <p className="text-sm text-blue-600">Companies created</p>
+              <p className="text-sm text-gray-600">Companies</p>
             </div>
             <div className="bg-yellow-50 rounded-lg p-4 text-center">
               <p className="text-2xl font-bold text-yellow-700">
                 {importResult.duplicates_skipped}
               </p>
-              <p className="text-sm text-yellow-600">Duplicates skipped</p>
+              <p className="text-sm text-yellow-600">Skipped</p>
             </div>
           </div>
-
-          <p className="text-sm text-gray-600">
-            Imported {importResult.contacts_created} contact
-            {importResult.contacts_created !== 1 ? "s" : ""} across{" "}
-            {importResult.companies_created} compan
-            {importResult.companies_created !== 1 ? "ies" : "y"}
-          </p>
 
           <div className="flex gap-3 pt-2">
             <button
