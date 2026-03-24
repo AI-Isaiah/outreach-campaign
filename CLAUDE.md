@@ -6,6 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Multi-channel outreach campaign manager for crypto fund allocators. Multi-tenant Python web app (FastAPI + React) with CLI tool (Typer) that manages email and LinkedIn outreach sequences with GDPR/CAN-SPAM compliance, A/B testing, deduplication, and email verification. Uses PostgreSQL (Supabase) for storage. Supports multiple users with complete data isolation via per-row `user_id` scoping. Email sending via Gmail OAuth or per-user SMTP.
 
+## Current Work
+
+Check `TODOS.md` for the prioritized backlog. P0 items are the next thing to build. When starting a new session, read TODOS.md first to understand what needs doing.
+
 ## Commands
 
 ```bash
