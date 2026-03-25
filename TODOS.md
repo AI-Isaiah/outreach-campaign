@@ -27,6 +27,25 @@
 
 ---
 
+### Smart duplicate resolution workflow (V2)
+**Priority:** P1
+**Files:** `frontend/src/components/DuplicateComparisonPanel.tsx`, `frontend/src/pages/SmartImport.tsx`, `src/services/smart_import.py`
+**What:** Three improvements to how duplicates are handled during import:
+
+1. **CRM matches: auto-merge when safe, flag when not.** If a LinkedIn match exists in the CRM with the same email+company → auto-merge (fill empty fields). If email or company differs → flag for manual review. Show what matched ("LinkedIn URL matches existing CRM contact: John Smith at Acme Corp").
+
+2. **Dedicated "Duplicates to Clean" review view.** Non-mergeable duplicates (different email or different company for the same LinkedIn) get a separate overview. Each row shows the import contact vs. the CRM contact side-by-side, with a clickable LinkedIn link so the user can open LinkedIn, check the real info, and edit. These are likely company changes or data quality issues.
+
+3. **File duplicates: show which might be newer.** When the same contact appears multiple times in the CSV (e.g., a person who changed companies), surface both occurrences side-by-side so the user can pick which one to import. Currently just says "File duplicate" with no context about which entry to keep.
+
+**Why:** Users need to understand WHY something is flagged and have easy tools to resolve it. LinkedIn is the source of truth for fund allocator contacts — make it one click away. A contact showing up twice in a CSV often means they changed firms, which is the most valuable signal for outreach.
+
+### Multi-contact columns show "Ignore" in mapping UI
+**Priority:** P1
+**Files:** `frontend/src/pages/SmartImport.tsx`
+**What:** When the LLM detects multi-contact columns (Contact 2, Contact 2 Title, etc.), they appear as "Ignore" in the mapping dropdowns. The data IS handled correctly by the multi_contact explosion logic in `transform_rows()`, but the UI doesn't communicate this. Show these columns as "Handled by multi-contact detection" or group them visually under their contact slot (e.g., "Contact 2: Full Name, Title, Email, LinkedIn").
+**Why:** Users think the data will be lost. Misleading UX erodes trust in the import tool.
+
 ### Per-field conflict resolution in merge (V2)
 **Priority:** P1
 **Files:** `frontend/src/components/DuplicateComparisonPanel.tsx`, `src/services/smart_import.py`
