@@ -39,4 +39,10 @@ export const queueApi = {
     if (campaign) params.set("campaign", campaign);
     return request<DeferStatsResponse>(`/queue/defer/stats?${params}`);
   },
+
+  generateDraft: (contactId: number, campaignId: number, stepOrder: number) =>
+    request<{ draft_subject: string | null; draft_text: string; model: string; channel: string; generated_at: string; has_research: boolean }>(
+      `/queue/${contactId}/generate-draft`,
+      { method: "POST", body: JSON.stringify({ campaign_id: campaignId, step_order: stepOrder }) }
+    ),
 };

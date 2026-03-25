@@ -76,7 +76,7 @@ def get_cursor(conn):
 OWNED_TABLES = frozenset({
     "companies", "contacts", "campaigns", "templates", "tags",
     "products", "newsletters", "research_jobs", "deep_research",
-    "deals", "events", "dedup_log", "engine_config",
+    "deals", "events", "dedup_log", "engine_config", "message_drafts",
 })
 
 

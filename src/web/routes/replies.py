@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,6 +13,8 @@ from src.services.reply_detector import scan_gmail_for_replies
 from src.services.state_machine import InvalidTransition, transition_contact
 from src.web.dependencies import get_current_user, get_db
 from src.models.database import get_cursor
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["replies"])
 
@@ -73,27 +76,55 @@ def confirm_reply(
             (body.outcome, reply_id),
         )
 
-        # Trigger state machine transition if positive or negative
+        # Trigger state machine transition
+        # Domain rule: neutral = positive (non-rejection is interest)
         status_map = {
             "replied_positive": "replied_positive",
             "replied_negative": "replied_negative",
+            "neutral": "replied_positive",  # domain rule: non-rejection = positive
         }
-        if body.outcome in status_map and reply["campaign_id"]:
+
+        campaign_id = reply["campaign_id"]
+        if not campaign_id:
+            logger.warning(
+                "Reply %d has no campaign_id — skipping state transition and outcome update",
+                reply_id,
+            )
+        elif body.outcome in status_map:
+            mapped_status = status_map[body.outcome]
             try:
                 transition_contact(
-                    conn, reply["contact_id"], reply["campaign_id"],
-                    status_map[body.outcome],
+                    conn, reply["contact_id"], campaign_id,
+                    mapped_status,
                     user_id=user["id"],
                 )
             except InvalidTransition:
                 pass  # Contact may already be in this state
 
+            # Update template history outcome
+            _OUTCOME_BY_STATUS = {
+                "replied_positive": "positive",
+                "replied_negative": "negative",
+            }
+            outcome_value = _OUTCOME_BY_STATUS.get(mapped_status)
+            if outcome_value:
+                cur.execute(
+                    """UPDATE contact_template_history
+                       SET outcome = %s, outcome_at = NOW()
+                       WHERE id = (
+                           SELECT id FROM contact_template_history
+                           WHERE contact_id = %s AND campaign_id = %s AND outcome IS NULL
+                           ORDER BY sent_at DESC LIMIT 1
+                       )""",
+                    (outcome_value, reply["contact_id"], campaign_id),
+                )
+
         # Save note if provided
-        if body.note and reply["campaign_id"]:
+        if body.note and campaign_id:
             cur.execute(
                 """INSERT INTO response_notes (contact_id, campaign_id, note_type, content)
                    VALUES (%s, %s, %s, %s)""",
-                (reply["contact_id"], reply["campaign_id"], body.outcome, body.note),
+                (reply["contact_id"], campaign_id, body.outcome, body.note),
             )
 
         conn.commit()

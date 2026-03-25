@@ -1,3 +1,12 @@
+export interface MessageDraft {
+  draft_subject: string | null;
+  draft_text: string;
+  channel: string;
+  model: string;
+  generated_at: string;
+  research_id: number | null;
+}
+
 export interface QueueItem {
   contact_id: number;
   contact_name: string;
@@ -24,6 +33,10 @@ export interface QueueItem {
   priority_score?: number;
   selection_mode?: string;
   reasoning?: string;
+  // Phase 4: AI draft fields
+  message_draft?: MessageDraft | null;
+  has_research?: boolean;
+  draft_mode?: 'template' | 'ai';
 }
 
 export interface RenderedEmail {
@@ -51,6 +64,13 @@ export interface Campaign {
   created_at: string;
 }
 
+export interface ReplyBreakdown {
+  positive: number;
+  negative: number;
+  total: number;
+  positive_rate: number;
+}
+
 export interface CampaignMetrics {
   total_enrolled: number;
   by_status: Record<string, number>;
@@ -60,6 +80,20 @@ export interface CampaignMetrics {
   calls_booked: number;
   reply_rate: number;
   positive_rate: number;
+  reply_breakdown: ReplyBreakdown;
+}
+
+export interface TemplatePerformanceItem {
+  template_id: number;
+  template_name: string;
+  channel: string;
+  total_sends: number;
+  positive: number;
+  negative: number;
+  pending: number;
+  positive_rate: number;
+  confidence: string;
+  is_winning: boolean;
 }
 
 export interface VariantComparison {

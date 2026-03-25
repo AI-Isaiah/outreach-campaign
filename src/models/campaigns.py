@@ -341,3 +341,59 @@ def update_contact_campaign_status(
     with get_cursor(conn) as cursor:
         cursor.execute(query, params)
         conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Message drafts (AI-generated)
+# ---------------------------------------------------------------------------
+
+def get_message_draft(
+    conn: PgConnection,
+    contact_id: int,
+    campaign_id: int,
+    step_order: int,
+    *,
+    user_id: int,
+):
+    """Fetch an existing AI-generated message draft, or None."""
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            """SELECT id, contact_id, campaign_id, step_order, draft_subject,
+                      draft_text, channel, model, generated_at, edited_at,
+                      research_id, user_id
+               FROM message_drafts
+               WHERE contact_id = %s AND campaign_id = %s
+                     AND step_order = %s AND user_id = %s""",
+            (contact_id, campaign_id, step_order, user_id),
+        )
+        return cursor.fetchone()
+
+
+# ---------------------------------------------------------------------------
+# Template usage tracking
+# ---------------------------------------------------------------------------
+
+def record_template_usage(
+    conn: PgConnection,
+    contact_id: int,
+    campaign_id: int,
+    template_id: int,
+    channel: str,
+) -> None:
+    """Record that a template was sent to a contact.
+
+    Inserts into ``contact_template_history`` when an email is sent.
+    The ``outcome`` column stays NULL until a reply is confirmed.
+    Uses ON CONFLICT DO NOTHING for idempotency (same contact+campaign+template).
+    """
+    if not template_id:
+        return  # Guard: old Gmail drafts may have NULL template_id
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            """INSERT INTO contact_template_history
+                   (contact_id, campaign_id, template_id, channel, sent_at)
+               VALUES (%s, %s, %s, %s, NOW())
+               ON CONFLICT (contact_id, campaign_id, template_id) DO NOTHING""",
+            (contact_id, campaign_id, template_id, channel),
+        )
+        conn.commit()

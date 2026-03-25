@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import React from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Linkedin, ChevronDown, ChevronUp, Pencil } from "lucide-react";
+import { Linkedin, ChevronDown, ChevronUp, Pencil, Sparkles } from "lucide-react";
 import { api } from "../api/client";
+import { queueApi } from "../api/queue";
+import AiDraftControls from "./AiDraftControls";
 import type { QueueItem } from "../types";
 import AumTierBadge from "./AumTierBadge";
 import CopyButton from "./CopyButton";
@@ -39,9 +41,26 @@ function QueueLinkedInCard({
   const [done, setDone] = useState(false);
   const [skipped, setSkipped] = useState(false);
   const [showMessage, setShowMessage] = useState(true);
+  const [messageText, setMessageText] = useState(
+    item.message_draft?.draft_text || item.rendered_message || "",
+  );
+  const messageRef = useRef<HTMLTextAreaElement>(null);
 
   const queryClient = useQueryClient();
   const contactEdit = useContactEdit(item);
+
+  const generateMutation = useMutation({
+    mutationFn: () =>
+      queueApi.generateDraft(item.contact_id, item.campaign_id!, item.step_order),
+    onSuccess: (data) => {
+      setMessageText(data.draft_text);
+      setShowMessage(true);
+      queryClient.invalidateQueries({ queryKey: ["queue-all"], refetchType: "none" });
+      setTimeout(() => messageRef.current?.focus(), 100);
+    },
+  });
+
+  const hasAiDraft = !!item.message_draft || generateMutation.isSuccess;
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -155,27 +174,43 @@ function QueueLinkedInCard({
           )}
         </div>
 
-        {item.rendered_message && (
+        <AiDraftControls
+          hasAiDraft={hasAiDraft}
+          draftMode={item.draft_mode}
+          hasResearch={item.has_research}
+          generateMutation={generateMutation}
+        />
+
+        {item.draft_mode === "ai" && !hasAiDraft && (
+          <div className="flex items-center gap-2 text-sm text-purple-600 italic">
+            <Sparkles size={14} />
+            Generate AI draft to personalize this message
+          </div>
+        )}
+
+        {(item.rendered_message || hasAiDraft) && (
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <button
                 onClick={() => setShowMessage(!showMessage)}
+                aria-expanded={showMessage}
                 className="flex items-center gap-1 text-xs font-medium text-gray-500 uppercase tracking-wide hover:text-gray-700 transition-colors"
               >
                 Message
                 {showMessage ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
               </button>
               <CopyButton
-                text={item.rendered_message}
+                text={messageText}
                 variant="primary"
                 ariaLabel="Copy message to clipboard"
               />
             </div>
             {showMessage && (
               <textarea
-                readOnly
-                value={item.rendered_message}
-                className="w-full h-32 p-3 border border-gray-200 rounded-md text-sm bg-gray-50 resize-none focus:outline-none"
+                ref={messageRef}
+                value={messageText}
+                onChange={(e) => setMessageText(e.target.value)}
+                className="w-full h-32 p-3 border border-gray-200 rounded-md text-sm resize-y focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             )}
           </div>

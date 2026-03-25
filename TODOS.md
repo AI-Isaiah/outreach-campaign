@@ -2,21 +2,6 @@
 
 ## P0 — Daily Outreach System (B+C Plan)
 
-### Phase 3: Reply feedback + template badge
-**Priority:** P0
-**Files:** `src/enums.py`, `src/services/state_machine.py`, `frontend/src/pages/CampaignDetail.tsx`, `frontend/src/pages/Templates.tsx`, migration `022_replied_neutral.sql`
-**What:** Add REPLIED_NEUTRAL status (NOT terminal — no auto-activation). Map reply_detector's "neutral" → REPLIED_NEUTRAL. Reply breakdown (positive/neutral/negative) in analytics. "Winning" template badge reusing `response_analyzer.py:get_template_performance()`.
-**Design decisions:** replied_neutral badge: `bg-purple-100 text-purple-700`. Winning badge: `bg-green-100 text-green-800` with Lucide Trophy icon. Reply breakdown: stacked bar (green/purple/red).
-**Tests needed:** 8 (state machine + metrics).
-
-### Phase 4: Research-powered messages
-**Priority:** P0
-**Files:** new `src/services/message_drafter.py`, `src/services/deep_research_service.py`, `src/application/queue_service.py`, `src/web/routes/queue.py`, `frontend/src/types/index.ts`, migration `023_message_drafts.sql`
-**What:** LLM draft generation at research-completion time (Claude Haiku). Stored in message_drafts table. Batch-queried in _batch_enrich() alongside gmail_drafts. Queue cards show draft_text when available, Jinja2 fallback when null. Error isolation: Haiku failure does NOT affect research completion.
-**Design decisions:** Draft indicator: "AI-drafted from research" label in `text-xs text-purple-600` with Lucide Sparkles icon. Edit button opens inline panel.
-**Schema:** `message_drafts(id, contact_id FK, campaign_id FK, step_order, draft_text, model, generated_at, research_id FK, user_id FK, UNIQUE(contact_id, campaign_id, step_order))`
-**Tests needed:** 8 (drafter + queue integration).
-
 ### Phase 5: Campaign kanban
 **Priority:** P1
 **Files:** `frontend/src/pages/CampaignDetail.tsx`, `src/web/routes/campaigns.py`
@@ -52,11 +37,8 @@
 **What:** Contacts imported via Smart Import should get a tag indicating their source CSV (e.g., "Crypto_Fund_List CSV.csv" or a user-chosen label). After import, the "View Contacts" button should filter by this tag so users can see exactly what was imported. The `source_label` field already exists in import_jobs — use it to auto-tag imported contacts.
 **Why:** After importing 2,600 contacts, users land on the contacts page with no way to find what they just imported.
 
-### Fix: Campaign Wizard template selector is non-functional
-**Priority:** P0
-**Files:** `frontend/src/pages/CampaignWizard.tsx`
-**What:** Step 4 ("Choose message templates") shows "No template selected" for each sequence step but there's no way to actually select a template — no dropdown, no picker, no click action. The template selector UI needs to be implemented: click a step → dropdown of existing templates filtered by channel (LinkedIn templates for LinkedIn steps, email templates for email steps) → select → preview shows inline.
-**Why:** Users can't complete campaign setup without assigning templates to sequence steps. This is a broken step in the wizard.
+### ~~Fix: Campaign Wizard template selector is non-functional~~ → Bundled in Phase 4
+**Status:** Included in Phase 4 implementation (template selector + AI template mode + write manually).
 
 ### Smart Message: LLM-powered sequence generation in campaign wizard
 **Priority:** P1
@@ -159,6 +141,25 @@
 - **Why:** SmartImport bypasses the design system. Identified by /simplify code reuse review.
 
 ## Completed
+
+### Phase 3 Lite: Reply remap + template winning badge
+**Completed:** 2026-03-26, branch feat/phase3-lite
+- Neutral → positive remap in confirm flow (domain rule: non-rejection = positive)
+- `contact_template_history` production write path (INSERT on send, UPDATE outcome on confirm)
+- Binary reply breakdown (green/red) in CampaignDetail analytics
+- Template performance table with "Winning" badge (5+ sends, highest positive_rate)
+- 13 backend tests (test_phase3_lite.py)
+
+### Phase 4: Research-powered AI message drafts
+**Completed:** 2026-03-26, branch feat/phase3-lite
+- On-demand AI draft generation via Claude Haiku (message_drafter.py)
+- "Generate AI Draft" button on queue cards (email + LinkedIn)
+- AI template mode in campaign wizard Step 4 (template/manual/ai)
+- JIT draft generation in push-to-Gmail path with Jinja2 fallback
+- Migration 023: message_drafts table + sequence_steps.draft_mode column
+- Bundled fixes: wizard Step 4 template selector, gmail_drafts user_id, template_engine user_id
+- CEO review hardening: 8 multi-tenancy queries, specific error handling, structured logging, rate limiting
+- 18 backend tests + 6 frontend tests (3 QueueEmailCard, 3 CampaignWizard)
 
 ### Smart Import Duplicate Redesign (all P0 items)
 **Completed:** v0.19.x (2026-03-25), branch feat/smart-import

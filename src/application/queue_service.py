@@ -118,7 +118,7 @@ def apply_cross_campaign_email_dedup(items: list[dict], limit: int = 0) -> list[
     return result
 
 
-def _batch_enrich(conn, items: list[dict], campaign_id: int, config: dict, *, user_id: Optional[str] = None) -> list[dict]:
+def _batch_enrich(conn, items: list[dict], campaign_id: int, config: dict, *, user_id: Optional[int] = None) -> list[dict]:
     """Batch-fetch related data and render messages for queue items."""
     if not items:
         return []
@@ -132,9 +132,9 @@ def _batch_enrich(conn, items: list[dict], campaign_id: int, config: dict, *, us
         with get_cursor(conn) as cur:
             cur.execute(
                 """SELECT contact_id, gmail_draft_id, status FROM gmail_drafts
-                   WHERE contact_id = ANY(%s) AND campaign_id = %s
+                   WHERE contact_id = ANY(%s) AND campaign_id = %s AND user_id = %s
                    ORDER BY contact_id, id DESC""",
-                (contact_ids, campaign_id),
+                (contact_ids, campaign_id, user_id),
             )
             for row in cur.fetchall():
                 cid = row["contact_id"]
@@ -146,12 +146,12 @@ def _batch_enrich(conn, items: list[dict], campaign_id: int, config: dict, *, us
     if contact_ids:
         with get_cursor(conn) as cur:
             cur.execute(
-                """SELECT c.id, c.linkedin_url, c.first_name, c.last_name,
-                          c.full_name, co.name AS company_name
+                """SELECT c.id, c.company_id, c.linkedin_url, c.first_name,
+                          c.last_name, c.full_name, co.name AS company_name
                    FROM contacts c
                    LEFT JOIN companies co ON co.id = c.company_id
-                   WHERE c.id = ANY(%s)""",
-                (contact_ids,),
+                   WHERE c.id = ANY(%s) AND c.user_id = %s""",
+                (contact_ids, user_id),
             )
             for row in cur.fetchall():
                 contacts_by_id[row["id"]] = row
@@ -160,9 +160,59 @@ def _batch_enrich(conn, items: list[dict], campaign_id: int, config: dict, *, us
     templates_by_id: dict = {}
     if template_ids:
         with get_cursor(conn) as cur:
-            cur.execute("SELECT * FROM templates WHERE id = ANY(%s)", (template_ids,))
+            cur.execute("SELECT * FROM templates WHERE id = ANY(%s) AND user_id = %s", (template_ids, user_id))
             for row in cur.fetchall():
                 templates_by_id[row["id"]] = row
+
+    # Batch fetch message_drafts (AI-generated)
+    message_drafts_by_key: dict = {}
+    if contact_ids:
+        with get_cursor(conn) as cur:
+            cur.execute(
+                """SELECT contact_id, step_order, draft_subject, draft_text,
+                          channel, model, generated_at, research_id
+                   FROM message_drafts
+                   WHERE contact_id = ANY(%s) AND campaign_id = %s AND user_id = %s""",
+                (contact_ids, campaign_id, user_id),
+            )
+            for row in cur.fetchall():
+                message_drafts_by_key[(row["contact_id"], row["step_order"])] = dict(row)
+
+    # Batch fetch deep research (latest per company, user_id scoped)
+    # Serves dual purpose: has_research flag + pre-fetched data for render optimization
+    company_ids = list({
+        c["company_id"] for c in contacts_by_id.values()
+        if c.get("company_id")
+    })
+    research_by_company: dict = {}
+    companies_with_research: set = set()
+    if company_ids:
+        with get_cursor(conn) as cur:
+            cur.execute(
+                """SELECT DISTINCT ON (company_id)
+                          company_id, company_overview, crypto_signals,
+                          key_people, talking_points, risk_factors,
+                          updated_crypto_score, confidence
+                   FROM deep_research
+                   WHERE company_id = ANY(%s) AND status = 'completed'
+                         AND user_id = %s
+                   ORDER BY company_id, created_at DESC""",
+                (company_ids, user_id),
+            )
+            for row in cur.fetchall():
+                research_by_company[row["company_id"]] = dict(row)
+                companies_with_research.add(row["company_id"])
+
+    # Fetch draft_mode from sequence steps
+    step_draft_modes: dict = {}
+    if contact_ids:
+        with get_cursor(conn) as cur:
+            cur.execute(
+                "SELECT step_order, draft_mode FROM sequence_steps WHERE campaign_id = %s",
+                (campaign_id,),
+            )
+            for row in cur.fetchall():
+                step_draft_modes[row["step_order"]] = row.get("draft_mode") or "template"
 
     # Shared template context
     smtp_config = config.get("smtp", {})
@@ -193,8 +243,14 @@ def _batch_enrich(conn, items: list[dict], campaign_id: int, config: dict, *, us
 
         entry["aum_tier"] = aum_to_tier(item.get("aum_millions") or 0)
 
+        # AI draft fields
+        step_num = item.get("step_order")
+        entry["message_draft"] = message_drafts_by_key.get((cid, step_num))
+        entry["has_research"] = contact_row.get("company_id") in companies_with_research
+        entry["draft_mode"] = step_draft_modes.get(step_num, "template")
+
         if item["channel"] == "email" and item["template_id"]:
-            rendered = render_campaign_email(conn, cid, campaign_id, item["template_id"], config, user_id=user_id)
+            rendered = render_campaign_email(conn, cid, campaign_id, item["template_id"], config, user_id=user_id, pre_fetched_research=research_by_company)
             entry["rendered_email"] = rendered or None
 
             draft_row = gmail_drafts_by_contact.get(cid)

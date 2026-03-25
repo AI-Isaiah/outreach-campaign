@@ -44,3 +44,4 @@ data/whatsapp_session/
 .gstack/
 .github/workflows/
 firebase-debug.log
+firebase-debug.log

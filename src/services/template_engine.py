@@ -64,6 +64,7 @@ def get_template_context(
     config: dict,
     *,
     user_id: int = None,
+    pre_fetched_research: dict = None,
 ) -> dict:
     """Build the template context dictionary for a contact.
 
@@ -89,8 +90,8 @@ def get_template_context(
                       c.company_id, co.name as company_name
                FROM contacts c
                LEFT JOIN companies co ON co.id = c.company_id
-               WHERE c.id = %s""",
-            (contact_id,),
+               WHERE c.id = %s AND c.user_id = %s""",
+            (contact_id, user_id),
         )
         row = cursor.fetchone()
 
@@ -106,19 +107,24 @@ def get_template_context(
     deep_research = None
     company_id = row.get("company_id")
     if company_id:
-        with get_cursor(conn) as cursor:
-            cursor.execute(
-                """SELECT company_overview, crypto_signals, key_people,
-                          talking_points, risk_factors,
-                          updated_crypto_score, confidence
-                   FROM deep_research
-                   WHERE company_id = %s AND status = 'completed'
-                   ORDER BY created_at DESC LIMIT 1""",
-                (company_id,),
-            )
-            dr_row = cursor.fetchone()
-            if dr_row:
-                deep_research = dict(dr_row)
+        if pre_fetched_research is not None:
+            # Use batch-fetched research (avoids per-item query)
+            deep_research = pre_fetched_research.get(company_id)
+        else:
+            with get_cursor(conn) as cursor:
+                cursor.execute(
+                    """SELECT company_overview, crypto_signals, key_people,
+                              talking_points, risk_factors,
+                              updated_crypto_score, confidence
+                       FROM deep_research
+                       WHERE company_id = %s AND status = 'completed'
+                             AND user_id = %s
+                       ORDER BY created_at DESC LIMIT 1""",
+                    (company_id, user_id),
+                )
+                dr_row = cursor.fetchone()
+                if dr_row:
+                    deep_research = dict(dr_row)
 
     # Derive from_email for the unsubscribe link
     smtp_config = config.get("smtp", {})

@@ -16,6 +16,7 @@ from src.services.metrics import (
     get_variant_comparison,
     get_weekly_summary,
 )
+from src.services.response_analyzer import annotate_is_winning, get_template_performance
 from src.web.dependencies import get_current_user, get_db
 from src.models.database import get_cursor
 
@@ -31,6 +32,7 @@ class SequenceStepInput(BaseModel):
     channel: str = Field(max_length=50)
     delay_days: int = Field(ge=0)
     template_id: int | None = None
+    draft_mode: str = "template"  # "template" or "ai"
 
 
 class LaunchCampaignRequest(BaseModel):
@@ -94,9 +96,9 @@ def launch_campaign(
             for step in body.steps:
                 cur.execute(
                     """INSERT INTO sequence_steps
-                       (campaign_id, step_order, channel, template_id, delay_days)
-                       VALUES (%s, %s, %s, %s, %s)""",
-                    (campaign_id, step.step_order, step.channel, step.template_id, step.delay_days),
+                       (campaign_id, step_order, channel, template_id, delay_days, draft_mode)
+                       VALUES (%s, %s, %s, %s, %s, %s)""",
+                    (campaign_id, step.step_order, step.channel, step.template_id, step.delay_days, step.draft_mode),
                 )
 
             # 3. Enroll contacts if status is active
@@ -341,3 +343,18 @@ def get_campaign_report(
         "weekly": get_weekly_summary(conn, campaign_id, weeks_back=1),
         "firm_breakdown": get_company_type_breakdown(conn, campaign_id),
     }
+
+
+@router.get("/campaigns/{name}/template-performance")
+def get_campaign_template_performance(
+    name: str,
+    conn=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Get template performance metrics with winning badge for a campaign."""
+    camp = _get_campaign_by_name_scoped(conn, name, user["id"])
+    if not camp:
+        raise HTTPException(404, f"Campaign '{name}' not found")
+
+    results = get_template_performance(conn, camp["id"], user_id=user["id"])
+    return annotate_is_winning(results)

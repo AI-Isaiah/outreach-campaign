@@ -1,4 +1,4 @@
-import type { Campaign, CampaignResponse, CampaignMetricsResponse, WeeklySummary } from "../types";
+import type { Campaign, CampaignResponse, CampaignMetricsResponse, TemplatePerformanceItem, WeeklySummary } from "../types";
 import { request } from "./request";
 
 export interface CampaignWithMetrics extends Campaign {
@@ -14,6 +14,7 @@ export interface SequenceStepInput {
   channel: string;
   delay_days: number;
   template_id?: number | null;
+  draft_mode?: 'template' | 'ai';
 }
 
 export interface LaunchCampaignRequest {
@@ -53,7 +54,8 @@ export interface GeneratedStep {
   step_order: number;
   channel: string;
   delay_days: number;
-  template_id: null;
+  template_id: number | null;
+  draft_mode?: 'template' | 'ai';
 }
 
 export const campaignsApi = {
@@ -67,6 +69,7 @@ export const campaignsApi = {
   getCampaignWeekly: (name: string, weeksBack = 1) =>
     request<{ weekly: WeeklySummary }>(`/campaigns/${name}/weekly?weeks_back=${weeksBack}`),
   getCampaignReport: (name: string) => request<{ report: string }>(`/campaigns/${name}/report`),
+  getTemplatePerformance: (name: string) => request<TemplatePerformanceItem[]>(`/campaigns/${name}/template-performance`),
 
   launchCampaign: (data: LaunchCampaignRequest) =>
     request<LaunchCampaignResponse>("/campaigns/launch", {

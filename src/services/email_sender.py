@@ -19,6 +19,7 @@ from typing import Optional
 from src.models.campaigns import (
     get_template,
     log_event,
+    record_template_usage,
     update_contact_campaign_status,
 )
 from src.services.compliance import (
@@ -263,6 +264,7 @@ def render_campaign_email(
     config: dict,
     *,
     user_id: int = None,
+    pre_fetched_research: dict = None,
 ) -> Optional[dict]:
     """Render a campaign email without sending it.
 
@@ -276,7 +278,7 @@ def render_campaign_email(
     """
     with get_cursor(conn) as cursor:
         cursor.execute(
-            "SELECT * FROM contacts WHERE id = %s", (contact_id,),
+            "SELECT * FROM contacts WHERE id = %s AND user_id = %s", (contact_id, user_id),
         )
         contact = cursor.fetchone()
     if contact is None or contact["unsubscribed"]:
@@ -290,7 +292,7 @@ def render_campaign_email(
     if template_row is None or not template_row["body_template"]:
         return None
 
-    context = get_template_context(conn, contact_id, config, user_id=user_id)
+    context = get_template_context(conn, contact_id, config, user_id=user_id, pre_fetched_research=pre_fetched_research)
     body_text = (
         render_template(template_row["body_template"], context)
         if template_row["body_template"].endswith(".txt")
@@ -326,6 +328,7 @@ def send_campaign_email(
     config: dict,
     *,
     user_id: int = None,
+    pre_fetched_research: dict = None,
 ) -> bool:
     """Send a campaign email to a contact.
 
@@ -384,7 +387,7 @@ def send_campaign_email(
         logger.error("Template %d not found or has no body", template_id)
         return False
 
-    context = get_template_context(conn, contact_id, config, user_id=user_id)
+    context = get_template_context(conn, contact_id, config, user_id=user_id, pre_fetched_research=pre_fetched_research)
     body_text = render_template(
         template_row["body_template"],
         context,
@@ -439,6 +442,12 @@ def send_campaign_email(
         template_id=template_id,
         metadata=metadata,
         user_id=user_id,
+    )
+
+    # Record template usage for performance tracking
+    record_template_usage(
+        conn, contact_id, campaign_id, template_id,
+        channel=template_row["channel"],
     )
 
     # Advance the contact's current step
