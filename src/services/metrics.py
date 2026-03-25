@@ -91,6 +91,10 @@ def get_campaign_metrics(conn, campaign_id: int) -> dict:
     reply_rate = (positive + negative) / non_queued if non_queued > 0 else 0.0
     positive_rate = positive / non_queued if non_queued > 0 else 0.0
 
+    # Reply breakdown: binary positive/negative
+    reply_total = positive + negative
+    reply_positive_rate = positive / reply_total if reply_total > 0 else 0.0
+
     return {
         "total_enrolled": total_enrolled,
         "by_status": by_status,
@@ -100,6 +104,12 @@ def get_campaign_metrics(conn, campaign_id: int) -> dict:
         "calls_booked": calls_booked,
         "reply_rate": round(reply_rate, 4),
         "positive_rate": round(positive_rate, 4),
+        "reply_breakdown": {
+            "positive": positive,
+            "negative": negative,
+            "total": reply_total,
+            "positive_rate": round(reply_positive_rate, 4),
+        },
     }
 
 

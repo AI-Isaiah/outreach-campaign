@@ -16,6 +16,7 @@ from src.services.metrics import (
     get_variant_comparison,
     get_weekly_summary,
 )
+from src.services.response_analyzer import annotate_is_winning, get_template_performance
 from src.web.dependencies import get_current_user, get_db
 from src.models.database import get_cursor
 
@@ -341,3 +342,18 @@ def get_campaign_report(
         "weekly": get_weekly_summary(conn, campaign_id, weeks_back=1),
         "firm_breakdown": get_company_type_breakdown(conn, campaign_id),
     }
+
+
+@router.get("/campaigns/{name}/template-performance")
+def get_campaign_template_performance(
+    name: str,
+    conn=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Get template performance metrics with winning badge for a campaign."""
+    camp = _get_campaign_by_name_scoped(conn, name, user["id"])
+    if not camp:
+        raise HTTPException(404, f"Campaign '{name}' not found")
+
+    results = get_template_performance(conn, camp["id"], user_id=user["id"])
+    return annotate_is_winning(results)
