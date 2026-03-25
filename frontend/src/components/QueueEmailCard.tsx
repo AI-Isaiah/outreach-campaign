@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import React from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Mail, Pencil } from "lucide-react";
+import { Mail, Pencil, Sparkles } from "lucide-react";
 import { api } from "../api/client";
 import { queueApi } from "../api/queue";
 import AiDraftControls from "./AiDraftControls";
@@ -135,7 +135,14 @@ function QueueEmailCard({
             generateMutation={generateMutation}
           />
 
-          <div className={`transition-opacity duration-200 ease-in ${item.draft_mode === "ai" && !(item.message_draft || generateMutation.isSuccess) ? "opacity-50" : ""}`}>
+          {item.draft_mode === "ai" && !(item.message_draft || generateMutation.isSuccess) && (
+            <div className="flex items-center gap-2 text-sm text-purple-600 italic">
+              <Sparkles size={14} />
+              Generate AI draft to personalize this message
+            </div>
+          )}
+
+          <div>
             <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
               Subject
             </label>
@@ -148,7 +155,7 @@ function QueueEmailCard({
             />
           </div>
 
-          <div className={`transition-opacity duration-200 ease-in ${item.draft_mode === "ai" && !(item.message_draft || generateMutation.isSuccess) ? "opacity-50" : ""}`}>
+          <div>
             <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
               Body
             </label>

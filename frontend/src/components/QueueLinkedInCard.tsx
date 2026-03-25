@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import React from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Linkedin, ChevronDown, ChevronUp, Pencil } from "lucide-react";
+import { Linkedin, ChevronDown, ChevronUp, Pencil, Sparkles } from "lucide-react";
 import { api } from "../api/client";
 import { queueApi } from "../api/queue";
 import AiDraftControls from "./AiDraftControls";
@@ -181,11 +181,19 @@ function QueueLinkedInCard({
           generateMutation={generateMutation}
         />
 
+        {item.draft_mode === "ai" && !hasAiDraft && (
+          <div className="flex items-center gap-2 text-sm text-purple-600 italic">
+            <Sparkles size={14} />
+            Generate AI draft to personalize this message
+          </div>
+        )}
+
         {(item.rendered_message || hasAiDraft) && (
-          <div className={`transition-opacity duration-200 ease-in ${item.draft_mode === "ai" && !hasAiDraft ? "opacity-50" : ""}`}>
+          <div>
             <div className="flex items-center justify-between mb-1.5">
               <button
                 onClick={() => setShowMessage(!showMessage)}
+                aria-expanded={showMessage}
                 className="flex items-center gap-1 text-xs font-medium text-gray-500 uppercase tracking-wide hover:text-gray-700 transition-colors"
               >
                 Message

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Sparkles, RefreshCw, Loader2 } from "lucide-react";
 import type { UseMutationResult } from "@tanstack/react-query";
 
@@ -18,29 +19,47 @@ export default function AiDraftControls({
   hasResearch,
   generateMutation,
 }: AiDraftControlsProps) {
+  const [showConfirm, setShowConfirm] = useState(false);
+
   if (hasAiDraft) {
     return (
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5 text-xs text-purple-600 font-medium">
-          <Sparkles size={12} className="text-purple-500" />
-          AI-drafted from research
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5 text-xs text-purple-600 font-medium">
+            <Sparkles size={12} className="text-purple-500" />
+            AI-drafted from research
+          </div>
+          <button
+            onClick={() => setShowConfirm(true)}
+            disabled={generateMutation.isPending}
+            aria-busy={generateMutation.isPending}
+            className="inline-flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-purple-600 rounded border border-gray-200 hover:border-purple-300 transition-colors"
+          >
+            {generateMutation.isPending ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <RefreshCw size={12} />
+            )}
+            {generateMutation.isPending ? "Generating..." : "Regenerate"}
+          </button>
         </div>
-        <button
-          onClick={() => {
-            if (confirm("Regenerate will replace your edits. Continue?")) {
-              generateMutation.mutate();
-            }
-          }}
-          disabled={generateMutation.isPending}
-          className="inline-flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-purple-600 rounded border border-gray-200 hover:border-purple-300 transition-colors"
-        >
-          {generateMutation.isPending ? (
-            <Loader2 size={12} className="animate-spin" />
-          ) : (
-            <RefreshCw size={12} />
-          )}
-          {generateMutation.isPending ? "Generating..." : "Regenerate"}
-        </button>
+        {showConfirm && (
+          <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 text-sm">
+            <span className="text-amber-800">Regenerate will replace your edits.</span>
+            <button
+              onClick={() => { generateMutation.mutate(); setShowConfirm(false); }}
+              className="px-2 py-0.5 bg-purple-600 text-white rounded text-xs font-medium hover:bg-purple-700"
+            >
+              Confirm
+            </button>
+            <button
+              onClick={() => setShowConfirm(false)}
+              className="px-2 py-0.5 bg-white border border-gray-200 text-gray-600 rounded text-xs font-medium hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
       </div>
     );
   }

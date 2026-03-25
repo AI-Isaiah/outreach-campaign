@@ -1091,7 +1091,7 @@ function StepMessages({
                     name={`mode-${s.step_order}`}
                     checked={mode === "template"}
                     onChange={() => setMode(s.step_order, "template")}
-                    className="text-blue-600"
+                    className="text-blue-600 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                   />
                   <span className="text-sm font-medium text-gray-700">Select template</span>
                 </label>
@@ -1101,7 +1101,7 @@ function StepMessages({
                     name={`mode-${s.step_order}`}
                     checked={mode === "manual"}
                     onChange={() => setMode(s.step_order, "manual")}
-                    className="text-blue-600"
+                    className="text-blue-600 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                   />
                   <span className="text-sm font-medium text-gray-700">Write manually</span>
                 </label>
@@ -1111,7 +1111,7 @@ function StepMessages({
                     name={`mode-${s.step_order}`}
                     checked={mode === "ai"}
                     onChange={() => setMode(s.step_order, "ai")}
-                    className="text-purple-600"
+                    className="text-purple-600 focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2"
                   />
                   <Sparkles size={14} className="text-purple-500" />
                   <span className="text-sm font-medium text-purple-600">AI draft</span>
