@@ -9,8 +9,11 @@ from __future__ import annotations
 import json
 import logging
 import smtplib
+import time
+from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from pathlib import Path
 from typing import Optional
 
 from src.models.campaigns import (
@@ -25,9 +28,14 @@ from src.services.compliance import (
     check_gdpr_email_limit,
     is_contact_gdpr,
 )
+from src.models.database import get_cursor
 from src.services.template_engine import get_template_context, render_template
 
 logger = logging.getLogger(__name__)
+
+_RETRY_MAX_ATTEMPTS = 3
+_RETRY_BACKOFF_SECONDS = 1
+_TRANSIENT_ERRORS = (smtplib.SMTPServerDisconnected, smtplib.SMTPConnectError)
 
 
 def _text_to_clean_html(text: str) -> str:
@@ -77,12 +85,16 @@ def send_email(
     subject: str,
     body_text: str,
     body_html: Optional[str] = None,
+    attachments: Optional[list[dict]] = None,
 ) -> bool:
     """Send an email via SMTP with TLS.
 
     Sends a multipart/alternative message containing both a plain-text part
     and an optional HTML part. If ``body_html`` is not provided, a clean
     HTML version is auto-generated from the plain text.
+
+    When ``attachments`` is provided, wraps in multipart/mixed with the
+    text/html alternative as the first part and file attachments after.
 
     NO tracking pixels. Clean HTML only.
 
@@ -96,32 +108,41 @@ def send_email(
         subject: email subject line
         body_text: plain-text email body
         body_html: optional HTML email body (clean, no tracking)
+        attachments: optional list of dicts with ``file_path`` and ``filename`` keys
 
     Returns:
         True if the email was sent successfully, False otherwise.
     """
     try:
-        # Build multipart/alternative message
-        msg = MIMEMultipart("alternative")
-        msg["From"] = from_email
-        msg["To"] = to_email
-        msg["Subject"] = subject
+        msg = _build_mime_message(
+            from_email, to_email, subject, body_text, body_html, attachments,
+        )
 
-        # Always include plain text
-        msg.attach(MIMEText(body_text, "plain", "utf-8"))
+        # Retry loop for transient SMTP errors
+        last_error = None
+        for attempt in range(_RETRY_MAX_ATTEMPTS):
+            try:
+                with smtplib.SMTP(smtp_host, smtp_port) as server:
+                    server.starttls()
+                    server.login(smtp_username, smtp_password)
+                    server.sendmail(from_email, to_email, msg.as_string())
+                logger.info("Email sent to %s: %s", to_email, subject)
+                return True
+            except _TRANSIENT_ERRORS as exc:
+                last_error = exc
+                if attempt < _RETRY_MAX_ATTEMPTS - 1:
+                    logger.warning(
+                        "Transient SMTP error on attempt %d/%d for %s: %s",
+                        attempt + 1, _RETRY_MAX_ATTEMPTS, to_email, exc,
+                    )
+                    time.sleep(_RETRY_BACKOFF_SECONDS)
+            except smtplib.SMTPRecipientsRefused:
+                logger.exception("Permanent SMTP error (recipients refused) for %s", to_email)
+                return False
 
-        # Include HTML part (auto-generated if not provided)
-        html = body_html if body_html is not None else _text_to_clean_html(body_text)
-        msg.attach(MIMEText(html, "html", "utf-8"))
-
-        # Send via SMTP with STARTTLS
-        with smtplib.SMTP(smtp_host, smtp_port) as server:
-            server.starttls()
-            server.login(smtp_username, smtp_password)
-            server.sendmail(from_email, to_email, msg.as_string())
-
-        logger.info("Email sent to %s: %s", to_email, subject)
-        return True
+        # All retries exhausted
+        logger.error("All %d SMTP attempts failed for %s: %s", _RETRY_MAX_ATTEMPTS, to_email, last_error)
+        return False
 
     except smtplib.SMTPException:
         logger.exception("SMTP error sending email to %s", to_email)
@@ -131,12 +152,117 @@ def send_email(
         return False
 
 
+def _build_mime_message(
+    from_email: str,
+    to_email: str,
+    subject: str,
+    body_text: str,
+    body_html: Optional[str] = None,
+    attachments: Optional[list[dict]] = None,
+) -> MIMEMultipart:
+    """Build a MIME message from the given parts."""
+    alt_part = MIMEMultipart("alternative")
+    alt_part.attach(MIMEText(body_text, "plain", "utf-8"))
+    html = body_html if body_html is not None else _text_to_clean_html(body_text)
+    alt_part.attach(MIMEText(html, "html", "utf-8"))
+
+    if attachments:
+        msg = MIMEMultipart("mixed")
+        msg.attach(alt_part)
+        for att in attachments:
+            file_path = Path(att["file_path"])
+            if file_path.exists():
+                with open(file_path, "rb") as f:
+                    part = MIMEApplication(f.read(), Name=att.get("filename", file_path.name))
+                part["Content-Disposition"] = f'attachment; filename="{att.get("filename", file_path.name)}"'
+                msg.attach(part)
+    else:
+        msg = alt_part
+
+    msg["From"] = from_email
+    msg["To"] = to_email
+    msg["Subject"] = subject
+    return msg
+
+
+def send_emails_batch(
+    smtp_host: str,
+    smtp_port: int,
+    smtp_username: str,
+    smtp_password: str,
+    from_email: str,
+    messages: list[dict],
+) -> list[bool]:
+    """Send multiple emails over a single SMTP connection.
+
+    Opens ONE SMTP connection with STARTTLS, sends all messages, and returns
+    a list of success booleans (one per message, in order).
+
+    Each dict in ``messages`` must have keys:
+    - to_email: str
+    - subject: str
+    - body_text: str
+    - body_html: str (optional)
+    - attachments: list[dict] (optional)
+
+    Args:
+        smtp_host: SMTP server hostname
+        smtp_port: SMTP server port
+        smtp_username: SMTP login username
+        smtp_password: SMTP login password
+        from_email: sender email address
+        messages: list of message dicts
+
+    Returns:
+        List of booleans, True for each message sent successfully.
+    """
+    results: list[bool] = []
+    if not messages:
+        return results
+
+    try:
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_username, smtp_password)
+
+            for msg_data in messages:
+                try:
+                    mime_msg = _build_mime_message(
+                        from_email=from_email,
+                        to_email=msg_data["to_email"],
+                        subject=msg_data["subject"],
+                        body_text=msg_data["body_text"],
+                        body_html=msg_data.get("body_html"),
+                        attachments=msg_data.get("attachments"),
+                    )
+                    server.sendmail(from_email, msg_data["to_email"], mime_msg.as_string())
+                    logger.info("Batch email sent to %s: %s", msg_data["to_email"], msg_data["subject"])
+                    results.append(True)
+                except smtplib.SMTPRecipientsRefused:
+                    logger.warning("Recipient refused: %s", msg_data["to_email"])
+                    results.append(False)
+                except smtplib.SMTPException:
+                    logger.exception("SMTP error sending to %s", msg_data["to_email"])
+                    results.append(False)
+    except smtplib.SMTPException:
+        logger.exception("Failed to establish SMTP connection for batch send")
+        # Mark remaining as failed
+        results.extend([False] * (len(messages) - len(results)))
+    except Exception:
+        logger.exception("Unexpected error in batch send")
+        results.extend([False] * (len(messages) - len(results)))
+
+    return results
+
+
 def render_campaign_email(
     conn,
     contact_id: int,
     campaign_id: int,
     template_id: int,
     config: dict,
+    *,
+    user_id: int = None,
 ) -> Optional[dict]:
     """Render a campaign email without sending it.
 
@@ -148,11 +274,11 @@ def render_campaign_email(
         Dict with keys: subject, body_text, body_html, contact_email,
         template_id — or None if pre-flight checks fail.
     """
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT * FROM contacts WHERE id = %s", (contact_id,),
-    )
-    contact = cursor.fetchone()
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            "SELECT * FROM contacts WHERE id = %s", (contact_id,),
+        )
+        contact = cursor.fetchone()
     if contact is None or contact["unsubscribed"]:
         return None
 
@@ -160,11 +286,11 @@ def render_campaign_email(
         if not check_gdpr_email_limit(conn, contact_id, campaign_id):
             return None
 
-    template_row = get_template(conn, template_id)
-    if template_row is None:
+    template_row = get_template(conn, template_id, user_id=user_id)
+    if template_row is None or not template_row["body_template"]:
         return None
 
-    context = get_template_context(conn, contact_id, config)
+    context = get_template_context(conn, contact_id, config, user_id=user_id)
     body_text = (
         render_template(template_row["body_template"], context)
         if template_row["body_template"].endswith(".txt")
@@ -178,8 +304,9 @@ def render_campaign_email(
     physical_address = config.get("physical_address", "")
     unsubscribe_url = build_unsubscribe_url(from_email)
 
-    body_text = add_compliance_footer(body_text, physical_address, unsubscribe_url)
+    # Generate HTML from clean body BEFORE adding footers to avoid double footer
     body_html = _text_to_clean_html(body_text)
+    body_text = add_compliance_footer(body_text, physical_address, unsubscribe_url)
     body_html = add_compliance_footer_html(body_html, physical_address, unsubscribe_url)
 
     return {
@@ -197,6 +324,8 @@ def send_campaign_email(
     campaign_id: int,
     template_id: int,
     config: dict,
+    *,
+    user_id: int = None,
 ) -> bool:
     """Send a campaign email to a contact.
 
@@ -224,17 +353,22 @@ def send_campaign_email(
     # --- Pre-flight checks ---------------------------------------------------
 
     # Check if contact is unsubscribed
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT * FROM contacts WHERE id = %s",
-        (contact_id,),
-    )
-    contact = cursor.fetchone()
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            "SELECT * FROM contacts WHERE id = %s",
+            (contact_id,),
+        )
+        contact = cursor.fetchone()
     if contact is None:
         logger.error("Contact %d not found", contact_id)
         return False
     if contact["unsubscribed"]:
         logger.info("Contact %d is unsubscribed, skipping", contact_id)
+        return False
+
+    email = contact.get("email_normalized") or contact.get("email")
+    if not email or "@" not in email:
+        logger.error("Contact %d has no valid email address", contact_id)
         return False
 
     # GDPR email limit check
@@ -245,12 +379,12 @@ def send_campaign_email(
 
     # --- Render template ------------------------------------------------------
 
-    template_row = get_template(conn, template_id)
-    if template_row is None:
-        logger.error("Template %d not found", template_id)
+    template_row = get_template(conn, template_id, user_id=user_id)
+    if template_row is None or not template_row["body_template"]:
+        logger.error("Template %d not found or has no body", template_id)
         return False
 
-    context = get_template_context(conn, contact_id, config)
+    context = get_template_context(conn, contact_id, config, user_id=user_id)
     body_text = render_template(
         template_row["body_template"],
         context,
@@ -268,10 +402,9 @@ def send_campaign_email(
     physical_address = config.get("physical_address", "")
     unsubscribe_url = build_unsubscribe_url(from_email)
 
-    body_text = add_compliance_footer(body_text, physical_address, unsubscribe_url)
-
-    # Generate clean HTML from the compliant plain text
+    # Generate HTML from clean body BEFORE adding footers to avoid double footer
     body_html = _text_to_clean_html(body_text)
+    body_text = add_compliance_footer(body_text, physical_address, unsubscribe_url)
     body_html = add_compliance_footer_html(body_html, physical_address, unsubscribe_url)
 
     # --- Send -----------------------------------------------------------------
@@ -305,18 +438,21 @@ def send_campaign_email(
         campaign_id=campaign_id,
         template_id=template_id,
         metadata=metadata,
+        user_id=user_id,
     )
 
     # Advance the contact's current step
-    cursor.execute(
-        "SELECT current_step FROM contact_campaign_status WHERE contact_id = %s AND campaign_id = %s",
-        (contact_id, campaign_id),
-    )
-    status_row = cursor.fetchone()
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            "SELECT current_step FROM contact_campaign_status WHERE contact_id = %s AND campaign_id = %s",
+            (contact_id, campaign_id),
+        )
+        status_row = cursor.fetchone()
     if status_row:
         update_contact_campaign_status(
             conn, contact_id, campaign_id,
             current_step=status_row["current_step"] + 1,
+            user_id=user_id,
         )
 
     logger.info("Campaign email sent to contact %d (campaign %d)", contact_id, campaign_id)
@@ -336,6 +472,7 @@ def _render_inline_template(template_str: str, context: dict) -> str:
     Returns:
         The rendered string.
     """
-    from jinja2 import Template
-    tmpl = Template(template_str)
+    from jinja2.sandbox import SandboxedEnvironment
+    env = SandboxedEnvironment()
+    tmpl = env.from_string(template_str)
     return tmpl.render(**context)

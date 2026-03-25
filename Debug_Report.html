@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Debug Report — Outreach Campaign Manager</title>
+<style>
+  :root { --bg: #0f172a; --surface: #1e293b; --border: #334155; --text: #e2e8f0; --muted: #94a3b8; --accent: #3b82f6; --red: #ef4444; --orange: #f97316; --yellow: #eab308; --green: #22c55e; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; padding: 2rem; }
+  .container { max-width: 1200px; margin: 0 auto; }
+  h1 { font-size: 2rem; margin-bottom: 0.5rem; }
+  h2 { font-size: 1.5rem; margin: 2rem 0 1rem; color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+  h3 { font-size: 1.1rem; margin: 1.5rem 0 0.5rem; }
+  .subtitle { color: var(--muted); margin-bottom: 2rem; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 0.75rem; padding: 1.5rem; margin-bottom: 1rem; }
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 0.75rem; padding: 1.25rem; text-align: center; }
+  .stat .number { font-size: 2rem; font-weight: 700; }
+  .stat .label { color: var(--muted); font-size: 0.85rem; }
+  .critical { color: var(--red); border-left: 4px solid var(--red); }
+  .high { color: var(--orange); border-left: 4px solid var(--orange); }
+  .medium { color: var(--yellow); border-left: 4px solid var(--yellow); }
+  .low { color: var(--green); border-left: 4px solid var(--green); }
+  .bug-id { font-weight: 700; font-size: 0.9rem; margin-bottom: 0.25rem; }
+  .bug-title { font-size: 1rem; font-weight: 600; color: var(--text); margin-bottom: 0.5rem; }
+  .bug-file { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.8rem; color: var(--muted); margin-bottom: 0.5rem; }
+  .bug-desc { color: var(--text); font-size: 0.9rem; margin-bottom: 0.5rem; }
+  .bug-impact { color: var(--muted); font-size: 0.85rem; font-style: italic; }
+  .bug-fix { background: #0c1424; border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.75rem; margin-top: 0.75rem; font-size: 0.85rem; }
+  .bug-fix strong { color: var(--green); }
+  .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
+  .badge-critical { background: rgba(239,68,68,0.15); color: var(--red); }
+  .badge-high { background: rgba(249,115,22,0.15); color: var(--orange); }
+  .badge-medium { background: rgba(234,179,8,0.15); color: var(--yellow); }
+  .badge-low { background: rgba(34,197,94,0.15); color: var(--green); }
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.85rem; }
+  th, td { padding: 0.6rem 0.75rem; text-align: left; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.05em; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+  code { font-family: 'SF Mono', 'Fira Code', monospace; background: rgba(255,255,255,0.05); padding: 0.1rem 0.3rem; border-radius: 0.25rem; font-size: 0.85em; }
+  .section-intro { color: var(--muted); margin-bottom: 1rem; }
+  .priority-box { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; }
+  .toc { background: var(--surface); border: 1px solid var(--border); border-radius: 0.75rem; padding: 1.5rem; margin-bottom: 2rem; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .toc ul { list-style: none; padding-left: 1rem; }
+  .toc > ul { padding-left: 0; }
+  .toc li { margin: 0.3rem 0; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Debug Report: Outreach Campaign Manager</h1>
+<p class="subtitle">Full codebase audit &mdash; March 4, 2026 &mdash; 55 issues found across backend, frontend, and database</p>
+
+<div class="summary-grid">
+  <div class="stat"><div class="number" style="color:var(--red)">7</div><div class="label">Critical</div></div>
+  <div class="stat"><div class="number" style="color:var(--orange)">16</div><div class="label">High</div></div>
+  <div class="stat"><div class="number" style="color:var(--yellow)">24</div><div class="label">Medium</div></div>
+  <div class="stat"><div class="number" style="color:var(--green)">8</div><div class="label">Low</div></div>
+</div>
+
+<div class="toc">
+  <h3>Contents</h3>
+  <ul>
+    <li><a href="#backend">1. Backend Bugs (10 issues)</a></li>
+    <li><a href="#frontend">2. Frontend Bugs (23 issues)</a></li>
+    <li><a href="#database">3. Database & Schema (18 issues)</a></li>
+    <li><a href="#priority">4. Fix Priority Roadmap</a></li>
+    <li><a href="#briefing">5. Claude Code Briefing</a></li>
+  </ul>
+</div>
+
+<!-- ==================== BACKEND ==================== -->
+<h2 id="backend">1. Backend Bugs</h2>
+<p class="section-intro">10 issues found across Python services and FastAPI routes. The dominant pattern is unclosed database cursors in web route handlers.</p>
+
+<div class="card critical">
+  <div class="bug-id"><span class="badge badge-critical">CRITICAL</span> B001</div>
+  <div class="bug-title">30+ Unclosed Database Cursors Across All Web Routes</div>
+  <div class="bug-file">src/web/routes/*.py &mdash; all 13 route files</div>
+  <div class="bug-desc">Every route handler creates cursors with <code>conn.cursor()</code> but never calls <code>cursor.close()</code>. While the service layer (state_machine, compliance, priority_queue) has proper try/finally cleanup, the web layer does not.</div>
+  <div class="bug-impact">Under sustained load, unclosed cursors accumulate server-side resources. Can exhaust the connection pool and crash the app.</div>
+  <div class="bug-fix"><strong>Fix:</strong> Wrap all cursor operations in try/finally blocks: <code>cur = conn.cursor(); try: ... finally: cur.close()</code>. Or create a shared cursor context manager in dependencies.py.</div>
+</div>
+
+<div class="card high">
+  <div class="bug-id"><span class="badge badge-high">HIGH</span> B002</div>
+  <div class="bug-title">Hardcoded localhost Redirect in Gmail OAuth Callback</div>
+  <div class="bug-file">src/web/routes/gmail.py:62 &amp; src/services/gmail_drafter.py:81,104</div>
+  <div class="bug-desc">OAuth callback redirects to <code>http://localhost:5173/settings?gmail=connected</code> and the OAuth redirect URI is hardcoded to <code>http://localhost:8000/api/gmail/callback</code>. Both break in production.</div>
+  <div class="bug-impact">Gmail integration will not work in any deployed environment (Railway, Docker, etc.).</div>
+  <div class="bug-fix"><strong>Fix:</strong> Use <code>FRONTEND_URL</code> and <code>BACKEND_URL</code> environment variables. Default to localhost for dev.</div>
+</div>
+
+<div class="card medium">
+  <div class="bug-id"><span class="badge badge-medium">MEDIUM</span> B003</div>
+  <div class="bug-title">Race Condition: Lock Released Before Enrollment</div>
+  <div class="bug-file">src/services/state_machine.py:115-145</div>
+  <div class="bug-desc">Uses <code>FOR UPDATE OF c</code> to lock the next contact, but enrollment happens <em>after</em> cursor.close() releases the lock. Two concurrent transitions could activate the same contact.</div>
+  <div class="bug-impact">Violates "one contact per company" rule under concurrent usage.</div>
+  <div class="bug-fix"><strong>Fix:</strong> Move <code>enroll_contact()</code> inside the try block before cursor.close().</div>
+</div>
+
+<div class="card medium">
+  <div class="bug-id"><span class="badge badge-medium">MEDIUM</span> B004</div>
+  <div class="bug-title">Conditional conn.commit() in update_contact_status</div>
+  <div class="bug-file">src/web/routes/contacts.py:170-232</div>
+  <div class="bug-desc">The commit only happens if <code>body.note</code> is provided. State transitions and event logging may not be committed without a note.</div>
+  <div class="bug-impact">Status changes could be lost if the user doesn't provide a note.</div>
+  <div class="bug-fix"><strong>Fix:</strong> Always call <code>conn.commit()</code> at end of function, regardless of note.</div>
+</div>
+
+<div class="card medium">
+  <div class="bug-id"><span class="badge badge-medium">MEDIUM</span> B005</div>
+  <div class="bug-title">N Unclosed Cursors in Queue Enrichment Loop</div>
+  <div class="bug-file">src/web/routes/queue.py:99-141</div>
+  <div class="bug-desc">Inside the queue enrichment loop, new cursors are created per item without closing. For a queue of 20 items, that's 40+ leaked cursors per request.</div>
+  <div class="bug-impact">Significant resource leak proportional to queue size.</div>
+  <div class="bug-fix"><strong>Fix:</strong> Reuse a single cursor for the entire loop, close in finally block.</div>
+</div>
+
+<div class="card medium">
+  <div class="bug-id"><span class="badge badge-medium">MEDIUM</span> B006</div>
+  <div class="bug-title">WhatsApp Scan Status &mdash; 3 Queries, No Cursor Close</div>
+  <div class="bug-file">src/web/routes/whatsapp.py:58-84</div>
+  <div class="bug-desc">Three separate database queries without cursor cleanup.</div>
+  <div class="bug-impact">Resource leak.</div>
+  <div class="bug-fix"><strong>Fix:</strong> try/finally around all three queries.</div>
+</div>
+
+<div class="card medium">
+  <div class="bug-id"><span class="badge badge-medium">MEDIUM</span> B007</div>
+  <div class="bug-title">Insights History &mdash; Unclosed Cursor + Inconsistent Branching</div>
+  <div class="bug-file">src/web/routes/insights.py:44-57</div>
+  <div class="bug-desc">When no campaign_id, creates cursor without closing. When campaign_id present, delegates to service (which may also leak).</div>
+  <div class="bug-impact">Resource leak.</div>
+  <div class="bug-fix"><strong>Fix:</strong> Add try/finally.</div>
+</div>
+
+<div class="card low">
+  <div class="bug-id"><span class="badge badge-low">LOW</span> B008</div>
+  <div class="bug-title">Missing Exception Handling in Deals Endpoints</div>
+  <div class="bug-file">src/web/routes/deals.py</div>
+  <div class="bug-desc">Database failures propagate as unhandled 500 errors without logging.</div>
+  <div class="bug-fix"><strong>Fix:</strong> Add try/except with logging.</div>
+</div>
+
+<div class="card low">
+  <div class="bug-id"><span class="badge badge-low">LOW</span> B009</div>
+  <div class="bug-title">Potential Open Redirect Risk</div>
+  <div class="bug-file">src/web/routes/gmail.py:62</div>
+  <div class="bug-desc">Currently hardcoded (safe), but if changed to dynamic redirect without validation, could be exploited.</div>
+  <div class="bug-fix"><strong>Fix:</strong> When making B002 fix, use URL allowlist validation.</div>
+</div>
+
+<div class="card low">
+  <div class="bug-id"><span class="badge badge-low">LOW</span> B010</div>
+  <div class="bug-title">9+ Unclosed Cursors in models/campaigns.py</div>
+  <div class="bug-file">src/models/campaigns.py</div>
+  <div class="bug-desc">Model-layer CRUD functions create cursors without try/finally.</div>
+  <div class="bug-fix"><strong>Fix:</strong> Add try/finally to all model functions.</div>
+</div>
+
+<!-- ==================== FRONTEND ==================== -->
+<h2 id="frontend">2. Frontend Bugs</h2>
+<p class="section-intro">23 issues found across React pages, components, and the API client. Dominant patterns: missing error states, type safety gaps, and direct state mutation.</p>
+
+<div class="card high">
+  <div class="bug-id"><span class="badge badge-high">HIGH</span> F001</div>
+  <div class="bug-title">7 Pages Missing Error State Display</div>
+  <div class="bug-file">Queue.tsx, Insights.tsx, Pipeline.tsx, Dashboard.tsx, ContactDetail.tsx (deals query), CampaignDetail.tsx, Templates.tsx</div>
+  <div class="bug-desc">useQuery hooks fetch data but don't render error messages when queries fail. Users see blank sections or infinite loading spinners.</div>
+  <div class="bug-fix"><strong>Fix:</strong> Add <code>{query.isError &amp;&amp; &lt;div className="text-red-500"&gt;Failed to load&lt;/div&gt;}</code> pattern to all queries.</div>
+</div>
+
+<div class="card high">
+  <div class="bug-id"><span class="badge badge-high">HIGH</span> F002</div>
+  <div class="bug-title">Direct State Mutation in ContactDetail.tsx</div>
+  <div class="bug-file">ContactDetail.tsx:75-76</div>
+  <div class="bug-desc"><code>statusForm.campaign = enrollments[0].campaign_name</code> directly mutates state outside setState, bypassing React's reactivity system.</div>
+  <div class="bug-impact">Component may not re-render when default campaign is set. Stale form state.</div>
+  <div class="bug-fix"><strong>Fix:</strong> Use <code>useEffect</code> with <code>setStatusForm</code> to set default campaign.</div>
+</div>
+
+<div class="card high">
+  <div class="bug-id"><span class="badge badge-high">HIGH</span> F003</div>
+  <div class="bug-title">Stale Query Invalidation on Paginated Timeline</div>
+  <div class="bug-file">ContactDetail.tsx:39 vs UnifiedTimeline.tsx:50</div>
+  <div class="bug-desc">Note mutation invalidates <code>["timeline", contactId]</code> but the actual query key is <code>["timeline", contactId, page]</code>. Pages 2+ won't refresh after adding a note.</div>
+  <div class="bug-fix"><strong>Fix:</strong> Use <code>queryClient.invalidateQueries({ queryKey: ["timeline", contactId], exact: false })</code>.</div>
+</div>
+
+<div class="card high">
+  <div class="bug-id"><span class="badge badge-high">HIGH</span> F004</div>
+  <div class="bug-title">Non-Null Assertions on Route Params</div>
+  <div class="bug-file">CampaignDetail.tsx:11, Templates.tsx:48</div>
+  <div class="bug-desc">Using <code>name!</code> and <code>editingId!</code> without runtime checks. If params are undefined, API receives undefined.</div>
+  <div class="bug-fix"><strong>Fix:</strong> Add guard before mutation: <code>if (!name) throw new Error('Missing param')</code>.</div>
+</div>
+
+<div class="card high">
+  <div class="bug-id"><span class="badge badge-high">HIGH</span> F005</div>
+  <div class="bug-title">Dependent Query Race Condition</div>
+  <div class="bug-file">ContactDetail.tsx:29-33</div>
+  <div class="bug-desc">Deals query depends on <code>data?.contact?.company_id</code> from another query. Could use stale data if the parent query re-fetches.</div>
+  <div class="bug-fix"><strong>Fix:</strong> Add <code>&amp;&amp; !isLoading</code> to the enabled condition.</div>
+</div>
+
+<div class="card high">
+  <div class="bug-id"><span class="badge badge-high">HIGH</span> F006</div>
+  <div class="bug-title">Persisting Mutation Data Shows Stale Results</div>
+  <div class="bug-file">Dashboard.tsx:78-82</div>
+  <div class="bug-desc">After scanning replies, <code>scanReplies.data</code> persists across page navigations, showing old scan results as if they were current.</div>
+  <div class="bug-fix"><strong>Fix:</strong> Reset mutation on unmount: <code>useEffect(() =&gt; () =&gt; scanReplies.reset(), [])</code>.</div>
+</div>
+
+<div class="card medium">
+  <div class="bug-id"><span class="badge badge-medium">MEDIUM</span> F007</div>
+  <div class="bug-title">"null null" Rendered as Contact Name</div>
+  <div class="bug-file">CompanyDetail.tsx:110</div>
+  <div class="bug-desc"><code>{c.full_name || `${c.first_name} ${c.last_name}`}</code> renders "null null" when both names are null.</div>
+  <div class="bug-fix"><strong>Fix:</strong> <code>{c.full_name || `${c.first_name || ''} ${c.last_name || ''}`.trim() || '-'}</code></div>
+</div>
+
+<div class="card medium">
+  <div class="bug-id"><span class="badge badge-medium">MEDIUM</span> F008</div>
+  <div class="bug-title">Index Used in List Keys</div>
+  <div class="bug-file">Inbox.tsx:66, UnifiedTimeline.tsx:61</div>
+  <div class="bug-desc">Keys include array index which changes on reorder/pagination, causing React reconciliation issues.</div>
+  <div class="bug-fix"><strong>Fix:</strong> Use only stable identifiers: <code>key={`${item.channel}-${item.item_id}`}</code>.</div>
+</div>
+
+<div class="card medium">
+  <div class="bug-id"><span class="badge badge-medium">MEDIUM</span> F009</div>
+  <div class="bug-title">GlobalSearchBar Memory Leak on Unmount</div>
+  <div class="bug-file">GlobalSearchBar.tsx:14-32</div>
+  <div class="bug-desc">Cleanup clears timeout but doesn't cancel in-flight API requests. <code>setResults()</code> may fire on unmounted component.</div>
+  <div class="bug-fix"><strong>Fix:</strong> Use AbortController or a cancelled flag.</div>
+</div>
+
+<div class="card medium">
+  <div class="bug-id"><span class="badge badge-medium">MEDIUM</span> F010</div>
+  <div class="bug-title">Missing Channel-Specific Template Validation</div>
+  <div class="bug-file">Templates.tsx:189</div>
+  <div class="bug-desc">Email templates require a subject line but the form only validates name and body_template.</div>
+  <div class="bug-fix"><strong>Fix:</strong> Add <code>|| (form.channel === 'email' &amp;&amp; !form.subject)</code> to disabled check.</div>
+</div>
+
+<div class="card medium">
+  <div class="bug-id"><span class="badge badge-medium">MEDIUM</span> F011</div>
+  <div class="bug-title">Pipeline Deal Creation &mdash; No company_id Validation</div>
+  <div class="bug-file">Pipeline.tsx:366</div>
+  <div class="bug-desc"><code>Number("")</code> returns 0, which creates deals with company_id=0 (invalid).</div>
+  <div class="bug-fix"><strong>Fix:</strong> Validate before submission: <code>if (!companyId) return</code>.</div>
+</div>
+
+<div class="card medium">
+  <div class="bug-id"><span class="badge badge-medium">MEDIUM</span> F012</div>
+  <div class="bug-title">Unsafe Array Access on Dashboard</div>
+  <div class="bug-file">Dashboard.tsx:84-86</div>
+  <div class="bug-desc"><code>pendingReplies.data.slice(0, 5)</code> may throw if data becomes undefined mid-render.</div>
+  <div class="bug-fix"><strong>Fix:</strong> Use optional chaining: <code>pendingReplies.data?.slice(0, 5)</code>.</div>
+</div>
+
+<div class="card medium">
+  <div class="bug-id"><span class="badge badge-medium">MEDIUM</span> F013</div>
+  <div class="bug-title">23 Instances of <code>any</code> Type in API Client</div>
+  <div class="bug-file">api/client.ts</div>
+  <div class="bug-desc">Almost every endpoint returns <code>request&lt;any&gt;</code>, defeating TypeScript's type safety.</div>
+  <div class="bug-fix"><strong>Fix:</strong> Create response interfaces for each endpoint.</div>
+</div>
+
+<div class="card medium">
+  <div class="bug-id"><span class="badge badge-medium">MEDIUM</span> F014-F017</div>
+  <div class="bug-title">Missing Loading/Error States on Pagination (4 pages)</div>
+  <div class="bug-file">Inbox.tsx, UnifiedTimeline.tsx, ContactList.tsx, Companies listing</div>
+  <div class="bug-desc">Pagination buttons don't disable during loading, allowing rapid clicks that queue requests.</div>
+  <div class="bug-fix"><strong>Fix:</strong> Add <code>disabled={isLoading}</code> to pagination buttons.</div>
+</div>
+
+<div class="card low">
+  <div class="bug-id"><span class="badge badge-low">LOW</span> F018</div>
+  <div class="bug-title">Native confirm() Dialog on Pipeline Delete</div>
+  <div class="bug-file">Pipeline.tsx:267</div>
+  <div class="bug-desc">Uses browser <code>confirm()</code> instead of a custom modal. Looks unprofessional.</div>
+  <div class="bug-fix"><strong>Fix:</strong> Replace with a confirmation modal component.</div>
+</div>
+
+<div class="card low">
+  <div class="bug-id"><span class="badge badge-low">LOW</span> F019</div>
+  <div class="bug-title">Missing ARIA Labels on Form Inputs</div>
+  <div class="bug-file">GlobalSearchBar, Templates, Pipeline forms</div>
+  <div class="bug-desc">Search bars and inputs lack <code>aria-label</code> attributes.</div>
+  <div class="bug-fix"><strong>Fix:</strong> Add aria-label to all inputs.</div>
+</div>
+
+<div class="card low">
+  <div class="bug-id"><span class="badge badge-low">LOW</span> F020</div>
+  <div class="bug-title">Error Boundary Has Minimal Recovery UX</div>
+  <div class="bug-file">App.tsx:30-36</div>
+  <div class="bug-desc">ErrorBoundary shows "Try again" but no error details or logging. Users can't report what went wrong.</div>
+  <div class="bug-fix"><strong>Fix:</strong> Show error summary, add "Copy error" button, log to console.</div>
+</div>
+
+<!-- ==================== DATABASE ==================== -->
+<h2 id="database">3. Database &amp; Schema Issues</h2>
+<p class="section-intro">18 issues found in migrations, schema design, and connection handling.</p>
+
+<div class="card critical">
+  <div class="bug-id"><span class="badge badge-critical">CRITICAL</span> D001</div>
+  <div class="bug-title">Polymorphic entity_tags Has No Foreign Key on entity_id</div>
+  <div class="bug-file">migrations/pg/006_crm_pipeline.sql:38-44</div>
+  <div class="bug-desc">The <code>entity_tags</code> table references contacts or companies via <code>entity_type</code> + <code>entity_id</code> but has no FK constraint. If a contact is deleted, orphaned tag references remain.</div>
+  <div class="bug-fix"><strong>Fix:</strong> Either split into contact_tags/company_tags with proper FKs, or add a cleanup trigger.</div>
+</div>
+
+<div class="card critical">
+  <div class="bug-id"><span class="badge badge-critical">CRITICAL</span> D002</div>
+  <div class="bug-title">dedup_log Has No Foreign Keys</div>
+  <div class="bug-file">migrations/pg/001_initial_schema.sql:95-102</div>
+  <div class="bug-desc"><code>kept_contact_id</code> and <code>merged_contact_id</code> reference contacts but have no FK constraints. Audit trail breaks when contacts are deleted.</div>
+  <div class="bug-fix"><strong>Fix:</strong> Add FK constraints with ON DELETE SET NULL (audit trail should survive contact deletion).</div>
+</div>
+
+<div class="card critical">
+  <div class="bug-id"><span class="badge badge-critical">CRITICAL</span> D003</div>
+  <div class="bug-title">9+ Unclosed Cursors in models/campaigns.py</div>
+  <div class="bug-file">src/models/campaigns.py</div>
+  <div class="bug-desc">Model-layer functions (update_contact_campaign_status, log_event, etc.) create cursors without try/finally.</div>
+  <div class="bug-fix"><strong>Fix:</strong> Add try/finally to all model functions.</div>
+</div>
+
+<div class="card high">
+  <div class="bug-id"><span class="badge badge-high">HIGH</span> D004</div>
+  <div class="bug-title">Missing UNIQUE on email_normalized</div>
+  <div class="bug-file">migrations/pg/001_initial_schema.sql:105</div>
+  <div class="bug-desc">Index exists but no UNIQUE constraint. Code assumes uniqueness for deduplication but the DB doesn't enforce it.</div>
+  <div class="bug-fix"><strong>Fix:</strong> <code>CREATE UNIQUE INDEX idx_contacts_email_norm ON contacts(email_normalized) WHERE email_normalized IS NOT NULL</code></div>
+</div>
+
+<div class="card high">
+  <div class="bug-id"><span class="badge badge-high">HIGH</span> D005</div>
+  <div class="bug-title">Missing UNIQUE on linkedin_url_normalized</div>
+  <div class="bug-file">Same as D004</div>
+  <div class="bug-desc">Same issue for LinkedIn URLs. Two contacts with same LinkedIn can exist.</div>
+  <div class="bug-fix"><strong>Fix:</strong> Add UNIQUE partial index.</div>
+</div>
+
+<div class="card high">
+  <div class="bug-id"><span class="badge badge-high">HIGH</span> D006</div>
+  <div class="bug-title">Unbounded TEXT Columns &mdash; No Length Limits</div>
+  <div class="bug-file">migrations/pg/001_initial_schema.sql</div>
+  <div class="bug-desc">All string columns use TEXT type. Emails, URLs, names have no length validation at the DB layer.</div>
+  <div class="bug-fix"><strong>Fix:</strong> Use VARCHAR(255) for emails, VARCHAR(500) for URLs, VARCHAR(100) for names.</div>
+</div>
+
+<div class="card high">
+  <div class="bug-id"><span class="badge badge-high">HIGH</span> D007</div>
+  <div class="bug-title">Missing Indexes on Timeline View Backing Tables</div>
+  <div class="bug-file">interaction_timeline_view + events, gmail_drafts, pending_replies, response_notes</div>
+  <div class="bug-desc">The view does UNION ALL across 5 tables with <code>WHERE contact_id = ?</code> and <code>ORDER BY occurred_at DESC</code> but backing tables lack composite indexes on (contact_id, timestamp).</div>
+  <div class="bug-fix"><strong>Fix:</strong> Add composite indexes: <code>CREATE INDEX idx_events_contact_ts ON events(contact_id, occurred_at DESC)</code> etc.</div>
+</div>
+
+<div class="card medium">
+  <div class="bug-id"><span class="badge badge-medium">MEDIUM</span> D008</div>
+  <div class="bug-title">Missing Composite Index on contact_template_history</div>
+  <div class="bug-file">migrations/pg/005_performance_indexes.sql</div>
+  <div class="bug-desc">Insights queries by campaign + outcome but only has single-column index on campaign_id.</div>
+  <div class="bug-fix"><strong>Fix:</strong> Add <code>CREATE INDEX idx_cth_campaign_outcome ON contact_template_history(campaign_id, outcome)</code></div>
+</div>
+
+<div class="card medium">
+  <div class="bug-id"><span class="badge badge-medium">MEDIUM</span> D009</div>
+  <div class="bug-title">No Transaction Isolation or Statement Timeout</div>
+  <div class="bug-file">src/models/database.py:11-22</div>
+  <div class="bug-desc">Connection pool has no statement timeout configured. A runaway query could hold a connection indefinitely.</div>
+  <div class="bug-fix"><strong>Fix:</strong> Add <code>options='-c statement_timeout=30000'</code> to connection string.</div>
+</div>
+
+<div class="card medium">
+  <div class="bug-id"><span class="badge badge-medium">MEDIUM</span> D010</div>
+  <div class="bug-title">No Retry Logic in get_pool_connection()</div>
+  <div class="bug-file">src/web/dependencies.py:29-35</div>
+  <div class="bug-desc">If pool is exhausted, getconn() raises immediately. No retry with backoff.</div>
+  <div class="bug-fix"><strong>Fix:</strong> Add retry with exponential backoff (3 attempts, 100ms base).</div>
+</div>
+
+<div class="card medium">
+  <div class="bug-id"><span class="badge badge-medium">MEDIUM</span> D011-D014</div>
+  <div class="bug-title">Missing NOT NULL and CHECK Constraints (4 issues)</div>
+  <div class="bug-file">001_initial_schema.sql</div>
+  <div class="bug-desc">contacts.email allows NULL (should it?), email_status has no CHECK constraint against valid values, deals FK missing cascade config.</div>
+  <div class="bug-fix"><strong>Fix:</strong> Add constraints in a new migration.</div>
+</div>
+
+<div class="card low">
+  <div class="bug-id"><span class="badge badge-low">LOW</span> D015-D018</div>
+  <div class="bug-title">Minor Index &amp; Type Issues (4 issues)</div>
+  <div class="bug-file">Various migrations</div>
+  <div class="bug-desc">LIKE vs ILIKE inconsistency, unused enum values, missing soft-delete audit trail.</div>
+  <div class="bug-fix"><strong>Fix:</strong> Quality-of-life improvements in future migration.</div>
+</div>
+
+<!-- ==================== PRIORITY ==================== -->
+<h2 id="priority">4. Fix Priority Roadmap</h2>
+
+<h3>Sprint 1: Critical (This Week)</h3>
+<table>
+  <thead><tr><th>Bug</th><th>What</th><th>Effort</th></tr></thead>
+  <tbody>
+    <tr><td>B001</td><td>Add try/finally cursor cleanup to all 13 route files</td><td>2-3 hours</td></tr>
+    <tr><td>D003</td><td>Add try/finally cursor cleanup to models/campaigns.py</td><td>1 hour</td></tr>
+    <tr><td>B002</td><td>Environment variables for Gmail OAuth redirect URLs</td><td>30 min</td></tr>
+    <tr><td>D001</td><td>Add cleanup trigger or split entity_tags</td><td>1 hour</td></tr>
+    <tr><td>D002</td><td>Add FK constraints to dedup_log</td><td>30 min</td></tr>
+    <tr><td>D004-D005</td><td>Add UNIQUE partial indexes on normalized fields</td><td>30 min</td></tr>
+    <tr><td>F002</td><td>Fix direct state mutation in ContactDetail</td><td>15 min</td></tr>
+  </tbody>
+</table>
+
+<h3>Sprint 2: High Priority (Next Week)</h3>
+<table>
+  <thead><tr><th>Bug</th><th>What</th><th>Effort</th></tr></thead>
+  <tbody>
+    <tr><td>F001</td><td>Add error states to all 7 pages with missing displays</td><td>2 hours</td></tr>
+    <tr><td>F003</td><td>Fix stale query invalidation for paginated queries</td><td>30 min</td></tr>
+    <tr><td>F004</td><td>Guard non-null assertions on route params</td><td>30 min</td></tr>
+    <tr><td>F005-F006</td><td>Fix dependent query race + stale mutation data</td><td>1 hour</td></tr>
+    <tr><td>B003</td><td>Move enrollment inside lock scope in state_machine</td><td>30 min</td></tr>
+    <tr><td>B004</td><td>Always commit in update_contact_status</td><td>15 min</td></tr>
+    <tr><td>D006-D007</td><td>Add VARCHAR limits + composite indexes</td><td>1 hour</td></tr>
+  </tbody>
+</table>
+
+<h3>Sprint 3: Medium Priority (Week After)</h3>
+<table>
+  <thead><tr><th>Bug</th><th>What</th><th>Effort</th></tr></thead>
+  <tbody>
+    <tr><td>F007-F012</td><td>Null checks, key fixes, search cleanup, validation</td><td>3 hours</td></tr>
+    <tr><td>F013</td><td>Type the API client (create interfaces)</td><td>3 hours</td></tr>
+    <tr><td>D008-D010</td><td>Missing indexes, statement timeout, retry logic</td><td>2 hours</td></tr>
+    <tr><td>F014-F017</td><td>Pagination loading states</td><td>1 hour</td></tr>
+  </tbody>
+</table>
+
+<h3>Sprint 4: Polish (Ongoing)</h3>
+<table>
+  <thead><tr><th>Bug</th><th>What</th><th>Effort</th></tr></thead>
+  <tbody>
+    <tr><td>F018-F020</td><td>Confirmation modal, ARIA labels, better error boundary</td><td>2 hours</td></tr>
+    <tr><td>D011-D018</td><td>Schema constraints, minor indexes</td><td>2 hours</td></tr>
+  </tbody>
+</table>
+
+<!-- ==================== BRIEFING ==================== -->
+<h2 id="briefing">5. Claude Code Briefing</h2>
+<div class="card">
+  <p style="margin-bottom:1rem;">Copy-paste this into Claude Code to fix the critical bugs:</p>
+  <div style="background:#0c1424; border:1px solid var(--border); border-radius:0.5rem; padding:1rem; font-family:'SF Mono','Fira Code',monospace; font-size:0.8rem; white-space:pre-wrap; overflow-x:auto;">Read NEXT_STEPS.md and Debug_Report.html for full context.
+
+CRITICAL BUG FIXES (do these first):
+
+1. **Cursor cleanup in all web routes** — Every file in src/web/routes/ has unclosed cursors. Add try/finally blocks around all conn.cursor() usage. Pattern:
+   cur = conn.cursor()
+   try:
+       cur.execute(...)
+       result = cur.fetchall()
+   finally:
+       cur.close()
+   Do this for: contacts.py, crm.py, deals.py, tags.py, gmail.py, queue.py, whatsapp.py, stats.py, replies.py, insights.py, settings.py, inbox.py
+
+2. **Cursor cleanup in models/campaigns.py** — Same pattern for all 9+ functions that create cursors.
+
+3. **Gmail OAuth env vars** — In src/web/routes/gmail.py line 62, replace hardcoded localhost:5173 with os.getenv("FRONTEND_URL", "http://localhost:5173"). In src/services/gmail_drafter.py lines 81 and 104, replace hardcoded localhost:8000 with os.getenv("BACKEND_URL", "http://localhost:8000").
+
+4. **New migration 007_schema_fixes.sql** — Add:
+   - UNIQUE partial index on contacts(email_normalized) WHERE email_normalized IS NOT NULL
+   - UNIQUE partial index on contacts(linkedin_url_normalized) WHERE linkedin_url_normalized IS NOT NULL
+   - FK on dedup_log(kept_contact_id) REFERENCES contacts(id) ON DELETE SET NULL
+   - FK on dedup_log(merged_contact_id) REFERENCES contacts(id) ON DELETE SET NULL
+   - Composite indexes on events(contact_id, occurred_at), gmail_drafts(contact_id, created_at), pending_replies(contact_id, detected_at), response_notes(contact_id, created_at)
+
+5. **Fix ContactDetail.tsx direct state mutation** — Lines 75-76, move into useEffect:
+   useEffect(() => {
+     if (!statusForm.campaign && enrollments.length > 0) {
+       setStatusForm(s => ({ ...s, campaign: enrollments[0].campaign_name }));
+     }
+   }, [enrollments]);
+
+6. **Fix conditional commit** — In src/web/routes/contacts.py update_contact_status, move conn.commit() to end of function (outside the if body.note block).
+
+7. **Fix state_machine race** — In src/services/state_machine.py _activate_next_contact, move enroll_contact() inside the try block before cursor.close().
+
+8. Run tests: make test</div>
+</div>
+
+<div style="text-align:center; color:var(--muted); margin-top:3rem; padding-top:1rem; border-top:1px solid var(--border); font-size:0.8rem;">
+  Debug Report generated March 4, 2026 &mdash; Outreach Campaign Manager &mdash; 55 issues across 3 layers
+</div>
+
+</div>
+</body>
+</html>

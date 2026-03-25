@@ -12,26 +12,28 @@ from src.services.whatsapp_scanner import (
     _update_scan_state,
     normalize_phone,
 )
+from tests.conftest import TEST_USER_ID
 
 
 def _setup_contact_with_phone(conn):
     """Create a company and contact with a phone number."""
     cur = conn.cursor()
     cur.execute(
-        """INSERT INTO companies (name, name_normalized, firm_type, country)
-           VALUES ('Phone Fund', 'phone fund', 'Hedge Fund', 'US') RETURNING id"""
+        """INSERT INTO companies (name, name_normalized, firm_type, country, user_id)
+           VALUES ('Phone Fund', 'phone fund', 'Hedge Fund', 'US', %s) RETURNING id""",
+        (TEST_USER_ID,),
     )
     company_id = cur.fetchone()["id"]
 
     cur.execute(
         """INSERT INTO contacts (company_id, first_name, last_name, full_name,
                                  email, email_normalized, email_status,
-                                 phone_number, phone_normalized)
+                                 phone_number, phone_normalized, user_id)
            VALUES (%s, 'Bob', 'Smith', 'Bob Smith',
                    'bob@phonefund.com', 'bob@phonefund.com', 'valid',
-                   '+1 555-123-4567', '+15551234567')
+                   '+1 555-123-4567', '+15551234567', %s)
            RETURNING id""",
-        (company_id,),
+        (company_id, TEST_USER_ID),
     )
     contact_id = cur.fetchone()["id"]
     conn.commit()

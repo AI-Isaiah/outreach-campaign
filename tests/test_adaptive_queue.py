@@ -12,6 +12,7 @@ from src.models.campaigns import (
 )
 from src.models.database import get_connection, run_migrations
 from src.services.adaptive_queue import get_adaptive_queue, _apply_channel_rules
+from tests.conftest import TEST_USER_ID
 
 
 def _full_setup(conn):
@@ -20,30 +21,31 @@ def _full_setup(conn):
 
     # Company
     cur.execute(
-        """INSERT INTO companies (name, name_normalized, aum_millions, firm_type, country)
-           VALUES ('Alpha Capital', 'alpha capital', 1500.0, 'Hedge Fund', 'US') RETURNING id"""
+        """INSERT INTO companies (name, name_normalized, aum_millions, firm_type, country, user_id)
+           VALUES ('Alpha Capital', 'alpha capital', 1500.0, 'Hedge Fund', 'US', %s) RETURNING id""",
+        (TEST_USER_ID,),
     )
     company_id = cur.fetchone()["id"]
 
     # Contact with email + linkedin
     cur.execute(
         """INSERT INTO contacts (company_id, first_name, last_name, full_name, email,
-                                 email_normalized, email_status, linkedin_url, linkedin_url_normalized)
+                                 email_normalized, email_status, linkedin_url, linkedin_url_normalized, user_id)
            VALUES (%s, 'Jane', 'Smith', 'Jane Smith', 'jane@alpha.com', 'jane@alpha.com',
-                   'valid', 'https://linkedin.com/in/jsmith', 'https://linkedin.com/in/jsmith')
+                   'valid', 'https://linkedin.com/in/jsmith', 'https://linkedin.com/in/jsmith', %s)
            RETURNING id""",
-        (company_id,),
+        (company_id, TEST_USER_ID),
     )
     contact_id = cur.fetchone()["id"]
     conn.commit()
 
     # Campaign + template + sequence + enrollment
-    campaign_id = create_campaign(conn, "adaptive_test")
-    template_id = create_template(conn, "intro_v1", "email", "Hello {{ first_name }}", subject="Intro")
-    add_sequence_step(conn, campaign_id, 1, "email", template_id=template_id, delay_days=0)
+    campaign_id = create_campaign(conn, "adaptive_test", user_id=TEST_USER_ID)
+    template_id = create_template(conn, "intro_v1", "email", "Hello {{ first_name }}", subject="Intro", user_id=TEST_USER_ID)
+    add_sequence_step(conn, campaign_id, 1, "email", template_id=template_id, delay_days=0, user_id=TEST_USER_ID)
 
     today = date.today().isoformat()
-    enroll_contact(conn, contact_id, campaign_id, next_action_date=today)
+    enroll_contact(conn, contact_id, campaign_id, next_action_date=today, user_id=TEST_USER_ID)
 
     return company_id, contact_id, campaign_id, template_id
 
@@ -70,7 +72,7 @@ def test_adaptive_queue_empty(tmp_db):
     """Adaptive queue with no eligible contacts returns empty."""
     conn = get_connection(tmp_db)
     run_migrations(conn)
-    campaign_id = create_campaign(conn, "empty_adaptive")
+    campaign_id = create_campaign(conn, "empty_adaptive", user_id=TEST_USER_ID)
 
     items = get_adaptive_queue(conn, campaign_id)
     assert items == []
@@ -100,20 +102,20 @@ def test_adaptive_queue_respects_limit(tmp_db):
     today = date.today().isoformat()
     for i in range(5):
         cur.execute(
-            """INSERT INTO companies (name, name_normalized, aum_millions, country)
-               VALUES (%s, %s, %s, 'US') RETURNING id""",
-            (f"Fund_{i}", f"fund_{i}", 100.0 * (i + 1)),
+            """INSERT INTO companies (name, name_normalized, aum_millions, country, user_id)
+               VALUES (%s, %s, %s, 'US', %s) RETURNING id""",
+            (f"Fund_{i}", f"fund_{i}", 100.0 * (i + 1), TEST_USER_ID),
         )
         co_id = cur.fetchone()["id"]
         cur.execute(
             """INSERT INTO contacts (company_id, first_name, full_name, email,
-                                     email_normalized, email_status)
-               VALUES (%s, %s, %s, %s, %s, 'valid') RETURNING id""",
-            (co_id, f"Person{i}", f"Person {i}", f"p{i}@test.com", f"p{i}@test.com"),
+                                     email_normalized, email_status, user_id)
+               VALUES (%s, %s, %s, %s, %s, 'valid', %s) RETURNING id""",
+            (co_id, f"Person{i}", f"Person {i}", f"p{i}@test.com", f"p{i}@test.com", TEST_USER_ID),
         )
         c_id = cur.fetchone()["id"]
         conn.commit()
-        enroll_contact(conn, c_id, campaign_id, next_action_date=today)
+        enroll_contact(conn, c_id, campaign_id, next_action_date=today, user_id=TEST_USER_ID)
 
     items = get_adaptive_queue(conn, campaign_id, limit=3)
     assert len(items) <= 3
@@ -129,21 +131,22 @@ def test_adaptive_queue_sorted_by_score(tmp_db):
     # Add a contact with lower AUM
     cur = conn.cursor()
     cur.execute(
-        """INSERT INTO companies (name, name_normalized, aum_millions, country)
-           VALUES ('Tiny Fund', 'tiny fund', 10.0, 'US') RETURNING id"""
+        """INSERT INTO companies (name, name_normalized, aum_millions, country, user_id)
+           VALUES ('Tiny Fund', 'tiny fund', 10.0, 'US', %s) RETURNING id""",
+        (TEST_USER_ID,),
     )
     co_id = cur.fetchone()["id"]
     cur.execute(
         """INSERT INTO contacts (company_id, first_name, full_name, email,
-                                 email_normalized, email_status)
-           VALUES (%s, 'Tiny', 'Tiny Person', 'tiny@test.com', 'tiny@test.com', 'valid')
+                                 email_normalized, email_status, user_id)
+           VALUES (%s, 'Tiny', 'Tiny Person', 'tiny@test.com', 'tiny@test.com', 'valid', %s)
            RETURNING id""",
-        (co_id,),
+        (co_id, TEST_USER_ID),
     )
     tiny_id = cur.fetchone()["id"]
     conn.commit()
     today = date.today().isoformat()
-    enroll_contact(conn, tiny_id, campaign_id, next_action_date=today)
+    enroll_contact(conn, tiny_id, campaign_id, next_action_date=today, user_id=TEST_USER_ID)
 
     items = get_adaptive_queue(conn, campaign_id)
     if len(items) >= 2:

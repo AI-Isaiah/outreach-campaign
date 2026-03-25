@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from src.models.campaigns import create_campaign
 from src.models.database import get_connection, run_migrations
+from tests.conftest import TEST_USER_ID
 from src.services.reply_detector import (
     _classify_reply,
     _store_pending_reply,
@@ -17,26 +18,27 @@ def _setup_enrolled_contact(conn):
     """Create a company, contact, campaign, and enroll the contact."""
     cur = conn.cursor()
     cur.execute(
-        """INSERT INTO companies (name, name_normalized, firm_type, country)
-           VALUES ('Test Fund', 'test fund', 'Hedge Fund', 'US') RETURNING id"""
+        """INSERT INTO companies (name, name_normalized, firm_type, country, user_id)
+           VALUES ('Test Fund', 'test fund', 'Hedge Fund', 'US', %s) RETURNING id""",
+        (TEST_USER_ID,),
     )
     company_id = cur.fetchone()["id"]
 
     cur.execute(
         """INSERT INTO contacts (company_id, first_name, last_name, full_name,
-                                 email, email_normalized, email_status)
+                                 email, email_normalized, email_status, user_id)
            VALUES (%s, 'Jane', 'Doe', 'Jane Doe', 'jane@testfund.com',
-                   'jane@testfund.com', 'valid')
+                   'jane@testfund.com', 'valid', %s)
            RETURNING id""",
-        (company_id,),
+        (company_id, TEST_USER_ID),
     )
     contact_id = cur.fetchone()["id"]
 
-    campaign_id = create_campaign(conn, "reply_test")
+    campaign_id = create_campaign(conn, "reply_test", user_id=TEST_USER_ID)
 
     from src.models.campaigns import enroll_contact
 
-    enroll_contact(conn, contact_id, campaign_id)
+    enroll_contact(conn, contact_id, campaign_id, user_id=1)
 
     # Set status to in_progress for scanning
     cur.execute(
@@ -160,11 +162,11 @@ def test_scan_gmail_no_contacts(tmp_db):
     """Scanning with no enrolled contacts should return zero results."""
     conn = get_connection(tmp_db)
     run_migrations(conn)
-    create_campaign(conn, "empty_camp")
+    create_campaign(conn, "empty_camp", user_id=TEST_USER_ID)
     conn.commit()
 
     mock_drafter = MagicMock()
-    result = scan_gmail_for_replies(conn, drafter=mock_drafter)
+    result = scan_gmail_for_replies(conn, drafter=mock_drafter, user_id=1)
     assert result["scanned"] == 0
     assert result["new_replies"] == 0
     conn.close()
@@ -203,7 +205,7 @@ def test_scan_gmail_with_replies(mock_classify, tmp_db):
     mock_drafter = MagicMock()
     mock_drafter._get_service.return_value = mock_service
 
-    result = scan_gmail_for_replies(conn, drafter=mock_drafter)
+    result = scan_gmail_for_replies(conn, drafter=mock_drafter, user_id=1)
     assert result["scanned"] == 1
     assert result["new_replies"] == 1
     assert result["errors"] == 0

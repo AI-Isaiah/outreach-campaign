@@ -1,0 +1,188 @@
+import { BASE, authHeaders, request } from "./request";
+
+export type ImportJobStatus = "analyzing" | "pending" | "previewed" | "completed" | "failed";
+
+/** Response from POST /import/smart (async — job starts analyzing in background). */
+export interface AnalyzeStartResult {
+  import_job_id: string;
+  status: "analyzing";
+  row_count: number;
+  headers: string[];
+  filename: string;
+}
+
+/** Full analysis result stored in import_jobs.analysis_result after LLM completes. */
+export interface AnalyzeResult {
+  import_job_id: string;
+  headers: string[];
+  proposed_mapping: Record<string, string>;
+  sample_rows: Record<string, string>[];
+  multi_contact: {
+    detected: boolean;
+    contact_groups?: Array<{
+      prefix: string;
+      fields: Record<string, string>;
+    }>;
+  };
+  confidence: number;
+  row_count: number;
+}
+
+/** Import job as returned by GET /import/jobs/active and GET /import/jobs/{id}. */
+export interface ImportJob {
+  id: string;
+  status: ImportJobStatus;
+  filename: string | null;
+  row_count: number;
+  headers: string[] | null;
+  column_mapping: Record<string, string> | null;
+  multi_contact_pattern: Record<string, unknown> | null;
+  analysis_result: Omit<AnalyzeResult, "import_job_id"> | null;
+  source_label: string | null;
+  created_at: string;
+}
+
+export interface ExistingContact {
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+  title: string | null;
+  linkedin_url: string | null;
+  company_name: string | null;
+}
+
+export type DiffStatus = "new" | "conflict" | "same" | "empty";
+
+export interface FieldDiffs {
+  first_name: DiffStatus;
+  last_name: DiffStatus;
+  email: DiffStatus;
+  title: DiffStatus;
+  linkedin_url: DiffStatus;
+}
+
+export type MatchType = "exact" | "email_only" | "linkedin_only" | "both_different_contacts";
+export type RowAction = "import" | "merge" | "skip" | "enroll";
+
+export interface RowDecision {
+  action: RowAction;
+  existing_contact_id?: number;
+}
+
+export type ResolutionTier = "auto_merge" | "review" | "company_change" | "file_duplicate" | "new";
+
+export interface TriageSummary {
+  auto_mergeable: number;
+  needs_review: number;
+  company_changes: number;
+  file_duplicates: number;
+  new_contacts: number;
+  total: number;
+}
+
+export interface PreviewRow {
+  _index: number;
+  company_name: string;
+  full_name: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+  email_normalized: string | null;
+  title: string | null;
+  linkedin_url: string | null;
+  linkedin_url_normalized: string | null;
+  country: string | null;
+  aum_millions: number | null;
+  firm_type: string | null;
+  is_gdpr: boolean;
+  is_duplicate: boolean;
+  match_type: MatchType | null;
+  resolution_tier: ResolutionTier;
+  conflict_fields: string[] | null;
+  existing_company_name: string | null;
+  existing_contact_id: number | null;
+  existing_contact: ExistingContact | null;
+  field_diffs: FieldDiffs | null;
+  within_file_duplicate: boolean;
+  within_file_duplicate_of: number | null;
+  // Legacy compat
+  duplicate_type: string | null;
+  overlap_cleared: null;
+  [key: string]: unknown;
+}
+
+export interface PreviewResult {
+  total_contacts: number;
+  total_companies: number;
+  duplicates: number;
+  new_contacts: number;
+  triage_summary?: TriageSummary;
+  preview_rows: PreviewRow[];
+}
+
+export interface ImportResult {
+  companies_created: number;
+  contacts_created: number;
+  duplicates_skipped: number;
+  contacts_merged: number;
+  contacts_enrolled: number;
+  contacts_skipped: number;
+}
+
+export const smartImportApi = {
+  /** Upload CSV and start async LLM analysis (returns immediately). */
+  analyze: async (file: File): Promise<AnalyzeStartResult> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch(`${BASE}/import/smart`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: formData,
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(error.detail || `HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+
+  /** Get the most recent non-completed import job (for resume on navigation). */
+  getActiveJob: async (): Promise<ImportJob | null> => {
+    const data = await request<{ job: ImportJob | null }>("/import/jobs/active");
+    return data.job;
+  },
+
+  /** Get a specific import job by ID. */
+  getJob: async (jobId: string): Promise<ImportJob> =>
+    request<ImportJob>(`/import/jobs/${jobId}`),
+
+  preview: async (
+    jobId: string,
+    mapping: Record<string, string>,
+    sourceLabel?: string,
+  ): Promise<PreviewResult> =>
+    request<PreviewResult>("/import/preview", {
+      method: "POST",
+      body: JSON.stringify({
+        import_job_id: jobId,
+        approved_mapping: mapping,
+        source_label: sourceLabel,
+      }),
+    }),
+
+  execute: async (
+    jobId: string,
+    excludedIndices?: number[],
+    rowDecisions?: Record<number, RowDecision>,
+    campaignId?: number,
+  ): Promise<ImportResult> =>
+    request<ImportResult>("/import/execute", {
+      method: "POST",
+      body: JSON.stringify({
+        import_job_id: jobId,
+        excluded_indices: excludedIndices?.length ? excludedIndices : undefined,
+        row_decisions: rowDecisions ?? undefined,
+        campaign_id: campaignId ?? undefined,
+      }),
+    }),
+};

@@ -11,6 +11,7 @@ from datetime import date, timedelta
 from typing import Optional
 
 from src.models.campaigns import get_campaign_by_name
+from src.models.database import get_cursor
 from src.services.metrics import (
     get_campaign_metrics,
     get_variant_comparison,
@@ -32,7 +33,7 @@ def generate_weekly_plan(conn, campaign_name: str) -> dict:
     - newsletter_recommendation: dict with recommend (bool) and reason (str)
     - next_actions: list of action strings
     """
-    camp = get_campaign_by_name(conn, campaign_name)
+    camp = get_campaign_by_name(conn, campaign_name, user_id=1)
     if camp is None:
         raise ValueError(f"Campaign '{campaign_name}' not found")
 
@@ -49,41 +50,41 @@ def generate_weekly_plan(conn, campaign_name: str) -> dict:
     today = date.today()
     next_week_end = today + timedelta(days=7)
 
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        SELECT COUNT(*) AS cnt
-        FROM contact_campaign_status
-        WHERE campaign_id = %s
-          AND status IN ('queued', 'in_progress')
-          AND (next_action_date IS NULL OR next_action_date <= %s)
-        """,
-        (campaign_id, next_week_end.isoformat()),
-    )
-    ready_rows = cursor.fetchone()
-    contacts_ready = ready_rows["cnt"] if ready_rows else 0
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            """
+            SELECT COUNT(*) AS cnt
+            FROM contact_campaign_status
+            WHERE campaign_id = %s
+              AND status IN ('queued', 'in_progress')
+              AND (next_action_date IS NULL OR next_action_date <= %s)
+            """,
+            (campaign_id, next_week_end.isoformat()),
+        )
+        ready_rows = cursor.fetchone()
+        contacts_ready = ready_rows["cnt"] if ready_rows else 0
 
-    # Channel mix: count by channel for ready contacts
-    cursor.execute(
-        """
-        SELECT ss.channel, COUNT(*) AS cnt
-        FROM contact_campaign_status ccs
-        JOIN sequence_steps ss
-          ON ss.campaign_id = ccs.campaign_id
-         AND ss.step_order = ccs.current_step
-        WHERE ccs.campaign_id = %s
-          AND ccs.status IN ('queued', 'in_progress')
-          AND (ccs.next_action_date IS NULL OR ccs.next_action_date <= %s)
-        GROUP BY ss.channel
-        ORDER BY cnt DESC
-        """,
-        (campaign_id, next_week_end.isoformat()),
-    )
-    channel_rows = cursor.fetchall()
+        # Channel mix: count by channel for ready contacts
+        cursor.execute(
+            """
+            SELECT ss.channel, COUNT(*) AS cnt
+            FROM contact_campaign_status ccs
+            JOIN sequence_steps ss
+              ON ss.campaign_id = ccs.campaign_id
+             AND ss.step_order = ccs.current_step
+            WHERE ccs.campaign_id = %s
+              AND ccs.status IN ('queued', 'in_progress')
+              AND (ccs.next_action_date IS NULL OR ccs.next_action_date <= %s)
+            GROUP BY ss.channel
+            ORDER BY cnt DESC
+            """,
+            (campaign_id, next_week_end.isoformat()),
+        )
+        channel_rows = cursor.fetchall()
 
-    channel_mix = {}
-    for row in channel_rows:
-        channel_mix[row["channel"]] = row["cnt"]
+        channel_mix = {}
+        for row in channel_rows:
+            channel_mix[row["channel"]] = row["cnt"]
 
     # Newsletter recommendation
     newsletter_rec = _newsletter_recommendation(conn, campaign_id, overall)

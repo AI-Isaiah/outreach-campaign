@@ -3,6 +3,7 @@ from pathlib import Path
 
 from src.models.database import get_connection, run_migrations
 from src.commands.import_contacts import import_fund_csv
+from tests.conftest import TEST_USER_ID
 
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -19,7 +20,7 @@ def _setup_db(tmp_db):
 def test_import_creates_companies(tmp_db):
     """Importing the sample CSV should create exactly 3 companies."""
     conn = _setup_db(tmp_db)
-    stats = import_fund_csv(conn, SAMPLE_CSV)
+    stats = import_fund_csv(conn, SAMPLE_CSV, user_id=TEST_USER_ID)
     assert stats["companies_created"] == 3
     cursor = conn.cursor()
     cursor.execute("SELECT COUNT(*) AS cnt FROM companies")
@@ -30,7 +31,7 @@ def test_import_creates_companies(tmp_db):
 def test_import_creates_contacts(tmp_db):
     """Aaro has 4 contacts, 10T has at least 3 with LinkedIn, Alphachain has 1."""
     conn = _setup_db(tmp_db)
-    import_fund_csv(conn, SAMPLE_CSV)
+    import_fund_csv(conn, SAMPLE_CSV, user_id=TEST_USER_ID)
 
     cursor = conn.cursor()
 
@@ -82,7 +83,7 @@ def test_import_creates_contacts(tmp_db):
 def test_import_parses_aum(tmp_db):
     """AUM values should be parsed: Aaro=$15.0, 10T=$1219.5."""
     conn = _setup_db(tmp_db)
-    import_fund_csv(conn, SAMPLE_CSV)
+    import_fund_csv(conn, SAMPLE_CSV, user_id=TEST_USER_ID)
 
     cursor = conn.cursor()
 
@@ -111,7 +112,7 @@ def test_import_parses_aum(tmp_db):
 def test_import_detects_gdpr_country(tmp_db):
     """UK companies should have is_gdpr=1, US companies is_gdpr=0."""
     conn = _setup_db(tmp_db)
-    import_fund_csv(conn, SAMPLE_CSV)
+    import_fund_csv(conn, SAMPLE_CSV, user_id=TEST_USER_ID)
 
     cursor = conn.cursor()
 
@@ -142,7 +143,7 @@ def test_import_detects_gdpr_country(tmp_db):
 def test_import_normalizes_emails(tmp_db):
     """Emails should be lowercased and stripped."""
     conn = _setup_db(tmp_db)
-    import_fund_csv(conn, SAMPLE_CSV)
+    import_fund_csv(conn, SAMPLE_CSV, user_id=TEST_USER_ID)
 
     cursor = conn.cursor()
 
@@ -167,7 +168,7 @@ def test_import_normalizes_emails(tmp_db):
 def test_import_sets_priority_ranks(tmp_db):
     """Primary contact gets rank 1, contact 2 gets rank 2, etc."""
     conn = _setup_db(tmp_db)
-    import_fund_csv(conn, SAMPLE_CSV)
+    import_fund_csv(conn, SAMPLE_CSV, user_id=TEST_USER_ID)
 
     cursor = conn.cursor()
 
@@ -198,7 +199,7 @@ def test_import_sets_priority_ranks(tmp_db):
 def test_contacts_inherit_gdpr_from_company(tmp_db):
     """Contacts of UK companies should have is_gdpr=1."""
     conn = _setup_db(tmp_db)
-    import_fund_csv(conn, SAMPLE_CSV)
+    import_fund_csv(conn, SAMPLE_CSV, user_id=TEST_USER_ID)
 
     cursor = conn.cursor()
 

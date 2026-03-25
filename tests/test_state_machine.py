@@ -15,6 +15,7 @@ from src.services.state_machine import (
     _activate_next_contact,
     get_active_contact_for_company,
 )
+from tests.conftest import TEST_USER_ID
 
 
 # ---------------------------------------------------------------------------
@@ -32,8 +33,8 @@ def _create_company(conn, name="Acme Fund"):
     """Insert a company and return its id."""
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO companies (name, name_normalized) VALUES (%s, %s) RETURNING id",
-        (name, name.lower()),
+        "INSERT INTO companies (name, name_normalized, user_id) VALUES (%s, %s, %s) RETURNING id",
+        (name, name.lower(), TEST_USER_ID),
     )
     company_id = cursor.fetchone()["id"]
     conn.commit()
@@ -45,9 +46,9 @@ def _create_contact(conn, company_id, priority_rank=1, email=None):
     email = email or f"contact{priority_rank}@example.com"
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO contacts (company_id, priority_rank, email, first_name, last_name) "
-        "VALUES (%s, %s, %s, %s, %s) RETURNING id",
-        (company_id, priority_rank, email, f"First{priority_rank}", f"Last{priority_rank}"),
+        "INSERT INTO contacts (company_id, priority_rank, email, first_name, last_name, user_id) "
+        "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+        (company_id, priority_rank, email, f"First{priority_rank}", f"Last{priority_rank}", TEST_USER_ID),
     )
     contact_id = cursor.fetchone()["id"]
     conn.commit()
@@ -58,8 +59,8 @@ def _create_campaign(conn, name="Q1 Outreach"):
     """Insert a campaign and return its id."""
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO campaigns (name) VALUES (%s) RETURNING id",
-        (name,),
+        "INSERT INTO campaigns (name, user_id) VALUES (%s, %s) RETURNING id",
+        (name, TEST_USER_ID),
     )
     campaign_id = cursor.fetchone()["id"]
     conn.commit()
@@ -109,12 +110,12 @@ class TestTransitionContact:
         company_id = _create_company(conn)
         contact_id = _create_contact(conn, company_id)
         campaign_id = _create_campaign(conn)
-        enroll_contact(conn, contact_id, campaign_id)
+        enroll_contact(conn, contact_id, campaign_id, user_id=1)
 
-        result = transition_contact(conn, contact_id, campaign_id, "in_progress")
+        result = transition_contact(conn, contact_id, campaign_id, "in_progress", user_id=1)
 
         assert result == "in_progress"
-        row = get_contact_campaign_status(conn, contact_id, campaign_id)
+        row = get_contact_campaign_status(conn, contact_id, campaign_id, user_id=1)
         assert row["status"] == "in_progress"
         conn.close()
 
@@ -123,13 +124,13 @@ class TestTransitionContact:
         company_id = _create_company(conn)
         contact_id = _create_contact(conn, company_id)
         campaign_id = _create_campaign(conn)
-        enroll_contact(conn, contact_id, campaign_id)
-        transition_contact(conn, contact_id, campaign_id, "in_progress")
+        enroll_contact(conn, contact_id, campaign_id, user_id=1)
+        transition_contact(conn, contact_id, campaign_id, "in_progress", user_id=1)
 
-        result = transition_contact(conn, contact_id, campaign_id, "replied_positive")
+        result = transition_contact(conn, contact_id, campaign_id, "replied_positive", user_id=1)
 
         assert result == "replied_positive"
-        row = get_contact_campaign_status(conn, contact_id, campaign_id)
+        row = get_contact_campaign_status(conn, contact_id, campaign_id, user_id=1)
         assert row["status"] == "replied_positive"
         conn.close()
 
@@ -138,13 +139,13 @@ class TestTransitionContact:
         company_id = _create_company(conn)
         contact_id = _create_contact(conn, company_id)
         campaign_id = _create_campaign(conn)
-        enroll_contact(conn, contact_id, campaign_id)
-        transition_contact(conn, contact_id, campaign_id, "in_progress")
+        enroll_contact(conn, contact_id, campaign_id, user_id=1)
+        transition_contact(conn, contact_id, campaign_id, "in_progress", user_id=1)
 
-        result = transition_contact(conn, contact_id, campaign_id, "replied_negative")
+        result = transition_contact(conn, contact_id, campaign_id, "replied_negative", user_id=1)
 
         assert result == "replied_negative"
-        row = get_contact_campaign_status(conn, contact_id, campaign_id)
+        row = get_contact_campaign_status(conn, contact_id, campaign_id, user_id=1)
         assert row["status"] == "replied_negative"
         conn.close()
 
@@ -153,13 +154,13 @@ class TestTransitionContact:
         company_id = _create_company(conn)
         contact_id = _create_contact(conn, company_id)
         campaign_id = _create_campaign(conn)
-        enroll_contact(conn, contact_id, campaign_id)
-        transition_contact(conn, contact_id, campaign_id, "in_progress")
+        enroll_contact(conn, contact_id, campaign_id, user_id=1)
+        transition_contact(conn, contact_id, campaign_id, "in_progress", user_id=1)
 
-        result = transition_contact(conn, contact_id, campaign_id, "no_response")
+        result = transition_contact(conn, contact_id, campaign_id, "no_response", user_id=1)
 
         assert result == "no_response"
-        row = get_contact_campaign_status(conn, contact_id, campaign_id)
+        row = get_contact_campaign_status(conn, contact_id, campaign_id, user_id=1)
         assert row["status"] == "no_response"
         conn.close()
 
@@ -168,13 +169,13 @@ class TestTransitionContact:
         company_id = _create_company(conn)
         contact_id = _create_contact(conn, company_id)
         campaign_id = _create_campaign(conn)
-        enroll_contact(conn, contact_id, campaign_id)
-        transition_contact(conn, contact_id, campaign_id, "in_progress")
+        enroll_contact(conn, contact_id, campaign_id, user_id=1)
+        transition_contact(conn, contact_id, campaign_id, "in_progress", user_id=1)
 
-        result = transition_contact(conn, contact_id, campaign_id, "bounced")
+        result = transition_contact(conn, contact_id, campaign_id, "bounced", user_id=1)
 
         assert result == "bounced"
-        row = get_contact_campaign_status(conn, contact_id, campaign_id)
+        row = get_contact_campaign_status(conn, contact_id, campaign_id, user_id=1)
         assert row["status"] == "bounced"
         conn.close()
 
@@ -189,10 +190,10 @@ class TestInvalidTransitions:
         company_id = _create_company(conn)
         contact_id = _create_contact(conn, company_id)
         campaign_id = _create_campaign(conn)
-        enroll_contact(conn, contact_id, campaign_id)
+        enroll_contact(conn, contact_id, campaign_id, user_id=1)
 
         with pytest.raises(InvalidTransition, match="Cannot transition"):
-            transition_contact(conn, contact_id, campaign_id, "no_response")
+            transition_contact(conn, contact_id, campaign_id, "no_response", user_id=1)
         conn.close()
 
     def test_queued_to_bounced_is_invalid(self, tmp_db):
@@ -200,10 +201,10 @@ class TestInvalidTransitions:
         company_id = _create_company(conn)
         contact_id = _create_contact(conn, company_id)
         campaign_id = _create_campaign(conn)
-        enroll_contact(conn, contact_id, campaign_id)
+        enroll_contact(conn, contact_id, campaign_id, user_id=1)
 
         with pytest.raises(InvalidTransition, match="Cannot transition"):
-            transition_contact(conn, contact_id, campaign_id, "bounced")
+            transition_contact(conn, contact_id, campaign_id, "bounced", user_id=1)
         conn.close()
 
     def test_queued_to_replied_positive_is_invalid(self, tmp_db):
@@ -211,10 +212,10 @@ class TestInvalidTransitions:
         company_id = _create_company(conn)
         contact_id = _create_contact(conn, company_id)
         campaign_id = _create_campaign(conn)
-        enroll_contact(conn, contact_id, campaign_id)
+        enroll_contact(conn, contact_id, campaign_id, user_id=1)
 
         with pytest.raises(InvalidTransition, match="Cannot transition"):
-            transition_contact(conn, contact_id, campaign_id, "replied_positive")
+            transition_contact(conn, contact_id, campaign_id, "replied_positive", user_id=1)
         conn.close()
 
     def test_terminal_state_cannot_transition(self, tmp_db):
@@ -223,12 +224,12 @@ class TestInvalidTransitions:
         company_id = _create_company(conn)
         contact_id = _create_contact(conn, company_id)
         campaign_id = _create_campaign(conn)
-        enroll_contact(conn, contact_id, campaign_id)
-        transition_contact(conn, contact_id, campaign_id, "in_progress")
-        transition_contact(conn, contact_id, campaign_id, "no_response")
+        enroll_contact(conn, contact_id, campaign_id, user_id=1)
+        transition_contact(conn, contact_id, campaign_id, "in_progress", user_id=1)
+        transition_contact(conn, contact_id, campaign_id, "no_response", user_id=1)
 
         with pytest.raises(InvalidTransition, match="Cannot transition"):
-            transition_contact(conn, contact_id, campaign_id, "in_progress")
+            transition_contact(conn, contact_id, campaign_id, "in_progress", user_id=1)
         conn.close()
 
     def test_in_progress_to_queued_is_invalid(self, tmp_db):
@@ -236,11 +237,11 @@ class TestInvalidTransitions:
         company_id = _create_company(conn)
         contact_id = _create_contact(conn, company_id)
         campaign_id = _create_campaign(conn)
-        enroll_contact(conn, contact_id, campaign_id)
-        transition_contact(conn, contact_id, campaign_id, "in_progress")
+        enroll_contact(conn, contact_id, campaign_id, user_id=1)
+        transition_contact(conn, contact_id, campaign_id, "in_progress", user_id=1)
 
         with pytest.raises(InvalidTransition, match="Cannot transition"):
-            transition_contact(conn, contact_id, campaign_id, "queued")
+            transition_contact(conn, contact_id, campaign_id, "queued", user_id=1)
         conn.close()
 
     def test_in_progress_to_in_progress_is_invalid(self, tmp_db):
@@ -248,11 +249,11 @@ class TestInvalidTransitions:
         company_id = _create_company(conn)
         contact_id = _create_contact(conn, company_id)
         campaign_id = _create_campaign(conn)
-        enroll_contact(conn, contact_id, campaign_id)
-        transition_contact(conn, contact_id, campaign_id, "in_progress")
+        enroll_contact(conn, contact_id, campaign_id, user_id=1)
+        transition_contact(conn, contact_id, campaign_id, "in_progress", user_id=1)
 
         with pytest.raises(InvalidTransition, match="Cannot transition"):
-            transition_contact(conn, contact_id, campaign_id, "in_progress")
+            transition_contact(conn, contact_id, campaign_id, "in_progress", user_id=1)
         conn.close()
 
     def test_not_enrolled_raises(self, tmp_db):
@@ -263,7 +264,7 @@ class TestInvalidTransitions:
         # Do NOT enroll
 
         with pytest.raises(InvalidTransition, match="not enrolled"):
-            transition_contact(conn, contact_id, campaign_id, "in_progress")
+            transition_contact(conn, contact_id, campaign_id, "in_progress", user_id=1)
         conn.close()
 
     def test_bogus_status_raises(self, tmp_db):
@@ -271,10 +272,10 @@ class TestInvalidTransitions:
         company_id = _create_company(conn)
         contact_id = _create_contact(conn, company_id)
         campaign_id = _create_campaign(conn)
-        enroll_contact(conn, contact_id, campaign_id)
+        enroll_contact(conn, contact_id, campaign_id, user_id=1)
 
         with pytest.raises(InvalidTransition, match="Cannot transition"):
-            transition_contact(conn, contact_id, campaign_id, "nonexistent_status")
+            transition_contact(conn, contact_id, campaign_id, "nonexistent_status", user_id=1)
         conn.close()
 
 
@@ -288,9 +289,9 @@ class TestEventLogging:
         company_id = _create_company(conn)
         contact_id = _create_contact(conn, company_id)
         campaign_id = _create_campaign(conn)
-        enroll_contact(conn, contact_id, campaign_id)
+        enroll_contact(conn, contact_id, campaign_id, user_id=1)
 
-        transition_contact(conn, contact_id, campaign_id, "in_progress")
+        transition_contact(conn, contact_id, campaign_id, "in_progress", user_id=1)
 
         events = _event_types_for_contact(conn, contact_id, campaign_id)
         assert "status_in_progress" in events
@@ -301,10 +302,10 @@ class TestEventLogging:
         company_id = _create_company(conn)
         contact_id = _create_contact(conn, company_id)
         campaign_id = _create_campaign(conn)
-        enroll_contact(conn, contact_id, campaign_id)
+        enroll_contact(conn, contact_id, campaign_id, user_id=1)
 
-        transition_contact(conn, contact_id, campaign_id, "in_progress")
-        transition_contact(conn, contact_id, campaign_id, "replied_positive")
+        transition_contact(conn, contact_id, campaign_id, "in_progress", user_id=1)
+        transition_contact(conn, contact_id, campaign_id, "replied_positive", user_id=1)
 
         events = _event_types_for_contact(conn, contact_id, campaign_id)
         assert events == ["status_in_progress", "status_replied_positive"]
@@ -316,10 +317,10 @@ class TestEventLogging:
         c1 = _create_contact(conn, company_id, priority_rank=1)
         c2 = _create_contact(conn, company_id, priority_rank=2)
         campaign_id = _create_campaign(conn)
-        enroll_contact(conn, c1, campaign_id)
-        transition_contact(conn, c1, campaign_id, "in_progress")
+        enroll_contact(conn, c1, campaign_id, user_id=1)
+        transition_contact(conn, c1, campaign_id, "in_progress", user_id=1)
 
-        transition_contact(conn, c1, campaign_id, "no_response")
+        transition_contact(conn, c1, campaign_id, "no_response", user_id=1)
 
         # c1 should have the transition event
         c1_events = _event_types_for_contact(conn, c1, campaign_id)
@@ -342,12 +343,12 @@ class TestAutoActivationNoResponse:
         c1 = _create_contact(conn, company_id, priority_rank=1)
         c2 = _create_contact(conn, company_id, priority_rank=2)
         campaign_id = _create_campaign(conn)
-        enroll_contact(conn, c1, campaign_id)
-        transition_contact(conn, c1, campaign_id, "in_progress")
+        enroll_contact(conn, c1, campaign_id, user_id=1)
+        transition_contact(conn, c1, campaign_id, "in_progress", user_id=1)
 
-        transition_contact(conn, c1, campaign_id, "no_response")
+        transition_contact(conn, c1, campaign_id, "no_response", user_id=1)
 
-        c2_status = get_contact_campaign_status(conn, c2, campaign_id)
+        c2_status = get_contact_campaign_status(conn, c2, campaign_id, user_id=1)
         assert c2_status is not None
         assert c2_status["status"] == "queued"
         assert c2_status["next_action_date"] is not None
@@ -362,14 +363,14 @@ class TestAutoActivationNoResponse:
         c3 = _create_contact(conn, company_id, priority_rank=3)
         campaign_id = _create_campaign(conn)
 
-        enroll_contact(conn, c1, campaign_id)
-        enroll_contact(conn, c2, campaign_id)  # pre-enroll c2
+        enroll_contact(conn, c1, campaign_id, user_id=1)
+        enroll_contact(conn, c2, campaign_id, user_id=1)  # pre-enroll c2
 
-        transition_contact(conn, c1, campaign_id, "in_progress")
-        transition_contact(conn, c1, campaign_id, "no_response")
+        transition_contact(conn, c1, campaign_id, "in_progress", user_id=1)
+        transition_contact(conn, c1, campaign_id, "no_response", user_id=1)
 
         # c2 was already enrolled so c3 should have been activated
-        c3_status = get_contact_campaign_status(conn, c3, campaign_id)
+        c3_status = get_contact_campaign_status(conn, c3, campaign_id, user_id=1)
         assert c3_status is not None
         assert c3_status["status"] == "queued"
         conn.close()
@@ -383,16 +384,16 @@ class TestAutoActivationNoResponse:
         c3 = _create_contact(conn, company_id, priority_rank=3)
         campaign_id = _create_campaign(conn)
 
-        enroll_contact(conn, c1, campaign_id)
-        transition_contact(conn, c1, campaign_id, "in_progress")
-        transition_contact(conn, c1, campaign_id, "no_response")
+        enroll_contact(conn, c1, campaign_id, user_id=1)
+        transition_contact(conn, c1, campaign_id, "in_progress", user_id=1)
+        transition_contact(conn, c1, campaign_id, "no_response", user_id=1)
         # c2 is now auto-enrolled
 
-        transition_contact(conn, c2, campaign_id, "in_progress")
-        transition_contact(conn, c2, campaign_id, "no_response")
+        transition_contact(conn, c2, campaign_id, "in_progress", user_id=1)
+        transition_contact(conn, c2, campaign_id, "no_response", user_id=1)
         # c3 should now be auto-enrolled
 
-        c3_status = get_contact_campaign_status(conn, c3, campaign_id)
+        c3_status = get_contact_campaign_status(conn, c3, campaign_id, user_id=1)
         assert c3_status is not None
         assert c3_status["status"] == "queued"
         conn.close()
@@ -409,12 +410,12 @@ class TestAutoActivationBounced:
         c1 = _create_contact(conn, company_id, priority_rank=1)
         c2 = _create_contact(conn, company_id, priority_rank=2)
         campaign_id = _create_campaign(conn)
-        enroll_contact(conn, c1, campaign_id)
-        transition_contact(conn, c1, campaign_id, "in_progress")
+        enroll_contact(conn, c1, campaign_id, user_id=1)
+        transition_contact(conn, c1, campaign_id, "in_progress", user_id=1)
 
-        transition_contact(conn, c1, campaign_id, "bounced")
+        transition_contact(conn, c1, campaign_id, "bounced", user_id=1)
 
-        c2_status = get_contact_campaign_status(conn, c2, campaign_id)
+        c2_status = get_contact_campaign_status(conn, c2, campaign_id, user_id=1)
         assert c2_status is not None
         assert c2_status["status"] == "queued"
         conn.close()
@@ -425,10 +426,10 @@ class TestAutoActivationBounced:
         c1 = _create_contact(conn, company_id, priority_rank=1)
         c2 = _create_contact(conn, company_id, priority_rank=2)
         campaign_id = _create_campaign(conn)
-        enroll_contact(conn, c1, campaign_id)
-        transition_contact(conn, c1, campaign_id, "in_progress")
+        enroll_contact(conn, c1, campaign_id, user_id=1)
+        transition_contact(conn, c1, campaign_id, "in_progress", user_id=1)
 
-        transition_contact(conn, c1, campaign_id, "bounced")
+        transition_contact(conn, c1, campaign_id, "bounced", user_id=1)
 
         c2_events = _event_types_for_contact(conn, c2, campaign_id)
         assert "auto_activated" in c2_events
@@ -446,11 +447,11 @@ class TestNoAutoActivation:
         company_id = _create_company(conn)
         c1 = _create_contact(conn, company_id, priority_rank=1)
         campaign_id = _create_campaign(conn)
-        enroll_contact(conn, c1, campaign_id)
-        transition_contact(conn, c1, campaign_id, "in_progress")
+        enroll_contact(conn, c1, campaign_id, user_id=1)
+        transition_contact(conn, c1, campaign_id, "in_progress", user_id=1)
 
         # Should not raise even though there is no next contact
-        result = transition_contact(conn, c1, campaign_id, "no_response")
+        result = transition_contact(conn, c1, campaign_id, "no_response", user_id=1)
         assert result == "no_response"
         conn.close()
 
@@ -460,11 +461,11 @@ class TestNoAutoActivation:
         c1 = _create_contact(conn, company_id, priority_rank=1)
         c2 = _create_contact(conn, company_id, priority_rank=2)
         campaign_id = _create_campaign(conn)
-        enroll_contact(conn, c1, campaign_id)
-        enroll_contact(conn, c2, campaign_id)
+        enroll_contact(conn, c1, campaign_id, user_id=1)
+        enroll_contact(conn, c2, campaign_id, user_id=1)
 
-        transition_contact(conn, c1, campaign_id, "in_progress")
-        transition_contact(conn, c1, campaign_id, "no_response")
+        transition_contact(conn, c1, campaign_id, "in_progress", user_id=1)
+        transition_contact(conn, c1, campaign_id, "no_response", user_id=1)
 
         # c2 was already enrolled, and there is no c3 - transition should succeed
         # Check that no extra enrollment was created (only original two)
@@ -489,12 +490,12 @@ class TestRepliedPositiveNoActivation:
         c1 = _create_contact(conn, company_id, priority_rank=1)
         c2 = _create_contact(conn, company_id, priority_rank=2)
         campaign_id = _create_campaign(conn)
-        enroll_contact(conn, c1, campaign_id)
-        transition_contact(conn, c1, campaign_id, "in_progress")
+        enroll_contact(conn, c1, campaign_id, user_id=1)
+        transition_contact(conn, c1, campaign_id, "in_progress", user_id=1)
 
-        transition_contact(conn, c1, campaign_id, "replied_positive")
+        transition_contact(conn, c1, campaign_id, "replied_positive", user_id=1)
 
-        c2_status = get_contact_campaign_status(conn, c2, campaign_id)
+        c2_status = get_contact_campaign_status(conn, c2, campaign_id, user_id=1)
         assert c2_status is None  # c2 should NOT have been enrolled
         conn.close()
 
@@ -504,12 +505,12 @@ class TestRepliedPositiveNoActivation:
         c1 = _create_contact(conn, company_id, priority_rank=1)
         c2 = _create_contact(conn, company_id, priority_rank=2)
         campaign_id = _create_campaign(conn)
-        enroll_contact(conn, c1, campaign_id)
-        transition_contact(conn, c1, campaign_id, "in_progress")
+        enroll_contact(conn, c1, campaign_id, user_id=1)
+        transition_contact(conn, c1, campaign_id, "in_progress", user_id=1)
 
-        transition_contact(conn, c1, campaign_id, "replied_negative")
+        transition_contact(conn, c1, campaign_id, "replied_negative", user_id=1)
 
-        c2_status = get_contact_campaign_status(conn, c2, campaign_id)
+        c2_status = get_contact_campaign_status(conn, c2, campaign_id, user_id=1)
         assert c2_status is None
         conn.close()
 
@@ -524,9 +525,9 @@ class TestGetActiveContactForCompany:
         company_id = _create_company(conn)
         contact_id = _create_contact(conn, company_id)
         campaign_id = _create_campaign(conn)
-        enroll_contact(conn, contact_id, campaign_id)
+        enroll_contact(conn, contact_id, campaign_id, user_id=1)
 
-        active = get_active_contact_for_company(conn, company_id, campaign_id)
+        active = get_active_contact_for_company(conn, company_id, campaign_id, user_id=1)
         assert active is not None
         assert active["id"] == contact_id
         conn.close()
@@ -536,10 +537,10 @@ class TestGetActiveContactForCompany:
         company_id = _create_company(conn)
         contact_id = _create_contact(conn, company_id)
         campaign_id = _create_campaign(conn)
-        enroll_contact(conn, contact_id, campaign_id)
-        transition_contact(conn, contact_id, campaign_id, "in_progress")
+        enroll_contact(conn, contact_id, campaign_id, user_id=1)
+        transition_contact(conn, contact_id, campaign_id, "in_progress", user_id=1)
 
-        active = get_active_contact_for_company(conn, company_id, campaign_id)
+        active = get_active_contact_for_company(conn, company_id, campaign_id, user_id=1)
         assert active is not None
         assert active["id"] == contact_id
         conn.close()
@@ -549,11 +550,11 @@ class TestGetActiveContactForCompany:
         company_id = _create_company(conn)
         c1 = _create_contact(conn, company_id, priority_rank=1)
         campaign_id = _create_campaign(conn)
-        enroll_contact(conn, c1, campaign_id)
-        transition_contact(conn, c1, campaign_id, "in_progress")
-        transition_contact(conn, c1, campaign_id, "replied_positive")
+        enroll_contact(conn, c1, campaign_id, user_id=1)
+        transition_contact(conn, c1, campaign_id, "in_progress", user_id=1)
+        transition_contact(conn, c1, campaign_id, "replied_positive", user_id=1)
 
-        active = get_active_contact_for_company(conn, company_id, campaign_id)
+        active = get_active_contact_for_company(conn, company_id, campaign_id, user_id=1)
         assert active is None
         conn.close()
 
@@ -563,7 +564,7 @@ class TestGetActiveContactForCompany:
         _create_contact(conn, company_id)
         campaign_id = _create_campaign(conn)
 
-        active = get_active_contact_for_company(conn, company_id, campaign_id)
+        active = get_active_contact_for_company(conn, company_id, campaign_id, user_id=1)
         assert active is None
         conn.close()
 
@@ -574,10 +575,10 @@ class TestGetActiveContactForCompany:
         c1 = _create_contact(conn, company_id, priority_rank=1)
         c2 = _create_contact(conn, company_id, priority_rank=2)
         campaign_id = _create_campaign(conn)
-        enroll_contact(conn, c1, campaign_id)
-        enroll_contact(conn, c2, campaign_id)
+        enroll_contact(conn, c1, campaign_id, user_id=1)
+        enroll_contact(conn, c2, campaign_id, user_id=1)
 
-        active = get_active_contact_for_company(conn, company_id, campaign_id)
+        active = get_active_contact_for_company(conn, company_id, campaign_id, user_id=1)
         assert active["id"] == c1
         conn.close()
 
@@ -588,12 +589,12 @@ class TestGetActiveContactForCompany:
         c1 = _create_contact(conn, company_id, priority_rank=1)
         c2 = _create_contact(conn, company_id, priority_rank=2)
         campaign_id = _create_campaign(conn)
-        enroll_contact(conn, c1, campaign_id)
-        transition_contact(conn, c1, campaign_id, "in_progress")
-        transition_contact(conn, c1, campaign_id, "no_response")
+        enroll_contact(conn, c1, campaign_id, user_id=1)
+        transition_contact(conn, c1, campaign_id, "in_progress", user_id=1)
+        transition_contact(conn, c1, campaign_id, "no_response", user_id=1)
         # c2 auto-activated
 
-        active = get_active_contact_for_company(conn, company_id, campaign_id)
+        active = get_active_contact_for_company(conn, company_id, campaign_id, user_id=1)
         assert active is not None
         assert active["id"] == c2
         conn.close()
@@ -604,10 +605,10 @@ class TestGetActiveContactForCompany:
         contact_id = _create_contact(conn, company_id)
         campaign_a = _create_campaign(conn, name="Campaign A")
         campaign_b = _create_campaign(conn, name="Campaign B")
-        enroll_contact(conn, contact_id, campaign_a)
+        enroll_contact(conn, contact_id, campaign_a, user_id=1)
 
-        active_a = get_active_contact_for_company(conn, company_id, campaign_a)
-        active_b = get_active_contact_for_company(conn, company_id, campaign_b)
+        active_a = get_active_contact_for_company(conn, company_id, campaign_a, user_id=1)
+        active_b = get_active_contact_for_company(conn, company_id, campaign_b, user_id=1)
 
         assert active_a is not None
         assert active_a["id"] == contact_id

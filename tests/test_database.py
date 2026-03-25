@@ -25,8 +25,8 @@ def test_foreign_keys_enforced(tmp_db):
     # Try to insert a contact referencing a non-existent company
     with pytest.raises(psycopg2.IntegrityError):
         cursor.execute(
-            "INSERT INTO contacts (company_id, first_name, source) VALUES (%s, %s, %s)",
-            (99999, "Test", "csv"),
+            "INSERT INTO contacts (company_id, first_name, source, user_id) VALUES (%s, %s, %s, %s)",
+            (99999, "Test", "csv", 1),
         )
     conn.rollback()
     conn.close()

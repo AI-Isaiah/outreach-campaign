@@ -1,17 +1,25 @@
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import ErrorBoundary from "./components/ErrorBoundary";
+import RequireAuth from "./components/RequireAuth";
 import Layout from "./components/Layout";
 import { SkeletonCard } from "./components/Skeleton";
 
-// Eager-load the dashboard (most common landing page)
-import Dashboard from "./pages/Dashboard";
+// Auth pages (eager-loaded — tiny)
+import Login from "./pages/Login";
+import Register from "./pages/Register";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
+
+// Eager-load the campaigns list (landing page)
+import CampaignList from "./pages/CampaignList";
 
 // Lazy-load all other pages for code splitting
+const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Queue = lazy(() => import("./pages/Queue"));
-const CampaignList = lazy(() => import("./pages/CampaignList"));
 const CampaignDetail = lazy(() => import("./pages/CampaignDetail"));
 const CampaignBuilder = lazy(() => import("./pages/CampaignBuilder"));
+const CampaignWizard = lazy(() => import("./pages/CampaignWizard"));
 const ContactList = lazy(() => import("./pages/ContactList"));
 const ContactDetail = lazy(() => import("./pages/ContactDetail"));
 const Templates = lazy(() => import("./pages/Templates"));
@@ -23,6 +31,7 @@ const Inbox = lazy(() => import("./pages/Inbox"));
 const NewsletterList = lazy(() => import("./pages/NewsletterList"));
 const NewsletterComposer = lazy(() => import("./pages/NewsletterComposer"));
 const ImportWizard = lazy(() => import("./pages/ImportWizard"));
+const SmartImport = lazy(() => import("./pages/SmartImport"));
 const Research = lazy(() => import("./pages/Research"));
 const ResearchJobDetail = lazy(() => import("./pages/ResearchJobDetail"));
 const ResearchResultDetail = lazy(() => import("./pages/ResearchResultDetail"));
@@ -54,12 +63,27 @@ export default function App() {
       <ErrorBoundary>
         <Suspense fallback={<PageFallback />}>
           <Routes>
-            <Route element={<Layout />}>
-              <Route path="/" element={<Page><Dashboard /></Page>} />
+            {/* Public auth routes */}
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
+
+            {/* Protected app routes */}
+            <Route
+              element={
+                <RequireAuth>
+                  <Layout />
+                </RequireAuth>
+              }
+            >
+              <Route path="/" element={<Page><CampaignList /></Page>} />
               <Route path="/queue" element={<Page><Queue /></Page>} />
-              <Route path="/campaigns" element={<Page><CampaignList /></Page>} />
+              <Route path="/campaigns" element={<Navigate to="/" replace />} />
               <Route path="/campaigns/new" element={<Page><CampaignBuilder /></Page>} />
+              <Route path="/campaigns/wizard" element={<Page><CampaignWizard /></Page>} />
               <Route path="/campaigns/:name" element={<Page><CampaignDetail /></Page>} />
+              <Route path="/dashboard" element={<Page><Dashboard /></Page>} />
               <Route path="/contacts" element={<Page><ContactList /></Page>} />
               <Route path="/contacts/:id" element={<Page><ContactDetail /></Page>} />
               <Route path="/templates" element={<Page><Templates /></Page>} />
@@ -75,6 +99,7 @@ export default function App() {
               <Route path="/research/:id" element={<Page><ResearchJobDetail /></Page>} />
               <Route path="/research/results/:id" element={<Page><ResearchResultDetail /></Page>} />
               <Route path="/import" element={<Page><ImportWizard /></Page>} />
+              <Route path="/import/smart" element={<Page><SmartImport /></Page>} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           </Routes>

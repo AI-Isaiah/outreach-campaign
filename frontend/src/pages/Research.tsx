@@ -424,7 +424,14 @@ function JobRow({ job }: { job: ResearchJob }) {
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           {job.status === "completed" && (
             <button
-              onClick={(e) => { e.stopPropagation(); api.exportResearchResults(job.id); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                try {
+                  api.exportResearchResults(job.id);
+                } catch (err) {
+                  console.error("Export failed:", err);
+                }
+              }}
               className="p-1.5 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100"
               title="Export CSV"
             >
@@ -507,7 +514,7 @@ export default function Research() {
         </div>
       ) : !data?.jobs.length ? (
         <EmptyState
-          icon={Search}
+          icon={<Search />}
           title="No research jobs yet"
           description="Upload a company list to discover who's investing in crypto"
           action={{ label: "New Research Job", onClick: () => setShowNewJob(true) }}

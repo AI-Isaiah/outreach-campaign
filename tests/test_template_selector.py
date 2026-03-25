@@ -4,26 +4,29 @@ from __future__ import annotations
 
 import random
 
-from src.models.campaigns import create_campaign, create_template
+from src.models.campaigns import create_campaign
+from src.models.templates import create_template
 from src.models.database import get_connection, run_migrations
 from src.services.template_selector import select_template
+from tests.conftest import TEST_USER_ID
 
 
 def _setup(conn):
     """Create base data for template selector tests."""
     cur = conn.cursor()
     cur.execute(
-        """INSERT INTO companies (name, name_normalized, aum_millions, country)
-           VALUES ('Fund', 'fund', 500.0, 'US') RETURNING id"""
+        """INSERT INTO companies (name, name_normalized, aum_millions, country, user_id)
+           VALUES ('Fund', 'fund', 500.0, 'US', %s) RETURNING id""",
+        (TEST_USER_ID,),
     )
     company_id = cur.fetchone()["id"]
     cur.execute(
-        """INSERT INTO contacts (company_id, first_name, full_name, email, email_normalized, email_status)
-           VALUES (%s, 'Test', 'Test User', 'test@test.com', 'test@test.com', 'valid') RETURNING id""",
-        (company_id,),
+        """INSERT INTO contacts (company_id, first_name, full_name, email, email_normalized, email_status, user_id)
+           VALUES (%s, 'Test', 'Test User', 'test@test.com', 'test@test.com', 'valid', %s) RETURNING id""",
+        (company_id, TEST_USER_ID),
     )
     contact_id = cur.fetchone()["id"]
-    campaign_id = create_campaign(conn, "selector_test")
+    campaign_id = create_campaign(conn, "selector_test", user_id=TEST_USER_ID)
     conn.commit()
     return contact_id, campaign_id
 
@@ -34,8 +37,8 @@ def test_cold_start_picks_first_template(tmp_db):
     run_migrations(conn)
     contact_id, campaign_id = _setup(conn)
 
-    t1 = create_template(conn, "tmpl_a", "email", "body a", subject="subj a")
-    t2 = create_template(conn, "tmpl_b", "email", "body b", subject="subj b")
+    t1 = create_template(conn, "tmpl_a", "email", "body a", subject="subj a", user_id=TEST_USER_ID)
+    t2 = create_template(conn, "tmpl_b", "email", "body b", subject="subj b", user_id=TEST_USER_ID)
 
     templates = [
         {"id": t1, "name": "tmpl_a", "channel": "email"},
@@ -66,16 +69,16 @@ def test_exploit_picks_best_performer(tmp_db):
     run_migrations(conn)
     contact_id, campaign_id = _setup(conn)
 
-    t1 = create_template(conn, "good_tmpl", "email", "body1")
-    t2 = create_template(conn, "bad_tmpl", "email", "body2")
+    t1 = create_template(conn, "good_tmpl", "email", "body1", user_id=TEST_USER_ID)
+    t2 = create_template(conn, "bad_tmpl", "email", "body2", user_id=TEST_USER_ID)
 
     cur = conn.cursor()
     # t1: 3 positive, 1 negative
     for i, outcome in enumerate(["positive", "positive", "positive", "negative"]):
         cur.execute(
-            """INSERT INTO contacts (company_id, first_name, full_name, email, email_normalized, email_status)
-               VALUES (1, 'C', 'Contact', %s, %s, 'valid') RETURNING id""",
-            (f"c{i}_{t1}@test.com", f"c{i}_{t1}@test.com"),
+            """INSERT INTO contacts (company_id, first_name, full_name, email, email_normalized, email_status, user_id)
+               VALUES (1, 'C', 'Contact', %s, %s, 'valid', %s) RETURNING id""",
+            (f"c{i}_{t1}@test.com", f"c{i}_{t1}@test.com", TEST_USER_ID),
         )
         cid = cur.fetchone()["id"]
         cur.execute(
@@ -87,9 +90,9 @@ def test_exploit_picks_best_performer(tmp_db):
     # t2: 1 positive, 3 negative
     for i, outcome in enumerate(["positive", "negative", "negative", "negative"]):
         cur.execute(
-            """INSERT INTO contacts (company_id, first_name, full_name, email, email_normalized, email_status)
-               VALUES (1, 'C', 'Contact', %s, %s, 'valid') RETURNING id""",
-            (f"c{i}_{t2}@test.com", f"c{i}_{t2}@test.com"),
+            """INSERT INTO contacts (company_id, first_name, full_name, email, email_normalized, email_status, user_id)
+               VALUES (1, 'C', 'Contact', %s, %s, 'valid', %s) RETURNING id""",
+            (f"c{i}_{t2}@test.com", f"c{i}_{t2}@test.com", TEST_USER_ID),
         )
         cid = cur.fetchone()["id"]
         cur.execute(
@@ -122,8 +125,8 @@ def test_filters_already_sent(tmp_db):
     run_migrations(conn)
     contact_id, campaign_id = _setup(conn)
 
-    t1 = create_template(conn, "sent_tmpl", "email", "body1")
-    t2 = create_template(conn, "unsent_tmpl", "email", "body2")
+    t1 = create_template(conn, "sent_tmpl", "email", "body1", user_id=TEST_USER_ID)
+    t2 = create_template(conn, "unsent_tmpl", "email", "body2", user_id=TEST_USER_ID)
 
     cur = conn.cursor()
     cur.execute(
@@ -150,7 +153,7 @@ def test_all_templates_sent_reuses(tmp_db):
     run_migrations(conn)
     contact_id, campaign_id = _setup(conn)
 
-    t1 = create_template(conn, "only_tmpl", "email", "body1")
+    t1 = create_template(conn, "only_tmpl", "email", "body1", user_id=TEST_USER_ID)
 
     cur = conn.cursor()
     cur.execute(

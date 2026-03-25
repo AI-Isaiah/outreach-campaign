@@ -12,6 +12,8 @@ import os
 
 import httpx
 
+from src.models.database import get_cursor
+from src.services.retry import retry_on_failure
 from src.services.response_analyzer import (
     get_channel_performance,
     get_segment_performance,
@@ -52,23 +54,23 @@ def run_analysis(conn, campaign_id: int) -> dict:
     insights = _parse_insights(response_text)
 
     # Store in advisor_runs
-    cur = conn.cursor()
-    cur.execute(
-        """INSERT INTO advisor_runs
-               (campaign_id, run_type, prompt_summary, response_text,
-                insights_json, template_suggestions_json)
-           VALUES (%s, 'analysis', %s, %s, %s, %s)
-           RETURNING id""",
-        (
-            campaign_id,
-            prompt[:500],
-            response_text,
-            json.dumps(insights),
-            json.dumps(insights.get("template_suggestions", [])),
-        ),
-    )
-    run_id = cur.fetchone()["id"]
-    conn.commit()
+    with get_cursor(conn) as cur:
+        cur.execute(
+            """INSERT INTO advisor_runs
+                   (campaign_id, run_type, prompt_summary, response_text,
+                    insights_json, template_suggestions_json)
+               VALUES (%s, 'analysis', %s, %s, %s, %s)
+               RETURNING id""",
+            (
+                campaign_id,
+                prompt[:500],
+                response_text,
+                json.dumps(insights),
+                json.dumps(insights.get("template_suggestions", [])),
+            ),
+        )
+        run_id = cur.fetchone()["id"]
+        conn.commit()
 
     return {
         "run_id": run_id,
@@ -80,17 +82,17 @@ def run_analysis(conn, campaign_id: int) -> dict:
 
 def get_analysis_history(conn, campaign_id: int) -> list[dict]:
     """Fetch past advisor runs for a campaign."""
-    cur = conn.cursor()
-    cur.execute(
-        """SELECT id, campaign_id, run_type, prompt_summary,
-                  response_text, insights_json, template_suggestions_json,
-                  events_analyzed, created_at
-           FROM advisor_runs
-           WHERE campaign_id = %s
-           ORDER BY created_at DESC""",
-        (campaign_id,),
-    )
-    rows = cur.fetchall()
+    with get_cursor(conn) as cur:
+        cur.execute(
+            """SELECT id, campaign_id, run_type, prompt_summary,
+                      response_text, insights_json, template_suggestions_json,
+                      events_analyzed, created_at
+               FROM advisor_runs
+               WHERE campaign_id = %s
+               ORDER BY created_at DESC""",
+            (campaign_id,),
+        )
+        rows = cur.fetchall()
     results = []
     for row in rows:
         r = dict(row)

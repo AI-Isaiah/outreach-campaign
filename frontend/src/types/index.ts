@@ -17,6 +17,9 @@ export interface QueueItem {
   rendered_message?: string | null;
   sales_nav_url?: string;
   gmail_draft?: { draft_id: string; status: string } | null;
+  // Cross-campaign queue fields (added by /queue/all)
+  campaign_name?: string;
+  campaign_id?: number;
   // Adaptive engine fields (Phase 3)
   priority_score?: number;
   selection_mode?: string;
@@ -412,6 +415,7 @@ export interface AnalysisResponse {
   insights: string[];
   template_suggestions: string[];
   strategy_notes: string;
+  insights_json?: string;
   created_at: string;
 }
 

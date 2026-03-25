@@ -5,10 +5,11 @@ from __future__ import annotations
 import os
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from src.web.dependencies import get_current_user, get_db
+from src.models.database import get_cursor
 
 router = APIRouter(tags=["settings"])
 
@@ -32,14 +33,14 @@ def get_settings(
     user=Depends(get_current_user),
 ):
     """Get engine config and service status."""
-    cur = conn.cursor()
-    try:
+    with get_cursor(conn) as cur:
         # Engine config
-        cur.execute("SELECT key, value, updated_at FROM engine_config ORDER BY key")
+        cur.execute(
+            "SELECT key, value, updated_at FROM engine_config WHERE user_id = %s ORDER BY key",
+            (user["id"],),
+        )
         config_rows = cur.fetchall()
         config = {row["key"]: row["value"] for row in config_rows}
-    finally:
-        cur.close()
 
     # Gmail status
     try:
@@ -65,20 +66,17 @@ def update_settings(
     user=Depends(get_current_user),
 ):
     """Upsert engine config key-value pairs."""
-    cur = conn.cursor()
-    try:
+    with get_cursor(conn) as cur:
         for key, value in body.settings.items():
             cur.execute(
-                """INSERT INTO engine_config (key, value, updated_at)
-                   VALUES (%s, %s, NOW())
-                   ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()""",
-                (key, value),
+                """INSERT INTO engine_config (key, value, user_id, updated_at)
+                   VALUES (%s, %s, %s, NOW())
+                   ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()""",
+                (key, value, user["id"]),
             )
         conn.commit()
 
         return {"success": True, "updated": list(body.settings.keys())}
-    finally:
-        cur.close()
 
 
 # ---------------------------------------------------------------------------
@@ -96,15 +94,12 @@ def get_api_keys(
     user=Depends(get_current_user),
 ):
     """Return masked API keys and configuration status for the current user."""
-    cur = conn.cursor()
-    try:
+    with get_cursor(conn) as cur:
         cur.execute(
             "SELECT email, anthropic_api_key, perplexity_api_key FROM users WHERE id = %s",
             (user["id"],),
         )
         row = cur.fetchone()
-    finally:
-        cur.close()
 
     db_anthropic = (row or {}).get("anthropic_api_key") or ""
     db_perplexity = (row or {}).get("perplexity_api_key") or ""
@@ -147,30 +142,98 @@ def update_api_keys(
         return {"success": True, "updated": []}
 
     params.append(user["id"])
-    cur = conn.cursor()
-    try:
+    with get_cursor(conn) as cur:
         cur.execute(
             f"UPDATE users SET {', '.join(updates)} WHERE id = %s",
             params,
         )
         conn.commit()
-    finally:
-        cur.close()
 
     return {"success": True, "updated": [k for k, v in body.model_dump().items() if v is not None]}
 
 
-def get_user_api_keys(conn, user_id: int) -> dict[str, str]:
-    """Resolve API keys for a user: DB first, then env-var fallback for founder."""
+@router.get("/settings/email-config")
+def get_email_config(conn=Depends(get_db), user=Depends(get_current_user)):
+    """Get current email sending configuration status."""
     cur = conn.cursor()
     try:
+        cur.execute(
+            """SELECT gmail_connected, gmail_email,
+                      smtp_host, smtp_from_email, smtp_from_name,
+                      physical_address, calendly_url
+               FROM users WHERE id = %s""",
+            (user["id"],),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "User not found")
+        return {
+            "gmail_connected": row["gmail_connected"],
+            "gmail_email": row["gmail_email"],
+            "smtp_configured": bool(row["smtp_host"]),
+            "smtp_host": row["smtp_host"],
+            "smtp_from_email": row["smtp_from_email"],
+            "smtp_from_name": row["smtp_from_name"],
+            "physical_address": row["physical_address"],
+            "calendly_url": row["calendly_url"],
+        }
+    finally:
+        cur.close()
+
+
+@router.post("/settings/smtp")
+def save_smtp_config(body: dict, conn=Depends(get_db), user=Depends(get_current_user)):
+    """Save SMTP sending configuration."""
+    from src.services.token_encryption import encrypt_token
+    cur = conn.cursor()
+    try:
+        encrypted_password = encrypt_token(body["password"]) if body.get("password") else None
+        cur.execute(
+            """UPDATE users SET
+                smtp_host = %s, smtp_port = %s,
+                smtp_username = %s, smtp_password = %s,
+                smtp_use_tls = %s, smtp_from_email = %s, smtp_from_name = %s,
+                updated_at = NOW()
+            WHERE id = %s""",
+            (
+                body.get("host"), body.get("port", 587),
+                body.get("username"), encrypted_password,
+                body.get("use_tls", True), body.get("from_email"), body.get("from_name"),
+                user["id"],
+            ),
+        )
+        conn.commit()
+    finally:
+        cur.close()
+    return {"success": True, "message": "SMTP settings saved"}
+
+
+@router.post("/settings/compliance")
+def save_compliance_config(body: dict, conn=Depends(get_db), user=Depends(get_current_user)):
+    """Save per-user compliance settings (physical address, Calendly URL)."""
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """UPDATE users SET
+                physical_address = %s, calendly_url = %s,
+                updated_at = NOW()
+            WHERE id = %s""",
+            (body.get("physical_address"), body.get("calendly_url"), user["id"]),
+        )
+        conn.commit()
+    finally:
+        cur.close()
+    return {"success": True, "message": "Compliance settings saved"}
+
+
+def get_user_api_keys(conn, user_id: int) -> dict[str, str]:
+    """Resolve API keys for a user: DB first, then env-var fallback for founder."""
+    with get_cursor(conn) as cur:
         cur.execute(
             "SELECT email, anthropic_api_key, perplexity_api_key FROM users WHERE id = %s",
             (user_id,),
         )
         row = cur.fetchone()
-    finally:
-        cur.close()
 
     if not row:
         return {"anthropic": "", "perplexity": ""}

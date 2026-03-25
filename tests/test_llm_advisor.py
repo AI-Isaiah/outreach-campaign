@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from src.models.campaigns import create_campaign
 from src.models.database import get_connection, run_migrations
+from tests.conftest import TEST_USER_ID
 from src.services.llm_advisor import (
     _build_analysis_prompt,
     _parse_insights,
@@ -75,7 +76,7 @@ def test_run_analysis_no_api_key(tmp_db):
     """Should return a useful message when API key is missing."""
     conn = get_connection(tmp_db)
     run_migrations(conn)
-    campaign_id = create_campaign(conn, "advisor_test")
+    campaign_id = create_campaign(conn, "advisor_test", user_id=TEST_USER_ID)
     conn.commit()
 
     result = run_analysis(conn, campaign_id)
@@ -108,7 +109,7 @@ def test_run_analysis_with_mock_llm(mock_post, tmp_db):
 
     conn = get_connection(tmp_db)
     run_migrations(conn)
-    campaign_id = create_campaign(conn, "advisor_test_llm")
+    campaign_id = create_campaign(conn, "advisor_test_llm", user_id=TEST_USER_ID)
     conn.commit()
 
     result = run_analysis(conn, campaign_id)

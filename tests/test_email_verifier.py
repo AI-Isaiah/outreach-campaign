@@ -6,6 +6,7 @@ from src.services.email_verifier import (
     update_contact_email_status,
     verify_email_batch,
 )
+from tests.conftest import TEST_USER_ID
 
 
 # ---------------------------------------------------------------------------
@@ -15,13 +16,14 @@ from src.services.email_verifier import (
 def _insert_contact_with_email(conn, email, status="unverified"):
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO companies (name, name_normalized, country, is_gdpr) VALUES ('X', 'x', 'US', false) RETURNING id"
+        "INSERT INTO companies (name, name_normalized, country, is_gdpr, user_id) VALUES ('X', 'x', 'US', false, %s) RETURNING id",
+        (TEST_USER_ID,),
     )
     cid = cursor.fetchone()["id"]
     cursor.execute(
-        """INSERT INTO contacts (company_id, full_name, email, email_normalized, email_status, priority_rank, source, is_gdpr)
-           VALUES (%s, 'Test', %s, %s, %s, 1, 'test', false)""",
-        (cid, email, email.lower() if email else None, status),
+        """INSERT INTO contacts (company_id, full_name, email, email_normalized, email_status, priority_rank, source, is_gdpr, user_id)
+           VALUES (%s, 'Test', %s, %s, %s, 1, 'test', false, %s)""",
+        (cid, email, email.lower() if email else None, status, TEST_USER_ID),
     )
     conn.commit()
 

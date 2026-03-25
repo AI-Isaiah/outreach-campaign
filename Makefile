@@ -1,4 +1,4 @@
-.PHONY: install test clean stats import verify queue send-dry report weekly help web dev api whatsapp-setup whatsapp-scan
+.PHONY: install test clean stats import verify queue send-dry report weekly help web dev api whatsapp-setup whatsapp-scan docker-build docker-up docker-up-d docker-down docker-prod docker-prod-down deploy deploy-logs
 
 # Default campaign name (override with CAMPAIGN=name)
 CAMPAIGN ?= Q1_2026_initial
@@ -29,7 +29,7 @@ help:
 	@echo "Full CLI:     python3 -m src.cli --help"
 
 install:
-	pip3 install -e ".[dev]"
+	pip3 install -e ".[dev,whatsapp]"
 
 test:
 	PATH="/opt/homebrew/opt/postgresql@16/bin:$$PATH" python3 -m pytest tests/ -v
@@ -79,8 +79,8 @@ api:
 	uvicorn src.web.app:app --host 0.0.0.0 --port 8000 --reload
 
 dev:
-	cd frontend && npm run dev &
-	python3 -m src.cli web --reload
+	cd frontend && PATH="/opt/homebrew/opt/node@22/bin:$$PATH" npx vite --port 8000 &
+	.venv/bin/uvicorn src.web.app:app --host 0.0.0.0 --port 8001
 
 # --- WhatsApp ---
 
@@ -89,3 +89,31 @@ whatsapp-setup:
 
 whatsapp-scan:
 	python3 -c "from src.services.whatsapp_scanner import WhatsAppScanner; from src.models.database import get_connection, run_migrations; from src.config import SUPABASE_DB_URL; conn = get_connection(SUPABASE_DB_URL); run_migrations(conn); s = WhatsAppScanner(); s.setup(); print(s.scan_contacts(conn)); s.close(); conn.close()"
+
+# --- Docker ---
+
+docker-build:
+	docker build -t outreach-campaign .
+
+docker-up:
+	docker compose up --build
+
+docker-up-d:
+	docker compose up --build -d
+
+docker-down:
+	docker compose down
+
+docker-prod:
+	docker compose -f docker-compose.prod.yml up --build
+
+docker-prod-down:
+	docker compose -f docker-compose.prod.yml down
+
+# --- Deploy ---
+
+deploy:
+	railway up --detach
+
+deploy-logs:
+	railway logs

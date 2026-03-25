@@ -11,33 +11,15 @@ Supported line formats:
 from __future__ import annotations
 
 import re
+from typing import Optional
 
+from src.models.database import get_cursor
 
-# ---------------------------------------------------------------------------
-# Local helper functions (duplicated from import_contacts.py for now;
-# will be refactored into a shared utils module later).
-# ---------------------------------------------------------------------------
-
-def _normalize_email(email: str | None) -> str | None:
-    if not email:
-        return None
-    normalized = email.strip().lower()
-    if not normalized or "@" not in normalized:
-        return None
-    return normalized
-
-
-def _normalize_company_name(name: str) -> str:
-    return re.sub(r"\s+", " ", name.strip().lower())
-
-
-def _split_name(full_name: str) -> tuple[str, str]:
-    parts = full_name.strip().split()
-    if len(parts) == 0:
-        return ("", "")
-    if len(parts) == 1:
-        return (parts[0], "")
-    return (parts[0], " ".join(parts[1:]))
+from src.services.normalization_utils import (
+    normalize_company_name as _normalize_company_name,
+    normalize_email as _normalize_email,
+    split_name as _split_name,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -111,37 +93,115 @@ def _company_name_from_domain(domain: str) -> str:
 # ---------------------------------------------------------------------------
 
 def _find_or_create_company(
-    conn, company_name: str
+    conn,
+    company_name: str,
+    user_id: Optional[int] = None,
+    *,
+    cursor=None,
+    cache: Optional[dict] = None,
 ) -> int:
-    """Return the company id, creating the row if necessary."""
+    """Return the company id, creating the row if necessary.
+
+    Uses INSERT ... WHERE NOT EXISTS to avoid the TOCTOU race between the
+    existence check and the insert.  If the row already existed (zero rows
+    inserted), a follow-up SELECT retrieves it.
+
+    Parameters
+    ----------
+    cursor : optional
+        An existing cursor to reuse.  When ``None`` a new cursor is created
+        and closed on exit.
+    cache : dict, optional
+        A ``{name_normalized: company_id}`` dict for caller-side caching.
+        If provided and the normalized name is found, the DB is skipped
+        entirely.  Newly created/found ids are stored back into the dict.
+    """
     name_norm = _normalize_company_name(company_name)
-    cursor = conn.cursor()
+
+    # Fast path: check caller-provided cache
+    if cache is not None and name_norm in cache:
+        return cache[name_norm]
+
+    if cursor is not None:
+        # Reuse caller-provided cursor
+        return _find_or_create_company_with_cursor(
+            conn, company_name, name_norm, user_id, cursor, cache,
+        )
+    with get_cursor(conn) as cur:
+        return _find_or_create_company_with_cursor(
+            conn, company_name, name_norm, user_id, cur, cache,
+        )
+
+
+def _find_or_create_company_with_cursor(conn, company_name, name_norm, user_id, cursor, cache):
+    """Inner helper that runs the actual SQL using the given cursor."""
+    # Atomic insert-if-absent: the WHERE NOT EXISTS guard prevents
+    # duplicate rows even without a UNIQUE constraint on name_normalized.
     cursor.execute(
-        "SELECT id FROM companies WHERE name_normalized = %s", (name_norm,)
+        """INSERT INTO companies (name, name_normalized, user_id)
+           SELECT %s, %s, %s
+           WHERE NOT EXISTS (
+               SELECT 1 FROM companies WHERE name_normalized = %s
+           )
+           RETURNING id""",
+        (company_name, name_norm, user_id, name_norm),
     )
     row = cursor.fetchone()
     if row:
-        return row["id"]
+        company_id = row["id"]
+    else:
+        # Row already existed -- fetch its id.
+        cursor.execute(
+            "SELECT id FROM companies WHERE name_normalized = %s",
+            (name_norm,),
+        )
+        company_id = cursor.fetchone()["id"]
 
-    cursor.execute(
-        "INSERT INTO companies (name, name_normalized) VALUES (%s, %s) RETURNING id",
-        (company_name, name_norm),
-    )
-    result = cursor.fetchone()
-    conn.commit()
-    return result["id"]
+    if cache is not None:
+        cache[name_norm] = company_id
+    return company_id
 
 
-def _next_priority_rank(conn, company_id: int) -> int:
-    """Return max(priority_rank) + 1 for the given company, or 1."""
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT MAX(priority_rank) AS max_rank FROM contacts WHERE company_id = %s",
-        (company_id,),
-    )
-    row = cursor.fetchone()
-    current_max = row["max_rank"] if row and row["max_rank"] is not None else 0
-    return current_max + 1
+def _next_priority_rank(
+    conn,
+    company_id: int,
+    *,
+    cursor=None,
+    cache: Optional[dict] = None,
+) -> int:
+    """Return max(priority_rank) + 1 for the given company, or 1.
+
+    Parameters
+    ----------
+    cursor : optional
+        An existing cursor to reuse.
+    cache : dict, optional
+        A ``{company_id: next_rank}`` dict.  When provided the DB query is
+        skipped if the company already has a cached value, and the cached
+        value is incremented for the next call.
+    """
+    # Fast path: use cached rank and bump it
+    if cache is not None and company_id in cache:
+        rank = cache[company_id]
+        cache[company_id] = rank + 1
+        return rank
+
+    def _query_rank(cur):
+        cur.execute(
+            "SELECT MAX(priority_rank) AS max_rank FROM contacts WHERE company_id = %s",
+            (company_id,),
+        )
+        row = cur.fetchone()
+        current_max = row["max_rank"] if row and row["max_rank"] is not None else 0
+        rank = current_max + 1
+        if cache is not None:
+            cache[company_id] = rank + 1
+        return rank
+
+    if cursor is not None:
+        return _query_rank(cursor)
+    with get_cursor(conn) as cur:
+        return _query_rank(cur)
 
 
 # ---------------------------------------------------------------------------
@@ -149,9 +209,19 @@ def _next_priority_rank(conn, company_id: int) -> int:
 # ---------------------------------------------------------------------------
 
 def import_pasted_emails(
-    conn, file_path: str
+    conn, file_path: str, *, user_id: Optional[int] = None
 ) -> dict:
     """Read a file of pasted email lines and import them as contacts.
+
+    Optimised to minimise database round-trips:
+
+    * A single cursor is created once and reused for the entire import.
+    * All parsed emails are batch-checked against ``contacts`` in one SELECT
+      so that duplicates are filtered via an O(1) set lookup.
+    * A ``company_cache`` (domain -> company_id) avoids repeated
+      ``_find_or_create_company`` calls for the same domain.
+    * A ``rank_cache`` (company_id -> next_rank) avoids repeated
+      ``MAX(priority_rank)`` queries for the same company.
 
     Parameters
     ----------
@@ -159,6 +229,8 @@ def import_pasted_emails(
         An open database connection (migrations must already be applied).
     file_path : str
         Path to a text file containing pasted emails.
+    user_id : int, optional
+        Owner user ID for multi-tenant scoping.
 
     Returns
     -------
@@ -175,7 +247,8 @@ def import_pasted_emails(
         if chunk:
             entries.append(chunk)
 
-    contacts_created = 0
+    # ---- Phase 1: parse all entries and collect normalised emails ----------
+    parsed: list[tuple[str | None, str | None, str | None]] = []
     lines_processed = 0
     lines_skipped = 0
 
@@ -185,58 +258,91 @@ def import_pasted_emails(
 
         if email is None:
             lines_skipped += 1
+            parsed.append((None, None, None))
             continue
 
         email_norm = _normalize_email(email)
         if email_norm is None:
             lines_skipped += 1
+            parsed.append((None, None, None))
             continue
 
-        # Skip duplicates
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT id FROM contacts WHERE email_normalized = %s",
-            (email_norm,),
-        )
-        existing = cur.fetchone()
-        if existing:
-            lines_skipped += 1
-            continue
+        parsed.append((name, email, email_norm))
 
-        # Derive company from domain
-        domain = email_norm.split("@")[1]
-        company_display = _company_name_from_domain(domain)
-        company_id = _find_or_create_company(conn, company_display)
+    # ---- Phase 2: batch dedup check ----------------------------------------
+    all_emails = [email_norm for (_, _, email_norm) in parsed if email_norm]
+    existing_emails: set[str] = set()
+    with get_cursor(conn) as cursor:
+        if all_emails:
+            # Query in batches of 500 to avoid oversized IN clauses
+            for i in range(0, len(all_emails), 500):
+                batch = all_emails[i : i + 500]
+                placeholders = ",".join("%s" for _ in batch)
+                cursor.execute(
+                    f"SELECT email_normalized FROM contacts "
+                    f"WHERE email_normalized IN ({placeholders})",
+                    batch,
+                )
+                existing_emails.update(
+                    row["email_normalized"] for row in cursor.fetchall()
+                )
 
-        # Split name if available
-        first_name = ""
-        last_name = ""
-        full_name = ""
-        if name:
-            full_name = name
-            first_name, last_name = _split_name(name)
+        # ---- Phase 3: insert new contacts ----------------------------------
+        contacts_created = 0
+        company_cache: dict[str, int] = {}  # name_normalized -> company_id
+        rank_cache: dict[int, int] = {}     # company_id -> next_rank
+        # Track emails we insert in this run to skip intra-file duplicates
+        seen_in_run: set[str] = set()
 
-        priority_rank = _next_priority_rank(conn, company_id)
+        for name, email, email_norm in parsed:
+            if email_norm is None:
+                continue  # already counted as skipped
 
-        cur.execute(
-            """
-            INSERT INTO contacts
-                (company_id, first_name, last_name, full_name,
-                 email, email_normalized, priority_rank, source)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            """,
-            (
-                company_id,
-                first_name,
-                last_name,
-                full_name,
-                email,
-                email_norm,
-                priority_rank,
-                "pasted_emails",
-            ),
-        )
-        contacts_created += 1
+            if email_norm in existing_emails or email_norm in seen_in_run:
+                lines_skipped += 1
+                continue
+
+            seen_in_run.add(email_norm)
+
+            # Derive company from domain
+            domain = email_norm.split("@")[1]
+            company_display = _company_name_from_domain(domain)
+            company_id = _find_or_create_company(
+                conn, company_display, user_id=user_id,
+                cursor=cursor, cache=company_cache,
+            )
+
+            # Split name if available
+            first_name = ""
+            last_name = ""
+            full_name = ""
+            if name:
+                full_name = name
+                first_name, last_name = _split_name(name)
+
+            priority_rank = _next_priority_rank(
+                conn, company_id, cursor=cursor, cache=rank_cache,
+            )
+
+            cursor.execute(
+                """INSERT INTO contacts
+                       (company_id, first_name, last_name, full_name,
+                        email, email_normalized, priority_rank, source,
+                        user_id)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                (
+                    company_id,
+                    first_name,
+                    last_name,
+                    full_name,
+                    email,
+                    email_norm,
+                    priority_rank,
+                    "pasted_emails",
+                    user_id,
+                ),
+            )
+            contacts_created += 1
 
     conn.commit()
 

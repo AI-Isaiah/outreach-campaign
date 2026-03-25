@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Outreach Platform — Full Assessment Report</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #232733;
+    --border: #2e3347;
+    --text: #e4e6ed;
+    --text-muted: #8b90a0;
+    --accent: #6c5ce7;
+    --accent-light: #a29bfe;
+    --green: #00cec9;
+    --green-bg: rgba(0,206,201,.12);
+    --red: #ff6b6b;
+    --red-bg: rgba(255,107,107,.12);
+    --yellow: #feca57;
+    --yellow-bg: rgba(254,202,87,.12);
+    --blue: #54a0ff;
+    --blue-bg: rgba(84,160,255,.12);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+  h1 { font-size: 2rem; margin-bottom: .25rem; }
+  h2 { font-size: 1.5rem; margin: 2.5rem 0 1rem; color: var(--accent-light); border-bottom: 1px solid var(--border); padding-bottom: .5rem; }
+  h3 { font-size: 1.15rem; margin: 1.5rem 0 .75rem; color: var(--text); }
+  .subtitle { color: var(--text-muted); margin-bottom: 2rem; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem; }
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; }
+  .stat-number { font-size: 2.2rem; font-weight: 700; }
+  .stat-label { color: var(--text-muted); font-size: .85rem; margin-top: .25rem; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: .75rem; font-weight: 600; }
+  .badge-green { background: var(--green-bg); color: var(--green); }
+  .badge-yellow { background: var(--yellow-bg); color: var(--yellow); }
+  .badge-red { background: var(--red-bg); color: var(--red); }
+  .badge-blue { background: var(--blue-bg); color: var(--blue); }
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: .9rem; }
+  th, td { padding: .65rem .75rem; text-align: left; border-bottom: 1px solid var(--border); }
+  th { color: var(--text-muted); font-weight: 600; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+  .progress-bar { background: var(--surface2); border-radius: 8px; height: 10px; overflow: hidden; }
+  .progress-fill { height: 100%; border-radius: 8px; transition: width .3s; }
+  .checklist { list-style: none; }
+  .checklist li { padding: .5rem 0; border-bottom: 1px solid var(--border); display: flex; align-items: flex-start; gap: .5rem; }
+  .checklist li:last-child { border-bottom: none; }
+  .check { color: var(--green); font-weight: bold; flex-shrink: 0; }
+  .x-mark { color: var(--red); font-weight: bold; flex-shrink: 0; }
+  .warn { color: var(--yellow); font-weight: bold; flex-shrink: 0; }
+  .section-nav { display: flex; flex-wrap: wrap; gap: .5rem; margin: 1.5rem 0; }
+  .section-nav a { background: var(--surface2); color: var(--text-muted); padding: .4rem 1rem; border-radius: 20px; text-decoration: none; font-size: .85rem; border: 1px solid var(--border); }
+  .section-nav a:hover { color: var(--accent-light); border-color: var(--accent); }
+  .comp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
+  .comp-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; }
+  .comp-card h4 { margin-bottom: .5rem; }
+  .comp-price { font-size: 1.4rem; font-weight: 700; color: var(--accent-light); }
+  .comp-price small { font-size: .75rem; color: var(--text-muted); font-weight: 400; }
+  .advantage { background: var(--green-bg); border-left: 3px solid var(--green); padding: .75rem 1rem; margin: .5rem 0; border-radius: 0 8px 8px 0; font-size: .9rem; }
+  .risk { background: var(--red-bg); border-left: 3px solid var(--red); padding: .75rem 1rem; margin: .5rem 0; border-radius: 0 8px 8px 0; font-size: .9rem; }
+  .neutral { background: var(--yellow-bg); border-left: 3px solid var(--yellow); padding: .75rem 1rem; margin: .5rem 0; border-radius: 0 8px 8px 0; font-size: .9rem; }
+  .overall-progress { background: linear-gradient(135deg, var(--accent) 0%, #6c5ce7aa 100%); border-radius: 16px; padding: 2rem; margin: 1.5rem 0; text-align: center; }
+  .overall-progress .stat-number { font-size: 4rem; }
+  .tab-container { margin: 1rem 0; }
+  .deploy-section { margin: 1rem 0; }
+  .deploy-section h4 { color: var(--accent-light); margin-bottom: .5rem; }
+  .perf-item { display: flex; justify-content: space-between; align-items: center; padding: .6rem 0; border-bottom: 1px solid var(--border); }
+  .perf-item:last-child { border-bottom: none; }
+  .score-bar { display: flex; align-items: center; gap: .5rem; }
+  .score-dots { display: flex; gap: 3px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--surface2); }
+  .dot.filled { background: var(--accent-light); }
+  .dot.warn-filled { background: var(--yellow); }
+  .dot.danger-filled { background: var(--red); }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Outreach Campaign Platform</h1>
+<p class="subtitle">Full Assessment Report — March 3, 2026</p>
+
+<div class="section-nav">
+  <a href="#progress">Progress</a>
+  <a href="#competitive">Competitive Analysis</a>
+  <a href="#performance">Performance & Debug</a>
+  <a href="#deploy-fe">Deploy: Frontend</a>
+  <a href="#deploy-be">Deploy: Backend</a>
+  <a href="#next">Next Steps</a>
+</div>
+
+<!-- ===== PROGRESS OVERVIEW ===== -->
+<h2 id="progress">1. Implementation Progress</h2>
+
+<div class="overall-progress">
+  <div class="stat-number">~75%</div>
+  <div class="stat-label" style="color:#e4e6ed;opacity:.8">Overall Platform Completion</div>
+</div>
+
+<div class="card-grid">
+  <div class="card">
+    <div class="stat-number" style="color:var(--accent-light)">51</div>
+    <div class="stat-label">Python source files</div>
+  </div>
+  <div class="card">
+    <div class="stat-number" style="color:var(--green)">~16,149</div>
+    <div class="stat-label">Lines of Python (src + tests)</div>
+  </div>
+  <div class="card">
+    <div class="stat-number" style="color:var(--blue)">24</div>
+    <div class="stat-label">Test files (13,443 LOC)</div>
+  </div>
+  <div class="card">
+    <div class="stat-number" style="color:var(--yellow)">10</div>
+    <div class="stat-label">React pages + 7 components</div>
+  </div>
+</div>
+
+<h3>Phase-by-Phase Breakdown</h3>
+<table>
+  <thead>
+    <tr><th>Phase</th><th>Description</th><th>Status</th><th>Progress</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Phase 0</td><td>Bug Fixes & DB Migration</td>
+      <td><span class="badge badge-green">~95%</span></td>
+      <td><div class="progress-bar"><div class="progress-fill" style="width:95%;background:var(--green)"></div></div></td>
+    </tr>
+    <tr>
+      <td>Phase 1</td><td>Core CLI (24 commands)</td>
+      <td><span class="badge badge-green">~95%</span></td>
+      <td><div class="progress-bar"><div class="progress-fill" style="width:95%;background:var(--green)"></div></div></td>
+    </tr>
+    <tr>
+      <td>Phase 2</td><td>Web Dashboard (FastAPI + React)</td>
+      <td><span class="badge badge-green">~95%</span></td>
+      <td><div class="progress-bar"><div class="progress-fill" style="width:95%;background:var(--green)"></div></div></td>
+    </tr>
+    <tr>
+      <td>Phase 3</td><td>Adaptive Sequence Engine</td>
+      <td><span class="badge badge-green">100%</span></td>
+      <td><div class="progress-bar"><div class="progress-fill" style="width:100%;background:var(--green)"></div></div></td>
+    </tr>
+    <tr>
+      <td>Phase 4</td><td>Gmail Drafts + Reply Detection</td>
+      <td><span class="badge badge-green">~90%</span></td>
+      <td><div class="progress-bar"><div class="progress-fill" style="width:90%;background:var(--green)"></div></div></td>
+    </tr>
+    <tr>
+      <td>Phase 5</td><td>CRM (Timeline, Pipeline, Notes)</td>
+      <td><span class="badge badge-red">~5%</span></td>
+      <td><div class="progress-bar"><div class="progress-fill" style="width:5%;background:var(--red)"></div></div></td>
+    </tr>
+    <tr>
+      <td>Phase 6</td><td>Deployment (Docker, CI/CD, Monitoring)</td>
+      <td><span class="badge badge-yellow">~60%</span></td>
+      <td><div class="progress-bar"><div class="progress-fill" style="width:60%;background:var(--yellow)"></div></div></td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>What's Built & Working</h3>
+<div class="card">
+  <ul class="checklist">
+    <li><span class="check">&#10003;</span> CSV/email import with 3-pass deduplication (email, LinkedIn, fuzzy company match)</li>
+    <li><span class="check">&#10003;</span> Email verification (ZeroBounce + Hunter API integration)</li>
+    <li><span class="check">&#10003;</span> Campaign engine with state machine (queued → in_progress → replied/completed/unsubscribed)</li>
+    <li><span class="check">&#10003;</span> Priority queue by AUM (one contact per company, highest AUM first)</li>
+    <li><span class="check">&#10003;</span> A/B testing framework with template variants and round-robin enrollment</li>
+    <li><span class="check">&#10003;</span> GDPR/CAN-SPAM compliance (email limits, footer injection, unsubscribe)</li>
+    <li><span class="check">&#10003;</span> Adaptive sequence engine (response analyzer, contact scorer, template selector)</li>
+    <li><span class="check">&#10003;</span> Gmail draft integration for human-in-the-loop email review</li>
+    <li><span class="check">&#10003;</span> LLM-powered reply classification and campaign advisor</li>
+    <li><span class="check">&#10003;</span> WhatsApp message scanning via Playwright</li>
+    <li><span class="check">&#10003;</span> React web dashboard (10 pages: Dashboard, Queue, Contacts, Campaigns, Templates, Settings, Insights, CRM views)</li>
+    <li><span class="check">&#10003;</span> FastAPI backend (12 route modules, health endpoint)</li>
+    <li><span class="check">&#10003;</span> PostgreSQL on Supabase with 4 migration files</li>
+    <li><span class="check">&#10003;</span> Expandi/Linked Helper CSV import & export</li>
+  </ul>
+</div>
+
+<h3>What's Missing</h3>
+<div class="card">
+  <ul class="checklist">
+    <li><span class="x-mark">&#10007;</span> <strong>CRM (Phase 5)</strong> — Contact detail timeline, company overview, pipeline/kanban, notes, search/filter. Only 5% scaffolded.</li>
+    <li><span class="x-mark">&#10007;</span> <strong>Authentication</strong> — No auth middleware on any API endpoint. Critical security gap.</li>
+    <li><span class="x-mark">&#10007;</span> <strong>Connection pooling</strong> — New connection per request, no pool. Will exhaust Supabase under load.</li>
+    <li><span class="x-mark">&#10007;</span> <strong>Docker / CI/CD</strong> — No Dockerfile, no GitHub Actions, no automated deployment.</li>
+    <li><span class="x-mark">&#10007;</span> <strong>Web API tests</strong> — 24 test files but route-level coverage only recently added (test_web_api.py exists but thin).</li>
+    <li><span class="warn">!</span> Double compliance footer in HTML emails (footer injected twice)</li>
+    <li><span class="warn">!</span> Dedup transaction safety (no rollback on partial failure)</li>
+    <li><span class="warn">!</span> Migrations run per-request in web app (should be startup only)</li>
+  </ul>
+</div>
+
+<!-- ===== COMPETITIVE ANALYSIS ===== -->
+<h2 id="competitive">2. Competitive Analysis</h2>
+
+<p style="color:var(--text-muted);margin-bottom:1rem;">Your platform vs. the Lemlist + Phantombuster + Dropcontact + Sales Navigator stack described in Alban's Sales Strategy PDF.</p>
+
+<h3>Competitor Cost Stack</h3>
+<div class="comp-grid">
+  <div class="comp-card">
+    <h4>Lemlist</h4>
+    <div class="comp-price">$99<small>/mo per user</small></div>
+    <p style="color:var(--text-muted);font-size:.85rem;margin-top:.5rem">Multichannel Expert plan. Email + LinkedIn + AI. 450M+ lead database.</p>
+  </div>
+  <div class="comp-card">
+    <h4>Phantombuster</h4>
+    <div class="comp-price">$159<small>/mo</small></div>
+    <p style="color:var(--text-muted);font-size:.85rem;margin-top:.5rem">Pro plan. LinkedIn scraping, 15 slots, 80hr execution, 2,500 email credits.</p>
+  </div>
+  <div class="comp-card">
+    <h4>Dropcontact</h4>
+    <div class="comp-price">~$32<small>/mo</small></div>
+    <p style="color:var(--text-muted);font-size:.85rem;margin-top:.5rem">Email Finder. 1,000 credits. 98% valid rate. GDPR-compliant.</p>
+  </div>
+  <div class="comp-card">
+    <h4>Sales Navigator</h4>
+    <div class="comp-price">$100<small>/mo</small></div>
+    <p style="color:var(--text-muted);font-size:.85rem;margin-top:.5rem">Core plan. 30+ filters, Boolean search, Account IQ, Lead IQ.</p>
+  </div>
+</div>
+
+<div class="card" style="margin-top:1rem;text-align:center;">
+  <div style="font-size:.85rem;color:var(--text-muted)">Combined competitor stack cost</div>
+  <div style="font-size:2.5rem;font-weight:700;color:var(--red)">~$390<span style="font-size:1rem;color:var(--text-muted)">/mo per user</span></div>
+  <div style="font-size:.85rem;color:var(--text-muted);margin-top:.25rem">Plus integration maintenance, data sync issues, and vendor lock-in across 4 platforms</div>
+</div>
+
+<h3>Feature Comparison Matrix</h3>
+<table>
+  <thead>
+    <tr>
+      <th>Capability</th>
+      <th>Your Platform</th>
+      <th>Lemlist</th>
+      <th>Phantombuster</th>
+      <th>Dropcontact</th>
+      <th>Sales Nav</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td colspan="6" style="color:var(--accent-light);font-weight:600;padding-top:1rem">Email Outreach</td></tr>
+    <tr>
+      <td>Automated email sequences</td>
+      <td><span class="badge badge-green">Strong</span></td>
+      <td><span class="badge badge-green">Strong</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+    </tr>
+    <tr>
+      <td>A/B testing (template variants)</td>
+      <td><span class="badge badge-green">Strong</span></td>
+      <td><span class="badge badge-green">Strong</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+    </tr>
+    <tr>
+      <td>Gmail draft review (human-in-loop)</td>
+      <td><span class="badge badge-green">Strong</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+    </tr>
+    <tr>
+      <td>Email deliverability/warmup</td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-green">Strong</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+    </tr>
+    <tr><td colspan="6" style="color:var(--accent-light);font-weight:600;padding-top:1rem">LinkedIn Outreach</td></tr>
+    <tr>
+      <td>LinkedIn message automation</td>
+      <td><span class="badge badge-yellow">Adequate</span></td>
+      <td><span class="badge badge-green">Strong</span></td>
+      <td><span class="badge badge-green">Strong</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-yellow">Adequate</span></td>
+    </tr>
+    <tr>
+      <td>LinkedIn profile scraping</td>
+      <td><span class="badge badge-yellow">Adequate</span></td>
+      <td><span class="badge badge-yellow">Adequate</span></td>
+      <td><span class="badge badge-green">Strong</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+    </tr>
+    <tr><td colspan="6" style="color:var(--accent-light);font-weight:600;padding-top:1rem">Data & Enrichment</td></tr>
+    <tr>
+      <td>Email finding/verification</td>
+      <td><span class="badge badge-green">Strong</span></td>
+      <td><span class="badge badge-green">Strong</span></td>
+      <td><span class="badge badge-yellow">Adequate</span></td>
+      <td><span class="badge badge-green">Strong</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+    </tr>
+    <tr>
+      <td>3-pass deduplication</td>
+      <td><span class="badge badge-green">Strong</span></td>
+      <td><span class="badge badge-yellow">Adequate</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-green">Strong</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+    </tr>
+    <tr>
+      <td>Lead database (450M+)</td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-green">Strong</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-green">Strong</span></td>
+    </tr>
+    <tr><td colspan="6" style="color:var(--accent-light);font-weight:600;padding-top:1rem">Intelligence & Adaptive</td></tr>
+    <tr>
+      <td>Adaptive sequence engine (auto-optimize)</td>
+      <td><span class="badge badge-green">Strong</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+    </tr>
+    <tr>
+      <td>LLM reply classification</td>
+      <td><span class="badge badge-green">Strong</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+    </tr>
+    <tr>
+      <td>AUM-based priority queue</td>
+      <td><span class="badge badge-green">Strong</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+    </tr>
+    <tr>
+      <td>Contact scoring</td>
+      <td><span class="badge badge-green">Strong</span></td>
+      <td><span class="badge badge-yellow">Adequate</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-yellow">Adequate</span></td>
+    </tr>
+    <tr><td colspan="6" style="color:var(--accent-light);font-weight:600;padding-top:1rem">Compliance & Governance</td></tr>
+    <tr>
+      <td>GDPR enforcement (email limits, flags)</td>
+      <td><span class="badge badge-green">Strong</span></td>
+      <td><span class="badge badge-yellow">Adequate</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-green">Strong</span></td>
+      <td><span class="badge badge-yellow">Adequate</span></td>
+    </tr>
+    <tr>
+      <td>CAN-SPAM footer injection</td>
+      <td><span class="badge badge-green">Strong</span></td>
+      <td><span class="badge badge-green">Strong</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+    </tr>
+    <tr><td colspan="6" style="color:var(--accent-light);font-weight:600;padding-top:1rem">CRM & Pipeline</td></tr>
+    <tr>
+      <td>Built-in CRM</td>
+      <td><span class="badge badge-red">Weak (5%)</span></td>
+      <td><span class="badge badge-yellow">Adequate</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-yellow">Adequate</span></td>
+    </tr>
+    <tr>
+      <td>WhatsApp scanning</td>
+      <td><span class="badge badge-yellow">Adequate</span></td>
+      <td><span class="badge badge-yellow">Adequate</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+    </tr>
+    <tr><td colspan="6" style="color:var(--accent-light);font-weight:600;padding-top:1rem">Crypto/Fund Vertical</td></tr>
+    <tr>
+      <td>AUM-based prioritization</td>
+      <td><span class="badge badge-green">Strong</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+    </tr>
+    <tr>
+      <td>Fund allocator keyword targeting</td>
+      <td><span class="badge badge-green">Strong</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-yellow">Adequate</span></td>
+    </tr>
+    <tr>
+      <td>One-company-one-contact-at-a-time rule</td>
+      <td><span class="badge badge-green">Strong</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+      <td><span class="badge badge-red">Absent</span></td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>Strategic Positioning</h3>
+<div class="advantage">
+  <strong>Your unique advantages (no competitor has these):</strong> Adaptive sequence engine that auto-optimizes based on response patterns, AUM-based priority queue purpose-built for fund allocators, LLM-powered reply classification, Gmail draft human-in-the-loop review, and one-contact-per-company enforcement. These are deeply vertical features that generic tools cannot replicate without fundamental architecture changes.
+</div>
+
+<div class="neutral">
+  <strong>Parity areas:</strong> Email sequences, A/B testing, email verification, GDPR compliance, and LinkedIn outreach are functional but comparable to Lemlist's capabilities. Your deduplication (3-pass with fuzzy matching) is actually stronger than any individual competitor.
+</div>
+
+<div class="risk">
+  <strong>Gaps vs. competitor stack:</strong> No built-in lead database (Lemlist has 450M+), no email warmup/deliverability tool (Lemlist has Lemwarm), CRM is only 5% built (Lemlist integrates with HubSpot/Salesforce natively), and no cloud-based LinkedIn scraping at Phantombuster's scale (yours relies on CSV import from Expandi/Linked Helper).
+</div>
+
+<h3>Cost Advantage</h3>
+<div class="card">
+  <table>
+    <tr><th>Approach</th><th>Monthly Cost (per user)</th><th>Notes</th></tr>
+    <tr><td>Competitor stack (Lemlist + Phantombuster + Dropcontact + Sales Nav)</td><td style="color:var(--red);font-weight:700">~$390</td><td>4 separate platforms, manual integration, data sync issues</td></tr>
+    <tr><td>Your platform (Supabase + email APIs)</td><td style="color:var(--green);font-weight:700">~$25–50</td><td>Supabase free tier + ZeroBounce/Hunter credits. Self-hosted.</td></tr>
+  </table>
+  <p style="color:var(--text-muted);font-size:.85rem;margin-top:.5rem">Your platform eliminates ~$340/mo/user in SaaS costs and removes the integration tax of syncing 4 separate tools. The trade-off is development and maintenance time.</p>
+</div>
+
+<!-- ===== PERFORMANCE & DEBUG ===== -->
+<h2 id="performance">3. Performance & Debug Review</h2>
+
+<h3>Architecture Quality Scores</h3>
+<div class="card">
+  <table>
+    <tr>
+      <td>Layer separation (CLI → Commands → Services → Models)</td>
+      <td>
+        <div class="score-bar">
+          <div class="score-dots">
+            <div class="dot filled"></div><div class="dot filled"></div><div class="dot filled"></div><div class="dot filled"></div><div class="dot filled"></div><div class="dot filled"></div><div class="dot filled"></div><div class="dot filled"></div><div class="dot"></div><div class="dot"></div>
+          </div>
+          <span style="font-size:.85rem;color:var(--text-muted)">8/10</span>
+        </div>
+      </td>
+    </tr>
+    <tr>
+      <td>Database design (schema, indexes, FK constraints)</td>
+      <td>
+        <div class="score-bar">
+          <div class="score-dots">
+            <div class="dot filled"></div><div class="dot filled"></div><div class="dot filled"></div><div class="dot filled"></div><div class="dot filled"></div><div class="dot filled"></div><div class="dot filled"></div><div class="dot filled"></div><div class="dot"></div><div class="dot"></div>
+          </div>
+          <span style="font-size:.85rem;color:var(--text-muted)">8/10</span>
+        </div>
+      </td>
+    </tr>
+    <tr>
+      <td>Business logic (state machine, compliance, queue)</td>
+      <td>
+        <div class="score-bar">
+          <div class="score-dots">
+            <div class="dot filled"></div><div class="dot filled"></div><div class="dot filled"></div><div class="dot filled"></div><div class="dot filled"></div><div class="dot filled"></div><div class="dot filled"></div><div class="dot filled"></div><div class="dot filled"></div><div class="dot"></div>
+          </div>
+          <span style="font-size:.85rem;color:var(--text-muted)">9/10</span>
+        </div>
+      </td>
+    </tr>
+    <tr>
+      <td>Security (auth, rate limiting, token handling)</td>
+      <td>
+        <div class="score-bar">
+          <div class="score-dots">
+            <div class="dot danger-filled"></div><div class="dot danger-filled"></div><div class="dot danger-filled"></div><div class="dot danger-filled"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div>
+          </div>
+          <span style="font-size:.85rem;color:var(--red)">4/10</span>
+        </div>
+      </td>
+    </tr>
+    <tr>
+      <td>Error handling (consistency, resilience)</td>
+      <td>
+        <div class="score-bar">
+          <div class="score-dots">
+            <div class="dot warn-filled"></div><div class="dot warn-filled"></div><div class="dot warn-filled"></div><div class="dot warn-filled"></div><div class="dot warn-filled"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div>
+          </div>
+          <span style="font-size:.85rem;color:var(--yellow)">5/10</span>
+        </div>
+      </td>
+    </tr>
+    <tr>
+      <td>Test coverage</td>
+      <td>
+        <div class="score-bar">
+          <div class="score-dots">
+            <div class="dot filled"></div><div class="dot filled"></div><div class="dot filled"></div><div class="dot filled"></div><div class="dot filled"></div><div class="dot filled"></div><div class="dot filled"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div>
+          </div>
+          <span style="font-size:.85rem;color:var(--text-muted)">7/10</span>
+        </div>
+      </td>
+    </tr>
+    <tr>
+      <td>Performance (queries, pooling, caching)</td>
+      <td>
+        <div class="score-bar">
+          <div class="score-dots">
+            <div class="dot warn-filled"></div><div class="dot warn-filled"></div><div class="dot warn-filled"></div><div class="dot warn-filled"></div><div class="dot warn-filled"></div><div class="dot warn-filled"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div>
+          </div>
+          <span style="font-size:.85rem;color:var(--yellow)">6/10</span>
+        </div>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<h3>Critical Performance Bottlenecks</h3>
+<div class="card">
+  <ul class="checklist">
+    <li><span class="x-mark">P1</span> <strong>N+1 query in priority_queue.py:118–119</strong> — <code>count_steps_for_contact()</code> called per-row in a loop. 10 contacts = 11 queries. Fix: single JOIN query with window function.</li>
+    <li><span class="x-mark">P2</span> <strong>No connection pooling</strong> — <code>get_connection()</code> in database.py creates a new psycopg2 connection per request. Under load, this exhausts Supabase's 60-connection limit. Fix: <code>psycopg2.pool.ThreadedConnectionPool</code>.</li>
+    <li><span class="x-mark">P3</span> <strong>Migrations run per-request</strong> — <code>run_migrations(conn)</code> called in <code>web/dependencies.py</code> on every API call. That's 330 lines of SQL parsed per request. Fix: move to <code>@app.on_event("startup")</code>.</li>
+    <li><span class="warn">P4</span> <strong>O(n²) fuzzy dedup</strong> — <code>combinations(rows, 2)</code> in deduplication.py. 10K companies = 50M comparisons. Fine for current 875 companies, but won't scale. Fix: cluster by first letter + length before comparing.</li>
+    <li><span class="warn">P5</span> <strong>Contact search uses LIKE without indexes</strong> — 5-column LIKE scan in contacts.py. Fix: add pg_trgm GIN indexes.</li>
+    <li><span class="warn">P6</span> <strong>No health check with DB ping</strong> — <code>/api/health</code> returns static JSON without checking DB connectivity.</li>
+  </ul>
+</div>
+
+<h3>Critical Security Issues</h3>
+<div class="card">
+  <ul class="checklist">
+    <li><span class="x-mark">S1</span> <strong>No authentication</strong> — Zero auth middleware. All 50+ API endpoints publicly accessible on localhost. Anyone on the network can read/modify campaign data.</li>
+    <li><span class="x-mark">S2</span> <strong>Hardcoded CORS</strong> — Only allows localhost:5173. Will break in production. <code>allow_methods=["*"]</code> is overly permissive.</li>
+    <li><span class="x-mark">S3</span> <strong>Gmail token in project root</strong> — <code>.gmail_token.json</code> written to project directory. Risk of git commit. No encryption at rest.</li>
+    <li><span class="x-mark">S4</span> <strong>No file upload limits</strong> — CSV import has no size cap or MIME validation. DoS via large file upload.</li>
+    <li><span class="warn">S5</span> <strong>Jinja2 autoescape=False</strong> — Template engine doesn't escape HTML. XSS risk if user-controlled data reaches templates.</li>
+    <li><span class="warn">S6</span> <strong>PII in logs</strong> — Email addresses logged in plaintext via <code>logger.info</code>.</li>
+  </ul>
+</div>
+
+<h3>Bug Backlog (Pre-Production Blockers)</h3>
+<div class="card">
+  <table>
+    <tr><th>ID</th><th>Bug</th><th>File</th><th>Severity</th></tr>
+    <tr><td>B1</td><td>Double compliance footer in HTML emails</td><td>email_sender.py:181-183</td><td><span class="badge badge-red">HIGH</span></td></tr>
+    <tr><td>B2</td><td>Dedup DELETE+INSERT with no rollback on failure</td><td>deduplication.py:37-100</td><td><span class="badge badge-red">HIGH</span></td></tr>
+    <tr><td>B3</td><td>NULL body_template crashes .endswith()</td><td>email_sender.py:~167</td><td><span class="badge badge-red">HIGH</span></td></tr>
+    <tr><td>B4</td><td>Cursor leaks (no try/finally) in services</td><td>priority_queue, state_machine, compliance</td><td><span class="badge badge-yellow">MEDIUM</span></td></tr>
+    <tr><td>B5</td><td>current_step defaults to 0, enrollment inserts 1</td><td>migration 001</td><td><span class="badge badge-yellow">MEDIUM</span></td></tr>
+    <tr><td>B6</td><td>Metrics KeyError on unknown statuses</td><td>metrics.py:49</td><td><span class="badge badge-yellow">MEDIUM</span></td></tr>
+  </table>
+</div>
+
+<!-- ===== DEPLOY: FRONTEND ===== -->
+<h2 id="deploy-fe">4. Deploy Checklist: Frontend</h2>
+
+<div class="card">
+  <div class="deploy-section">
+    <h4>Build & Bundle</h4>
+    <ul class="checklist">
+      <li><span class="x-mark">&#9744;</span> Run <code>npm run build</code> — verify no TypeScript errors or warnings</li>
+      <li><span class="x-mark">&#9744;</span> Check bundle size (target &lt;500KB gzipped for initial load)</li>
+      <li><span class="x-mark">&#9744;</span> Verify all environment variables set (API base URL, etc.)</li>
+      <li><span class="x-mark">&#9744;</span> Enable source maps for error tracking (Sentry integration)</li>
+      <li><span class="x-mark">&#9744;</span> Remove any <code>console.log</code> statements from production build</li>
+    </ul>
+  </div>
+  <div class="deploy-section">
+    <h4>Security</h4>
+    <ul class="checklist">
+      <li><span class="x-mark">&#9744;</span> Configure Content Security Policy (CSP) headers</li>
+      <li><span class="x-mark">&#9744;</span> Set <code>X-Frame-Options: DENY</code> to prevent clickjacking</li>
+      <li><span class="x-mark">&#9744;</span> Enable HTTPS with valid SSL certificate</li>
+      <li><span class="x-mark">&#9744;</span> Add <code>Strict-Transport-Security</code> header</li>
+      <li><span class="x-mark">&#9744;</span> Audit npm dependencies for vulnerabilities (<code>npm audit</code>)</li>
+    </ul>
+  </div>
+  <div class="deploy-section">
+    <h4>Error Handling & Monitoring</h4>
+    <ul class="checklist">
+      <li><span class="x-mark">&#9744;</span> Add React Error Boundaries (currently missing — single error crashes entire UI)</li>
+      <li><span class="x-mark">&#9744;</span> Integrate error tracking (Sentry, LogRocket, or similar)</li>
+      <li><span class="x-mark">&#9744;</span> Add loading states / skeleton loaders to all pages</li>
+      <li><span class="x-mark">&#9744;</span> Implement retry logic in API client (client.ts currently has none)</li>
+      <li><span class="x-mark">&#9744;</span> Add meaningful error messages (currently shows "HTTP 500")</li>
+    </ul>
+  </div>
+  <div class="deploy-section">
+    <h4>Performance</h4>
+    <ul class="checklist">
+      <li><span class="x-mark">&#9744;</span> Enable code splitting / lazy loading for route-based chunks</li>
+      <li><span class="x-mark">&#9744;</span> Add caching headers for static assets (1yr for hashed files)</li>
+      <li><span class="x-mark">&#9744;</span> Verify images are optimized (WebP where supported)</li>
+      <li><span class="x-mark">&#9744;</span> Run Lighthouse audit (target 90+ performance score)</li>
+    </ul>
+  </div>
+  <div class="deploy-section">
+    <h4>Testing & QA</h4>
+    <ul class="checklist">
+      <li><span class="x-mark">&#9744;</span> Cross-browser testing (Chrome, Firefox, Safari, Edge)</li>
+      <li><span class="x-mark">&#9744;</span> Mobile responsive testing (currently untested)</li>
+      <li><span class="x-mark">&#9744;</span> Verify all API endpoints return expected data shapes</li>
+      <li><span class="x-mark">&#9744;</span> Test with real data volume (1000+ contacts, 10+ campaigns)</li>
+      <li><span class="x-mark">&#9744;</span> Disable buttons during form submissions (prevent double-submit)</li>
+    </ul>
+  </div>
+  <div class="deploy-section">
+    <h4>Hosting & CDN</h4>
+    <ul class="checklist">
+      <li><span class="x-mark">&#9744;</span> Choose hosting: Vercel / Netlify / Cloudflare Pages</li>
+      <li><span class="x-mark">&#9744;</span> Configure custom domain + DNS</li>
+      <li><span class="x-mark">&#9744;</span> Set up CDN for static assets</li>
+      <li><span class="x-mark">&#9744;</span> Configure redirect rules (SPA fallback to index.html)</li>
+      <li><span class="x-mark">&#9744;</span> Set up staging environment for pre-production testing</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ===== DEPLOY: BACKEND ===== -->
+<h2 id="deploy-be">5. Deploy Checklist: Backend</h2>
+
+<div class="card">
+  <div class="deploy-section">
+    <h4>Pre-Deploy: Critical Fixes (Blockers)</h4>
+    <ul class="checklist">
+      <li><span class="x-mark">&#9744;</span> <strong>Add API authentication middleware</strong> — JWT or API key. Currently zero auth.</li>
+      <li><span class="x-mark">&#9744;</span> <strong>Fix CORS configuration</strong> — Use env var for allowed origins, restrict methods.</li>
+      <li><span class="x-mark">&#9744;</span> <strong>Add connection pooling</strong> — Replace <code>get_connection()</code> with <code>ThreadedConnectionPool</code>.</li>
+      <li><span class="x-mark">&#9744;</span> <strong>Move migrations to startup</strong> — Currently runs 330 lines of SQL per request.</li>
+      <li><span class="x-mark">&#9744;</span> <strong>Fix double compliance footer</strong> — HTML emails get footer injected twice.</li>
+      <li><span class="x-mark">&#9744;</span> <strong>Add file upload validation</strong> — Size limit (10MB), MIME type check.</li>
+      <li><span class="x-mark">&#9744;</span> <strong>Secure Gmail token storage</strong> — Move out of project root, add encryption.</li>
+    </ul>
+  </div>
+  <div class="deploy-section">
+    <h4>Infrastructure</h4>
+    <ul class="checklist">
+      <li><span class="x-mark">&#9744;</span> Create <code>Dockerfile</code> + <code>docker-compose.yml</code> for local dev and production</li>
+      <li><span class="x-mark">&#9744;</span> Choose hosting: Railway / Render / Fly.io / AWS ECS</li>
+      <li><span class="x-mark">&#9744;</span> Configure environment variables in hosting platform</li>
+      <li><span class="x-mark">&#9744;</span> Set up HTTPS with SSL termination</li>
+      <li><span class="x-mark">&#9744;</span> Configure reverse proxy (nginx/Caddy) if needed</li>
+      <li><span class="x-mark">&#9744;</span> Set up staging environment mirror</li>
+    </ul>
+  </div>
+  <div class="deploy-section">
+    <h4>Database</h4>
+    <ul class="checklist">
+      <li><span class="x-mark">&#9744;</span> Verify Supabase connection limits (free tier = 60 connections)</li>
+      <li><span class="x-mark">&#9744;</span> Set up automated database backups (Supabase has daily, verify RPO)</li>
+      <li><span class="x-mark">&#9744;</span> Add schema version tracking table for migration safety</li>
+      <li><span class="x-mark">&#9744;</span> Test migration rollback procedure</li>
+      <li><span class="x-mark">&#9744;</span> Add composite indexes: <code>(status, next_action_date)</code>, <code>(email_normalized, company_id)</code></li>
+      <li><span class="x-mark">&#9744;</span> Add pg_trgm extension for fuzzy search indexes</li>
+    </ul>
+  </div>
+  <div class="deploy-section">
+    <h4>Monitoring & Observability</h4>
+    <ul class="checklist">
+      <li><span class="x-mark">&#9744;</span> Set up structured logging (JSON format) with log levels</li>
+      <li><span class="x-mark">&#9744;</span> Integrate Sentry for error tracking</li>
+      <li><span class="x-mark">&#9744;</span> Add uptime monitoring (UptimeRobot, Better Stack)</li>
+      <li><span class="x-mark">&#9744;</span> Fix health check to include DB ping: <code>SELECT 1</code></li>
+      <li><span class="x-mark">&#9744;</span> Add request logging middleware (method, path, duration, status)</li>
+      <li><span class="x-mark">&#9744;</span> Remove PII from logs (hash email addresses)</li>
+      <li><span class="x-mark">&#9744;</span> Set up alerting for: 5xx errors, DB connection failures, email send failures</li>
+    </ul>
+  </div>
+  <div class="deploy-section">
+    <h4>CI/CD Pipeline</h4>
+    <ul class="checklist">
+      <li><span class="x-mark">&#9744;</span> Set up GitHub Actions workflow: lint → test → build → deploy</li>
+      <li><span class="x-mark">&#9744;</span> Add pre-commit hooks (black, ruff, mypy)</li>
+      <li><span class="x-mark">&#9744;</span> Configure automatic deployment on merge to main</li>
+      <li><span class="x-mark">&#9744;</span> Add staging deploy on PR creation</li>
+      <li><span class="x-mark">&#9744;</span> Include <code>make test</code> as CI gate (currently 24 test files)</li>
+    </ul>
+  </div>
+  <div class="deploy-section">
+    <h4>API Hardening</h4>
+    <ul class="checklist">
+      <li><span class="x-mark">&#9744;</span> Add rate limiting (per-IP and per-API-key)</li>
+      <li><span class="x-mark">&#9744;</span> Add request validation via Pydantic models on all routes</li>
+      <li><span class="x-mark">&#9744;</span> Implement consistent error response format across all routes</li>
+      <li><span class="x-mark">&#9744;</span> Add pagination limits (cap per_page at 100)</li>
+      <li><span class="x-mark">&#9744;</span> Enable OpenAPI docs at <code>/api/docs</code> (FastAPI auto-generates)</li>
+      <li><span class="x-mark">&#9744;</span> Add CORS origin from environment variable</li>
+    </ul>
+  </div>
+  <div class="deploy-section">
+    <h4>Email & Compliance</h4>
+    <ul class="checklist">
+      <li><span class="x-mark">&#9744;</span> Implement one-click unsubscribe link (replace mailto: approach)</li>
+      <li><span class="x-mark">&#9744;</span> Add email retry with exponential backoff</li>
+      <li><span class="x-mark">&#9744;</span> Log all send attempts to database with status codes</li>
+      <li><span class="x-mark">&#9744;</span> Validate GDPR limit check in state machine transitions (not just at send time)</li>
+      <li><span class="x-mark">&#9744;</span> Set up SPF, DKIM, DMARC for sending domain</li>
+    </ul>
+  </div>
+  <div class="deploy-section">
+    <h4>Testing (Before Go-Live)</h4>
+    <ul class="checklist">
+      <li><span class="x-mark">&#9744;</span> Add web API route tests (currently minimal coverage)</li>
+      <li><span class="x-mark">&#9744;</span> Add compliance rule tests (GDPR limit enforcement, unsubscribe)</li>
+      <li><span class="x-mark">&#9744;</span> Add email verification edge case tests (API timeout, rate limit)</li>
+      <li><span class="x-mark">&#9744;</span> Load test with 1000+ contacts in queue</li>
+      <li><span class="x-mark">&#9744;</span> Test concurrent state transitions (race condition validation)</li>
+      <li><span class="x-mark">&#9744;</span> End-to-end test: import → enroll → queue → send → reply detection</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ===== NEXT STEPS ===== -->
+<h2 id="next">6. Recommended Path Forward</h2>
+
+<div class="card">
+  <h4 style="color:var(--accent-light)">Week 1–2: Production Hardening</h4>
+  <p>Fix the 7 pre-deploy blockers (auth, CORS, pooling, migrations, double footer, upload validation, token storage). These are all well-scoped fixes, mostly &lt;50 lines each. Also fix the N+1 query in priority_queue.py.</p>
+</div>
+<div class="card">
+  <h4 style="color:var(--accent-light)">Week 3–4: CRM (Phase 5)</h4>
+  <p>This is your biggest gap — only 5% done. Build: contact detail page with interaction timeline, company overview with AUM and engagement history, pipeline/kanban view, notes and manual logging. The route scaffolding exists in <code>web/routes/crm.py</code>; the frontend pages exist but need data wiring.</p>
+</div>
+<div class="card">
+  <h4 style="color:var(--accent-light)">Week 5–6: Deployment (Phase 6)</h4>
+  <p>Dockerfile, docker-compose, GitHub Actions CI/CD, monitoring (Sentry + uptime), staging environment. Then go live on Railway or Fly.io.</p>
+</div>
+<div class="card">
+  <h4 style="color:var(--accent-light)">Week 7+: Competitive Moat Features</h4>
+  <p>Email warmup/deliverability (build or integrate Lemwarm alternative), lead database integration (scraping or API enrichment), and advanced LLM features (auto-draft personalized emails based on prospect research).</p>
+</div>
+
+<div class="card" style="border-color:var(--accent);margin-top:2rem">
+  <h4>Realistic Timeline to Production</h4>
+  <p>Your engineering review estimated 12–18 weeks total (from the original plan). Given that Phases 0–4 are 90–100% complete, you're looking at <strong>6–8 more weeks</strong> to reach a deployable production state (hardening + CRM + deployment). The adaptive engine and core outreach pipeline are your strongest assets — the remaining work is mostly infrastructure, security, and the CRM layer.</p>
+</div>
+
+<div style="text-align:center;margin-top:2rem;color:var(--text-muted);font-size:.8rem">
+  Generated March 3, 2026 — Based on codebase analysis of 51 source files, 24 test files, and 4 planning documents.
+</div>
+
+</div>
+</body>
+</html>

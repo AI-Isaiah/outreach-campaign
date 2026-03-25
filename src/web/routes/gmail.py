@@ -3,17 +3,26 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
-from src.config import load_config
-from src.models.campaigns import get_campaign_by_name, log_event, update_contact_campaign_status
+_FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+
+_limiter = Limiter(key_func=get_remote_address)
+
+from src.config import DEFAULT_CAMPAIGN, load_config
+from src.models.campaigns import get_campaign_by_name, update_contact_campaign_status
+from src.models.events import log_event
 from src.services.email_sender import render_campaign_email
 from src.services.gmail_drafter import GmailDrafter
-from src.web.dependencies import get_db
+from src.web.dependencies import get_current_user, get_db
+from src.models.database import get_cursor
 
 router = APIRouter(prefix="/gmail", tags=["gmail"])
 
@@ -22,15 +31,15 @@ _drafter = GmailDrafter()
 
 class DraftRequest(BaseModel):
     contact_id: int
-    campaign: str = "Q1_2026_initial"
+    campaign: str = Field(default=DEFAULT_CAMPAIGN, max_length=200)
     template_id: int
-    subject: Optional[str] = None  # override rendered subject
-    body_text: Optional[str] = None  # override rendered body
+    subject: Optional[str] = Field(default=None, max_length=200)
+    body_text: Optional[str] = Field(default=None, max_length=5000)
 
 
 class BatchDraftRequest(BaseModel):
-    campaign: str = "Q1_2026_initial"
-    date: Optional[str] = None
+    campaign: str = Field(default=DEFAULT_CAMPAIGN, max_length=200)
+    date: Optional[str] = Field(default=None, max_length=50)
     limit: int = 20
 
 
@@ -55,21 +64,29 @@ def gmail_callback(code: str = Query(...)):
     """Handle OAuth callback from Google."""
     try:
         _drafter.handle_callback(code)
-        return RedirectResponse(url="http://localhost:5173/settings?gmail=connected")
+        return RedirectResponse(url=f"{_FRONTEND_URL}/settings?gmail=connected")
     except Exception as e:
         raise HTTPException(400, f"OAuth failed: {e}")
 
 
 @router.post("/drafts")
+@_limiter.limit("10/minute")
 def create_draft(
+    request: Request,
     body: DraftRequest,
     conn=Depends(get_db),
+    user=Depends(get_current_user),
 ):
     """Push a single email to Gmail as a draft."""
     if not _drafter.is_authorized():
         raise HTTPException(401, "Gmail not authorized. Connect Gmail first.")
 
-    camp = get_campaign_by_name(conn, body.campaign)
+    with get_cursor(conn) as cur:
+        cur.execute(
+            "SELECT * FROM campaigns WHERE name = %s AND user_id = %s",
+            (body.campaign, user["id"]),
+        )
+        camp = cur.fetchone()
     if not camp:
         raise HTTPException(404, f"Campaign '{body.campaign}' not found")
 
@@ -85,17 +102,21 @@ def create_draft(
         subject = body.subject
         body_text = body.body_text
         body_html = None
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT email FROM contacts WHERE id = %s", (body.contact_id,),
-        )
-        contact = cur.fetchone()
-        if not contact:
-            raise HTTPException(404, f"Contact {body.contact_id} not found")
-        to_email = contact["email"]
+        with get_cursor(conn) as cur:
+            cur.execute(
+                """SELECT c.email FROM contacts c
+                   JOIN companies co ON co.id = c.company_id
+                   WHERE c.id = %s AND co.user_id = %s""",
+                (body.contact_id, user["id"]),
+            )
+            contact = cur.fetchone()
+            if not contact:
+                raise HTTPException(404, f"Contact {body.contact_id} not found")
+            to_email = contact["email"]
     else:
         rendered = render_campaign_email(
-            conn, body.contact_id, campaign_id, body.template_id, config
+            conn, body.contact_id, campaign_id, body.template_id, config,
+            user_id=user["id"],
         )
         if not rendered:
             raise HTTPException(400, "Could not render email (check contact eligibility)")
@@ -116,32 +137,40 @@ def create_draft(
         raise HTTPException(500, f"Failed to create Gmail draft: {e}")
 
     # Store in DB
-    cur = conn.cursor()
-    cur.execute(
-        """INSERT INTO gmail_drafts (contact_id, campaign_id, gmail_draft_id, subject, to_email)
-           VALUES (%s, %s, %s, %s, %s)""",
-        (body.contact_id, campaign_id, draft_id, subject, to_email),
-    )
-    conn.commit()
+    with get_cursor(conn) as cur:
+        cur.execute(
+            """INSERT INTO gmail_drafts (contact_id, campaign_id, gmail_draft_id, subject, to_email)
+               VALUES (%s, %s, %s, %s, %s)""",
+            (body.contact_id, campaign_id, draft_id, subject, to_email),
+        )
+        conn.commit()
 
-    return {
-        "success": True,
-        "draft_id": draft_id,
-        "to_email": to_email,
-        "subject": subject,
-    }
+        return {
+            "success": True,
+            "draft_id": draft_id,
+            "to_email": to_email,
+            "subject": subject,
+        }
 
 
 @router.post("/drafts/batch")
+@_limiter.limit("3/minute")
 def create_batch_drafts(
+    request: Request,
     body: BatchDraftRequest,
     conn=Depends(get_db),
+    user=Depends(get_current_user),
 ):
     """Push all today's email queue items to Gmail as drafts."""
     if not _drafter.is_authorized():
         raise HTTPException(401, "Gmail not authorized. Connect Gmail first.")
 
-    camp = get_campaign_by_name(conn, body.campaign)
+    with get_cursor(conn) as cur:
+        cur.execute(
+            "SELECT * FROM campaigns WHERE name = %s AND user_id = %s",
+            (body.campaign, user["id"]),
+        )
+        camp = cur.fetchone()
     if not camp:
         raise HTTPException(404, f"Campaign '{body.campaign}' not found")
 
@@ -159,13 +188,13 @@ def create_batch_drafts(
     results = []
     for item in email_items:
         # Skip if draft already exists
-        cur = conn.cursor()
-        cur.execute(
-            """SELECT id FROM gmail_drafts
-               WHERE contact_id = %s AND campaign_id = %s AND status = 'drafted'""",
-            (item["contact_id"], campaign_id),
-        )
-        existing = cur.fetchone()
+        with get_cursor(conn) as cur:
+            cur.execute(
+                """SELECT id FROM gmail_drafts
+                   WHERE contact_id = %s AND campaign_id = %s AND status = 'drafted'""",
+                (item["contact_id"], campaign_id),
+            )
+            existing = cur.fetchone()
         if existing:
             results.append({
                 "contact_id": item["contact_id"],
@@ -175,7 +204,8 @@ def create_batch_drafts(
             continue
 
         rendered = render_campaign_email(
-            conn, item["contact_id"], campaign_id, item["template_id"], config
+            conn, item["contact_id"], campaign_id, item["template_id"], config,
+            user_id=user["id"],
         )
         if not rendered:
             results.append({
@@ -192,14 +222,14 @@ def create_batch_drafts(
                 body_text=rendered["body_text"],
                 body_html=rendered["body_html"],
             )
-            cur = conn.cursor()
-            cur.execute(
-                """INSERT INTO gmail_drafts
-                   (contact_id, campaign_id, gmail_draft_id, subject, to_email)
-                   VALUES (%s, %s, %s, %s, %s)""",
-                (item["contact_id"], campaign_id, draft_id, rendered["subject"], rendered["contact_email"]),
-            )
-            conn.commit()
+            with get_cursor(conn) as cur:
+                cur.execute(
+                    """INSERT INTO gmail_drafts
+                       (contact_id, campaign_id, gmail_draft_id, subject, to_email)
+                       VALUES (%s, %s, %s, %s, %s)""",
+                    (item["contact_id"], campaign_id, draft_id, rendered["subject"], rendered["contact_email"]),
+                )
+                conn.commit()
             results.append({
                 "contact_id": item["contact_id"],
                 "success": True,
@@ -221,65 +251,73 @@ def create_batch_drafts(
 @router.get("/drafts/{contact_id}")
 def check_draft_status(
     contact_id: int,
-    campaign: str = "Q1_2026_initial",
+    campaign: str = DEFAULT_CAMPAIGN,
     conn=Depends(get_db),
+    user=Depends(get_current_user),
 ):
     """Check the status of a contact's Gmail draft."""
-    camp = get_campaign_by_name(conn, campaign)
+    with get_cursor(conn) as cur:
+        cur.execute(
+            "SELECT * FROM campaigns WHERE name = %s AND user_id = %s",
+            (campaign, user["id"]),
+        )
+        camp = cur.fetchone()
     if not camp:
         raise HTTPException(404, f"Campaign '{campaign}' not found")
 
-    cur = conn.cursor()
-    cur.execute(
-        """SELECT * FROM gmail_drafts
-           WHERE contact_id = %s AND campaign_id = %s
-           ORDER BY id DESC LIMIT 1""",
-        (contact_id, camp["id"]),
-    )
-    draft_row = cur.fetchone()
+    with get_cursor(conn) as cur:
+        cur.execute(
+            """SELECT * FROM gmail_drafts
+               WHERE contact_id = %s AND campaign_id = %s
+               ORDER BY id DESC LIMIT 1""",
+            (contact_id, camp["id"]),
+        )
+        draft_row = cur.fetchone()
 
-    if not draft_row:
-        return {"status": "no_draft"}
+        if not draft_row:
+            return {"status": "no_draft"}
 
-    # If status is 'drafted', check with Gmail API
-    if draft_row["status"] == "drafted" and _drafter.is_authorized():
-        try:
-            gmail_status = _drafter.check_draft_status(draft_row["gmail_draft_id"])
-            if gmail_status == "sent":
-                # Draft was sent — update our records
-                cur.execute(
-                    "UPDATE gmail_drafts SET status = 'sent', updated_at = NOW() WHERE id = %s",
-                    (draft_row["id"],),
-                )
-                conn.commit()
+        # If status is 'drafted', check with Gmail API
+        if draft_row["status"] == "drafted" and _drafter.is_authorized():
+            try:
+                gmail_status = _drafter.check_draft_status(draft_row["gmail_draft_id"])
+                if gmail_status == "sent":
+                    # Draft was sent — update our records
+                    cur.execute(
+                        "UPDATE gmail_drafts SET status = 'sent', updated_at = NOW() WHERE id = %s",
+                        (draft_row["id"],),
+                    )
+                    conn.commit()
 
-                # Log the email_sent event and advance step
-                log_event(
-                    conn, contact_id, "email_sent",
-                    campaign_id=camp["id"],
-                    metadata=json.dumps({"source": "gmail", "subject": draft_row["subject"]}),
-                )
-
-                # Advance step
-                cur.execute(
-                    """SELECT current_step FROM contact_campaign_status
-                       WHERE contact_id = %s AND campaign_id = %s""",
-                    (contact_id, camp["id"]),
-                )
-                status_row = cur.fetchone()
-                if status_row:
-                    update_contact_campaign_status(
-                        conn, contact_id, camp["id"],
-                        current_step=status_row["current_step"] + 1,
+                    # Log the email_sent event and advance step
+                    log_event(
+                        conn, contact_id, "email_sent",
+                        campaign_id=camp["id"],
+                        metadata=json.dumps({"source": "gmail", "subject": draft_row["subject"]}),
+                        user_id=user["id"],
                     )
 
-                return {"status": "sent", "draft_id": draft_row["gmail_draft_id"]}
-        except Exception:
-            pass  # Can't reach Gmail API — return DB status
+                    # Advance step
+                    cur.execute(
+                        """SELECT current_step FROM contact_campaign_status
+                           WHERE contact_id = %s AND campaign_id = %s""",
+                        (contact_id, camp["id"]),
+                    )
+                    status_row = cur.fetchone()
+                    if status_row:
+                        update_contact_campaign_status(
+                            conn, contact_id, camp["id"],
+                            current_step=status_row["current_step"] + 1,
+                            user_id=user["id"],
+                        )
 
-    return {
-        "status": draft_row["status"],
-        "draft_id": draft_row["gmail_draft_id"],
-        "subject": draft_row["subject"],
-        "created_at": draft_row["created_at"],
-    }
+                    return {"status": "sent", "draft_id": draft_row["gmail_draft_id"]}
+            except Exception:
+                pass  # Can't reach Gmail API — return DB status
+
+        return {
+            "status": draft_row["status"],
+            "draft_id": draft_row["gmail_draft_id"],
+            "subject": draft_row["subject"],
+            "created_at": draft_row["created_at"],
+        }

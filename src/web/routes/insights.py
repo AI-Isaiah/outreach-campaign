@@ -4,11 +4,16 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from src.services.llm_advisor import get_analysis_history, run_analysis
-from src.web.dependencies import get_db
+from src.web.dependencies import get_current_user, get_db
+from src.models.database import get_cursor
+
+_limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(tags=["insights"])
 
@@ -18,13 +23,17 @@ class AnalyzeRequest(BaseModel):
 
 
 @router.post("/insights/analyze")
-def analyze_campaign(body: AnalyzeRequest, conn=Depends(get_db)):
+@_limiter.limit("5/minute")
+def analyze_campaign(request: Request, body: AnalyzeRequest, conn=Depends(get_db), user=Depends(get_current_user)):
     """Run an AI-powered analysis of campaign performance."""
-    # Verify campaign exists
-    cur = conn.cursor()
-    cur.execute("SELECT id FROM campaigns WHERE id = %s", (body.campaign_id,))
-    if not cur.fetchone():
-        raise HTTPException(404, f"Campaign {body.campaign_id} not found")
+    # Verify campaign exists and belongs to this user
+    with get_cursor(conn) as cur:
+        cur.execute(
+            "SELECT id FROM campaigns WHERE id = %s AND user_id = %s",
+            (body.campaign_id, user["id"]),
+        )
+        if not cur.fetchone():
+            raise HTTPException(404, f"Campaign {body.campaign_id} not found")
 
     result = run_analysis(conn, body.campaign_id)
     return result
@@ -34,19 +43,31 @@ def analyze_campaign(body: AnalyzeRequest, conn=Depends(get_db)):
 def insight_history(
     campaign_id: Optional[int] = Query(None),
     conn=Depends(get_db),
+    user=Depends(get_current_user),
 ):
     """Return past advisor runs, optionally filtered by campaign."""
     if campaign_id:
+        with get_cursor(conn) as cur:
+            # Verify campaign belongs to this user
+            cur.execute(
+                "SELECT id FROM campaigns WHERE id = %s AND user_id = %s",
+                (campaign_id, user["id"]),
+            )
+            if not cur.fetchone():
+                raise HTTPException(404, f"Campaign {campaign_id} not found")
         return get_analysis_history(conn, campaign_id)
 
-    # If no campaign_id, return all runs
-    cur = conn.cursor()
-    cur.execute(
-        """SELECT id, campaign_id, run_type, prompt_summary,
-                  response_text, insights_json, template_suggestions_json,
-                  events_analyzed, created_at
-           FROM advisor_runs
-           ORDER BY created_at DESC
-           LIMIT 50"""
-    )
-    return [dict(r) for r in cur.fetchall()]
+    # Return all runs scoped via campaigns
+    with get_cursor(conn) as cur:
+        cur.execute(
+            """SELECT ar.id, ar.campaign_id, ar.run_type, ar.prompt_summary,
+                      ar.response_text, ar.insights_json, ar.template_suggestions_json,
+                      ar.events_analyzed, ar.created_at
+               FROM advisor_runs ar
+               JOIN campaigns cam ON cam.id = ar.campaign_id
+               WHERE cam.user_id = %s
+               ORDER BY ar.created_at DESC
+               LIMIT 50""",
+            (user["id"],),
+        )
+        return [dict(r) for r in cur.fetchall()]

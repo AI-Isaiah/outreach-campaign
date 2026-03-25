@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 import httpx
 
 from src.services.gmail_drafter import GmailDrafter
+from src.models.database import get_cursor
 
 logger = logging.getLogger(__name__)
 
@@ -21,26 +22,29 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 CLASSIFY_MODEL = "claude-haiku-4-5-20251001"
 
 
-def scan_gmail_for_replies(conn, drafter: GmailDrafter | None = None) -> dict:
+def scan_gmail_for_replies(conn, drafter: GmailDrafter | None = None, *, user_id: int) -> dict:
     """Scan Gmail for replies from enrolled contacts.
 
     Args:
         conn: PostgreSQL connection
         drafter: optional GmailDrafter instance (created if not provided)
+        user_id: owner user id — only scan contacts belonging to this user
 
     Returns:
         dict with keys: scanned, new_replies, errors
     """
     # Get enrolled contacts with email addresses first
-    cur = conn.cursor()
-    cur.execute(
-        """SELECT DISTINCT c.id, c.email, ccs.campaign_id, ccs.created_at AS enrolled_at
-           FROM contact_campaign_status ccs
-           JOIN contacts c ON c.id = ccs.contact_id
-           WHERE c.email IS NOT NULL
-             AND ccs.status IN ('in_progress', 'queued')"""
-    )
-    contacts = cur.fetchall()
+    with get_cursor(conn) as cur:
+        cur.execute(
+            """SELECT DISTINCT c.id, c.email, ccs.campaign_id, ccs.created_at AS enrolled_at
+               FROM contact_campaign_status ccs
+               JOIN contacts c ON c.id = ccs.contact_id
+               WHERE c.email IS NOT NULL
+                 AND ccs.status IN ('in_progress', 'queued')
+                 AND c.user_id = %s""",
+            (user_id,),
+        )
+        contacts = cur.fetchall()
 
     stats = {"scanned": 0, "new_replies": 0, "errors": 0}
 
@@ -89,74 +93,73 @@ def _scan_contact_replies(conn, service, contact: dict, stats: dict) -> None:
     if not messages:
         return
 
-    cur = conn.cursor()
+    with get_cursor(conn) as cur:
+        for msg_stub in messages:
+            msg_id = msg_stub["id"]
 
-    for msg_stub in messages:
-        msg_id = msg_stub["id"]
-
-        # Check if we already have this message
-        cur.execute(
-            "SELECT id FROM pending_replies WHERE gmail_message_id = %s",
-            (msg_id,),
-        )
-        if cur.fetchone():
-            continue
-
-        # Fetch the full message
-        try:
-            msg = (
-                service.users()
-                .messages()
-                .get(userId="me", id=msg_id, format="metadata")
-                .execute()
+            # Check if we already have this message
+            cur.execute(
+                "SELECT id FROM pending_replies WHERE gmail_message_id = %s",
+                (msg_id,),
             )
-        except Exception:
-            continue
+            if cur.fetchone():
+                continue
 
-        # Check if message is after enrollment
-        internal_ts = int(msg.get("internalDate", "0")) / 1000
-        msg_date = datetime.fromtimestamp(internal_ts, tz=timezone.utc)
-        enrolled_at = contact["enrolled_at"]
-        if enrolled_at:
+            # Fetch the full message
             try:
-                if isinstance(enrolled_at, str):
-                    enrolled_dt = datetime.fromisoformat(
-                        enrolled_at.replace("Z", "+00:00")
-                    )
-                else:
-                    enrolled_dt = enrolled_at
-                if enrolled_dt.tzinfo is None:
-                    enrolled_dt = enrolled_dt.replace(tzinfo=timezone.utc)
-                if msg_date < enrolled_dt:
-                    continue
-            except (ValueError, TypeError):
-                pass
+                msg = (
+                    service.users()
+                    .messages()
+                    .get(userId="me", id=msg_id, format="metadata")
+                    .execute()
+                )
+            except Exception:
+                continue
 
-        # Extract subject and snippet
-        headers = {
-            h["name"].lower(): h["value"]
-            for h in msg.get("payload", {}).get("headers", [])
-        }
-        subject = headers.get("subject", "")
-        snippet = msg.get("snippet", "")
-        thread_id = msg.get("threadId", "")
+            # Check if message is after enrollment
+            internal_ts = int(msg.get("internalDate", "0")) / 1000
+            msg_date = datetime.fromtimestamp(internal_ts, tz=timezone.utc)
+            enrolled_at = contact["enrolled_at"]
+            if enrolled_at:
+                try:
+                    if isinstance(enrolled_at, str):
+                        enrolled_dt = datetime.fromisoformat(
+                            enrolled_at.replace("Z", "+00:00")
+                        )
+                    else:
+                        enrolled_dt = enrolled_at
+                    if enrolled_dt.tzinfo is None:
+                        enrolled_dt = enrolled_dt.replace(tzinfo=timezone.utc)
+                    if msg_date < enrolled_dt:
+                        continue
+                except (ValueError, TypeError):
+                    pass
 
-        # Classify the reply
-        classification, confidence = _classify_reply(snippet)
+            # Extract subject and snippet
+            headers = {
+                h["name"].lower(): h["value"]
+                for h in msg.get("payload", {}).get("headers", [])
+            }
+            subject = headers.get("subject", "")
+            snippet = msg.get("snippet", "")
+            thread_id = msg.get("threadId", "")
 
-        # Store as pending reply
-        _store_pending_reply(
-            conn,
-            contact_id=contact["id"],
-            campaign_id=contact["campaign_id"],
-            gmail_thread_id=thread_id,
-            gmail_message_id=msg_id,
-            subject=subject,
-            snippet=snippet,
-            classification=classification,
-            confidence=confidence,
-        )
-        stats["new_replies"] += 1
+            # Classify the reply
+            classification, confidence = _classify_reply(snippet)
+
+            # Store as pending reply
+            _store_pending_reply(
+                conn,
+                contact_id=contact["id"],
+                campaign_id=contact["campaign_id"],
+                gmail_thread_id=thread_id,
+                gmail_message_id=msg_id,
+                subject=subject,
+                snippet=snippet,
+                classification=classification,
+                confidence=confidence,
+            )
+            stats["new_replies"] += 1
 
 
 def _classify_reply(reply_text: str) -> tuple[str, float]:
@@ -224,29 +227,29 @@ def _store_pending_reply(
     Returns:
         The new pending_reply id.
     """
-    cur = conn.cursor()
-    cur.execute(
-        """INSERT INTO pending_replies
-               (contact_id, campaign_id, gmail_thread_id, gmail_message_id,
-                subject, snippet, reply_snippet,
-                llm_classification, llm_confidence,
-                classification, confidence)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-           ON CONFLICT (gmail_message_id) DO NOTHING
-           RETURNING id""",
-        (
-            contact_id,
-            campaign_id,
-            gmail_thread_id,
-            gmail_message_id,
-            subject,
-            snippet,
-            snippet,
-            classification,
-            confidence,
-            classification,
-            confidence,
-        ),
-    )
-    row = cur.fetchone()
-    return row["id"] if row else None
+    with get_cursor(conn) as cur:
+        cur.execute(
+            """INSERT INTO pending_replies
+                   (contact_id, campaign_id, gmail_thread_id, gmail_message_id,
+                    subject, snippet, reply_snippet,
+                    llm_classification, llm_confidence,
+                    classification, confidence)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+               ON CONFLICT (gmail_message_id) DO NOTHING
+               RETURNING id""",
+            (
+                contact_id,
+                campaign_id,
+                gmail_thread_id,
+                gmail_message_id,
+                subject,
+                snippet,
+                snippet,
+                classification,
+                confidence,
+                classification,
+                confidence,
+            ),
+        )
+        row = cur.fetchone()
+        return row["id"] if row else None

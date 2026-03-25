@@ -1,15 +1,23 @@
 import { useState } from "react";
+import React from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Mail, Pencil } from "lucide-react";
 import { api } from "../api/client";
 import type { QueueItem } from "../types";
+import AumTierBadge from "./AumTierBadge";
 import StatusBadge from "./StatusBadge";
+import ContactEditPanel from "./ContactEditPanel";
+import SkipMenu from "./SkipMenu";
+import { useContactEdit } from "../hooks/useContactEdit";
 
-export default function QueueEmailCard({
+function QueueEmailCard({
   item,
   campaign,
+  onDeferred,
 }: {
   item: QueueItem;
   campaign: string;
+  onDeferred?: () => void;
 }) {
   const [subject, setSubject] = useState(
     item.rendered_email?.subject || "",
@@ -20,7 +28,21 @@ export default function QueueEmailCard({
   const [draftStatus, setDraftStatus] = useState(
     item.gmail_draft?.status || null,
   );
+  const [skipped, setSkipped] = useState(false);
+
   const queryClient = useQueryClient();
+  const contactEdit = useContactEdit(item);
+
+  const skipMutation = useMutation({
+    mutationFn: (reason: string) =>
+      api.deferContact(item.contact_id, campaign, reason),
+    onSuccess: () => {
+      setSkipped(true);
+      queryClient.invalidateQueries({ queryKey: ["queue-all"] });
+      queryClient.invalidateQueries({ queryKey: ["defer-stats"] });
+      onDeferred?.();
+    },
+  });
 
   const draftMutation = useMutation({
     mutationFn: () =>
@@ -33,50 +55,65 @@ export default function QueueEmailCard({
       ),
     onSuccess: () => {
       setDraftStatus("drafted");
-      queryClient.invalidateQueries({ queryKey: ["queue"] });
+      queryClient.invalidateQueries({ queryKey: ["queue-all"] });
     },
   });
 
-  const aum = item.aum_millions
-    ? `$${(item.aum_millions / 1000).toFixed(1)}B`
-    : "-";
-
-  const draftLabel =
-    draftStatus === "drafted"
-      ? "Draft Created"
-      : draftStatus === "sent"
-        ? "Sent"
-        : "Ready";
+  if (skipped) {
+    return (
+      <div className="bg-gray-50 border border-gray-200 rounded-lg p-5">
+        <div className="flex items-center gap-2">
+          <span className="text-gray-400 text-lg">&#8594;</span>
+          <span className="font-medium text-gray-500">
+            {item.contact_name} &mdash; Skipped (back tomorrow)
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
-      {/* Header */}
       <div className="bg-amber-50 px-5 py-3 flex items-center justify-between border-b border-amber-100">
-        <div>
+        <div className="flex items-center gap-1.5">
+          <Mail size={16} className="text-amber-600 flex-shrink-0" />
           <span className="font-semibold text-gray-900">
             {item.contact_name}
           </span>
-          <span className="text-gray-500 mx-2">&middot;</span>
-          <span className="text-gray-600">{item.company_name}</span>
-          <span className="text-gray-400 ml-2 text-sm">AUM {aum}</span>
+          <button
+            onClick={() => contactEdit.setShowEdit(!contactEdit.showEdit)}
+            className="p-0.5 text-gray-400 hover:text-gray-600 transition-colors"
+            title="Edit contact details"
+          >
+            <Pencil size={14} />
+          </button>
+          <span className="text-gray-500 mx-1">&middot;</span>
+          <span className="text-gray-600">
+            {item.company_name}
+            {item.firm_type && (
+              <span className="text-gray-400 text-sm ml-1">({item.firm_type})</span>
+            )}
+          </span>
+          <AumTierBadge tier={item.aum_tier} />
         </div>
         <div className="flex items-center gap-3">
           {draftStatus && <StatusBadge status={draftStatus} />}
           <span className="text-sm text-amber-700 font-medium">
             Step {item.step_order}/{item.total_steps}
           </span>
+          <SkipMenu onSkip={(reason) => skipMutation.mutate(reason)} isPending={skipMutation.isPending} />
         </div>
       </div>
 
+      <ContactEditPanel edit={contactEdit} />
+
       {item.rendered_email ? (
         <div className="p-5 space-y-4">
-          {/* To */}
           <div className="text-sm">
             <span className="text-gray-500">To: </span>
             <span className="font-medium">{item.rendered_email.contact_email}</span>
           </div>
 
-          {/* Subject */}
           <div>
             <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
               Subject
@@ -89,7 +126,6 @@ export default function QueueEmailCard({
             />
           </div>
 
-          {/* Body */}
           <div>
             <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
               Body
@@ -101,7 +137,6 @@ export default function QueueEmailCard({
             />
           </div>
 
-          {/* Actions */}
           <div className="flex gap-2 pt-1">
             {draftStatus !== "sent" && (
               <button
@@ -131,3 +166,5 @@ export default function QueueEmailCard({
     </div>
   );
 }
+
+export default React.memo(QueueEmailCard);

@@ -16,15 +16,16 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from jinja2 import Template
+from jinja2.sandbox import SandboxedEnvironment
 
-from src.models.campaigns import log_event
+from src.models.database import get_cursor
+from src.models.events import log_event
 from src.services.compliance import (
     add_compliance_footer,
     add_compliance_footer_html,
     build_unsubscribe_url,
 )
-from src.services.email_sender import send_email
+from src.services.email_sender import send_email, send_emails_batch
 
 logger = logging.getLogger(__name__)
 
@@ -34,16 +35,17 @@ def get_newsletter_subscribers(conn) -> list:
 
     Returns list of dicts with contact info.
     """
-    cursor = conn.cursor()
-    cursor.execute(
-        """SELECT * FROM contacts
-           WHERE newsletter_status = 'subscribed'
-             AND unsubscribed = false
-             AND email IS NOT NULL
-             AND email != ''
-           ORDER BY id"""
-    )
-    return cursor.fetchall()
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            """SELECT * FROM contacts
+               WHERE newsletter_status = 'subscribed'
+                 AND unsubscribed = false
+                 AND email IS NOT NULL
+                 AND email != ''
+               ORDER BY id
+               LIMIT 5000"""
+        )
+        return cursor.fetchall()
 
 
 def auto_subscribe_eligible(conn, campaign_id: int) -> dict:
@@ -60,44 +62,44 @@ def auto_subscribe_eligible(conn, campaign_id: int) -> dict:
     """
     result = {"subscribed": 0, "skipped_gdpr": 0, "already_subscribed": 0}
 
-    cursor = conn.cursor()
-    # Get all contacts with no_response in this campaign
-    cursor.execute(
-        """SELECT c.id, c.is_gdpr, c.newsletter_status, c.email,
-                  co.is_gdpr as company_gdpr
-           FROM contacts c
-           JOIN contact_campaign_status ccs ON ccs.contact_id = c.id
-           LEFT JOIN companies co ON co.id = c.company_id
-           WHERE ccs.campaign_id = %s
-             AND ccs.status = 'no_response'""",
-        (campaign_id,),
-    )
-    rows = cursor.fetchall()
-
-    for row in rows:
-        # Skip contacts without email
-        if not row["email"]:
-            continue
-
-        # Check GDPR status (contact or company level)
-        is_gdpr = bool(row["is_gdpr"]) or bool(row["company_gdpr"] or 0)
-        if is_gdpr:
-            result["skipped_gdpr"] += 1
-            continue
-
-        # Check if already subscribed or unsubscribed
-        if row["newsletter_status"] in ("subscribed", "unsubscribed"):
-            result["already_subscribed"] += 1
-            continue
-
-        # Subscribe
+    with get_cursor(conn) as cursor:
+        # Get all contacts with no_response in this campaign
         cursor.execute(
-            "UPDATE contacts SET newsletter_status = 'subscribed' WHERE id = %s",
-            (row["id"],),
+            """SELECT c.id, c.is_gdpr, c.newsletter_status, c.email,
+                      co.is_gdpr as company_gdpr
+               FROM contacts c
+               JOIN contact_campaign_status ccs ON ccs.contact_id = c.id
+               LEFT JOIN companies co ON co.id = c.company_id
+               WHERE ccs.campaign_id = %s
+                 AND ccs.status = 'no_response'""",
+            (campaign_id,),
         )
-        result["subscribed"] += 1
+        rows = cursor.fetchall()
 
-    conn.commit()
+        for row in rows:
+            # Skip contacts without email
+            if not row["email"]:
+                continue
+
+            # Check GDPR status (contact or company level)
+            is_gdpr = bool(row["is_gdpr"]) or bool(row["company_gdpr"] or 0)
+            if is_gdpr:
+                result["skipped_gdpr"] += 1
+                continue
+
+            # Check if already subscribed or unsubscribed
+            if row["newsletter_status"] in ("subscribed", "unsubscribed"):
+                result["already_subscribed"] += 1
+                continue
+
+            # Subscribe
+            cursor.execute(
+                "UPDATE contacts SET newsletter_status = 'subscribed' WHERE id = %s",
+                (row["id"],),
+            )
+            result["subscribed"] += 1
+
+        conn.commit()
     return result
 
 
@@ -107,13 +109,13 @@ def subscribe_contact(conn, contact_id: int) -> bool:
     Sets newsletter_status = 'subscribed'.
     Returns True if updated, False if not found.
     """
-    cursor = conn.cursor()
-    cursor.execute(
-        "UPDATE contacts SET newsletter_status = 'subscribed' WHERE id = %s",
-        (contact_id,),
-    )
-    conn.commit()
-    return cursor.rowcount > 0
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            "UPDATE contacts SET newsletter_status = 'subscribed' WHERE id = %s",
+            (contact_id,),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
 
 
 def unsubscribe_contact(conn, contact_id: int) -> bool:
@@ -122,13 +124,13 @@ def unsubscribe_contact(conn, contact_id: int) -> bool:
     Sets newsletter_status = 'unsubscribed' and unsubscribed = 1.
     Returns True if updated, False if not found.
     """
-    cursor = conn.cursor()
-    cursor.execute(
-        "UPDATE contacts SET newsletter_status = 'unsubscribed', unsubscribed = true WHERE id = %s",
-        (contact_id,),
-    )
-    conn.commit()
-    return cursor.rowcount > 0
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            "UPDATE contacts SET newsletter_status = 'unsubscribed', unsubscribed = true WHERE id = %s",
+            (contact_id,),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
 
 
 def render_newsletter(markdown_path: str, config: dict) -> tuple:
@@ -155,7 +157,8 @@ def render_newsletter(markdown_path: str, config: dict) -> tuple:
     raw_md = md_path.read_text(encoding="utf-8")
 
     # Step 1: Render Jinja2 variables in the markdown
-    tmpl = Template(raw_md)
+    env = SandboxedEnvironment()
+    tmpl = env.from_string(raw_md)
     rendered_md = tmpl.render(
         calendly_url=config.get("calendly_url", ""),
         physical_address=config.get("physical_address", ""),
@@ -210,6 +213,7 @@ def send_newsletter(
     markdown_path: str,
     config: dict,
     dry_run: bool = False,
+    user_id: int = 1,
 ) -> dict:
     """Send a newsletter to all subscribers.
 
@@ -267,9 +271,116 @@ def send_newsletter(
                 contact["id"],
                 "newsletter_sent",
                 metadata=metadata,
+                user_id=user_id,
             )
         else:
             result["failed"] += 1
+
+    return result
+
+
+def send_newsletter_to_recipients(
+    conn,
+    newsletter_id: int,
+    newsletter: dict,
+    recipients: list,
+    config: dict,
+    attachments: list,
+    user_id: int = 1,
+) -> dict:
+    """Send an HTML newsletter to a list of recipients.
+
+    Args:
+        conn: database connection
+        newsletter_id: the newsletter record ID
+        newsletter: dict with subject, body_html, body_text
+        recipients: list of contact dicts with id, email, full_name
+        config: app config dict with smtp settings
+        attachments: list of attachment dicts with file_path, filename
+
+    Returns:
+        {"sent": int, "failed": int, "total": int}
+    """
+    result = {"sent": 0, "failed": 0, "total": len(recipients)}
+
+    smtp_config = config.get("smtp", {})
+    from_email = smtp_config.get("username", "")
+    physical_address = config.get("physical_address", "")
+    unsubscribe_url = build_unsubscribe_url(from_email)
+
+    body_html = add_compliance_footer_html(
+        newsletter["body_html"], physical_address, unsubscribe_url,
+    )
+    body_text = newsletter.get("body_text") or ""
+    if body_text:
+        body_text = add_compliance_footer(body_text, physical_address, unsubscribe_url)
+
+    # Build attachment list for batch send
+    att_list = [
+        {"file_path": a["file_path"], "filename": a["filename"]}
+        for a in attachments
+    ] if attachments else None
+
+    with get_cursor(conn) as cursor:
+        # Create all send records upfront
+        for contact in recipients:
+            cursor.execute(
+                """INSERT INTO newsletter_sends (newsletter_id, contact_id, status)
+                   VALUES (%s, %s, 'pending')
+                   ON CONFLICT (newsletter_id, contact_id) DO NOTHING""",
+                (newsletter_id, contact["id"]),
+            )
+        conn.commit()
+
+        # Build batch messages
+        batch_messages = [
+            {
+                "to_email": contact["email"],
+                "subject": newsletter["subject"],
+                "body_text": body_text or newsletter["subject"],
+                "body_html": body_html,
+                "attachments": att_list,
+            }
+            for contact in recipients
+        ]
+
+        # Send all via single SMTP session
+        send_results = send_emails_batch(
+            smtp_host=smtp_config.get("host", "smtp.gmail.com"),
+            smtp_port=smtp_config.get("port", 587),
+            smtp_username=smtp_config.get("username", ""),
+            smtp_password=config.get("smtp_password", ""),
+            from_email=from_email,
+            messages=batch_messages,
+        )
+
+        # Update individual send records based on results
+        for contact, success in zip(recipients, send_results):
+            if success:
+                result["sent"] += 1
+                cursor.execute(
+                    "UPDATE newsletter_sends SET status = 'sent', sent_at = NOW() WHERE newsletter_id = %s AND contact_id = %s",
+                    (newsletter_id, contact["id"]),
+                )
+                log_event(
+                    conn, contact["id"], "newsletter_sent",
+                    metadata=json.dumps({"newsletter_id": newsletter_id, "subject": newsletter["subject"]}),
+                    user_id=user_id,
+                )
+            else:
+                result["failed"] += 1
+                cursor.execute(
+                    "UPDATE newsletter_sends SET status = 'failed', error_message = 'SMTP send failed' WHERE newsletter_id = %s AND contact_id = %s",
+                    (newsletter_id, contact["id"]),
+                )
+
+        # Update newsletter status
+        final_status = "sent" if result["failed"] == 0 else ("failed" if result["sent"] == 0 else "sent")
+        cursor.execute(
+            "UPDATE newsletters SET status = %s, sent_at = NOW(), recipient_count = %s, updated_at = NOW() WHERE id = %s",
+            (final_status, result["sent"], newsletter_id),
+        )
+        conn.commit()
 
     return result
 

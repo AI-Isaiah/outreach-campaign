@@ -9,6 +9,8 @@ from __future__ import annotations
 import random
 from typing import Optional
 
+from src.models.database import get_cursor
+
 
 def assign_variant(contact_id: int, variants: list[str] = None) -> str:
     """Assign a contact to an A/B variant deterministically.
@@ -45,37 +47,37 @@ def get_variant_stats(conn, campaign_id: int) -> list[dict]:
         List of dicts with keys: variant, total, replied_positive,
         replied_negative, no_response, reply_rate.
     """
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        SELECT
-            assigned_variant,
-            COUNT(*) AS total,
-            SUM(CASE WHEN status = 'replied_positive' THEN 1 ELSE 0 END) AS replied_positive,
-            SUM(CASE WHEN status = 'replied_negative' THEN 1 ELSE 0 END) AS replied_negative,
-            SUM(CASE WHEN status = 'no_response' THEN 1 ELSE 0 END) AS no_response
-        FROM contact_campaign_status
-        WHERE campaign_id = %s
-        GROUP BY assigned_variant
-        ORDER BY assigned_variant
-        """,
-        (campaign_id,),
-    )
-    rows = cursor.fetchall()
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            """
+            SELECT
+                assigned_variant,
+                COUNT(*) AS total,
+                SUM(CASE WHEN status = 'replied_positive' THEN 1 ELSE 0 END) AS replied_positive,
+                SUM(CASE WHEN status = 'replied_negative' THEN 1 ELSE 0 END) AS replied_negative,
+                SUM(CASE WHEN status = 'no_response' THEN 1 ELSE 0 END) AS no_response
+            FROM contact_campaign_status
+            WHERE campaign_id = %s
+            GROUP BY assigned_variant
+            ORDER BY assigned_variant
+            """,
+            (campaign_id,),
+        )
+        rows = cursor.fetchall()
 
-    results = []
-    for row in rows:
-        total = row["total"]
-        positive = row["replied_positive"]
-        negative = row["replied_negative"]
-        reply_rate = (positive + negative) / total if total > 0 else 0.0
-        results.append({
-            "variant": row["assigned_variant"],
-            "total": total,
-            "replied_positive": positive,
-            "replied_negative": negative,
-            "no_response": row["no_response"],
-            "reply_rate": round(reply_rate, 4),
-        })
+        results = []
+        for row in rows:
+            total = row["total"]
+            positive = row["replied_positive"]
+            negative = row["replied_negative"]
+            reply_rate = (positive + negative) / total if total > 0 else 0.0
+            results.append({
+                "variant": row["assigned_variant"],
+                "total": total,
+                "replied_positive": positive,
+                "replied_negative": negative,
+                "no_response": row["no_response"],
+                "reply_rate": round(reply_rate, 4),
+            })
 
-    return results
+        return results

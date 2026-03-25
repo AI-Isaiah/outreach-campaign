@@ -1,0 +1,2749 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claude Code Sessions - Outreach Campaign</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background-color: #0f1117;
+            color: #e4e6ed;
+            line-height: 1.6;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            margin-bottom: 30px;
+            color: #6c5ce7;
+            font-size: 2.5em;
+        }
+
+        .progress-tracker {
+            background-color: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 40px;
+        }
+
+        .progress-title {
+            font-size: 1.1em;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #6c5ce7;
+        }
+
+        .progress-items {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .progress-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .progress-item input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+            accent-color: #6c5ce7;
+        }
+
+        .progress-item label {
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .progress-item input[type="checkbox"]:checked + label {
+            color: #79c0ff;
+            text-decoration: line-through;
+        }
+
+        .sessions-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+        }
+
+        .session-card {
+            background-color: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            overflow: hidden;
+            transition: border-color 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .session-card:hover {
+            border-color: #6c5ce7;
+            box-shadow: 0 0 20px rgba(108, 92, 231, 0.2);
+        }
+
+        .session-header {
+            padding: 20px;
+            background-color: #0d1117;
+            border-bottom: 1px solid #30363d;
+            cursor: pointer;
+            user-select: none;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 15px;
+        }
+
+        .session-header:hover {
+            background-color: #161b22;
+        }
+
+        .session-info {
+            flex: 1;
+        }
+
+        .session-title {
+            font-size: 1.3em;
+            font-weight: 700;
+            color: #6c5ce7;
+            margin-bottom: 8px;
+        }
+
+        .session-meta {
+            display: flex;
+            gap: 20px;
+            font-size: 0.9em;
+            color: #8b949e;
+        }
+
+        .session-meta-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .toggle-icon {
+            font-size: 1.3em;
+            color: #6c5ce7;
+            transition: transform 0.3s ease;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+
+        .session-card.expanded .toggle-icon {
+            transform: rotate(180deg);
+        }
+
+        .session-description {
+            padding: 0 20px 15px;
+            color: #8b949e;
+            font-size: 0.95em;
+            font-style: italic;
+        }
+
+        .session-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+        }
+
+        .session-card.expanded .session-content {
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        .copy-button-area {
+            padding: 0 20px 20px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .copy-button {
+            flex: 1;
+            background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%);
+            border: none;
+            color: white;
+            padding: 14px 20px;
+            border-radius: 6px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .copy-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(108, 92, 231, 0.4);
+        }
+
+        .copy-button:active {
+            transform: translateY(0);
+        }
+
+        .copy-button.copied {
+            background: linear-gradient(135deg, #79c0ff 0%, #58a6ff 100%);
+        }
+
+        .clipboard-icon {
+            font-size: 1.2em;
+        }
+
+        .spec-preview {
+            background-color: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 15px;
+            overflow-y: auto;
+            max-height: 400px;
+        }
+
+        .spec-preview pre {
+            background-color: transparent;
+            border: none;
+            padding: 0;
+            font-size: 0.85em;
+            line-height: 1.5;
+            color: #e4e6ed;
+            font-family: 'Monaco', 'Courier New', monospace;
+            white-space: pre-wrap;
+            word-break: break-word;
+            overflow-x: hidden;
+        }
+
+        .spec-preview code {
+            color: #79c0ff;
+            background-color: transparent;
+        }
+
+        .session-content {
+            padding: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .sessions-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .session-meta {
+                flex-wrap: wrap;
+            }
+
+            h1 {
+                font-size: 1.8em;
+            }
+
+            .session-card.expanded .session-content {
+                max-height: 800px;
+            }
+        }
+
+        /* Scrollbar styling */
+        .spec-preview::-webkit-scrollbar,
+        .session-card.expanded .session-content::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .spec-preview::-webkit-scrollbar-track,
+        .session-card.expanded .session-content::-webkit-scrollbar-track {
+            background: #0d1117;
+            border-radius: 4px;
+        }
+
+        .spec-preview::-webkit-scrollbar-thumb,
+        .session-card.expanded .session-content::-webkit-scrollbar-thumb {
+            background: #30363d;
+            border-radius: 4px;
+        }
+
+        .spec-preview::-webkit-scrollbar-thumb:hover,
+        .session-card.expanded .session-content::-webkit-scrollbar-thumb:hover {
+            background: #6c5ce7;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Claude Code Sessions</h1>
+
+        <div class="progress-tracker">
+            <div class="progress-title">Session Progress</div>
+            <div class="progress-items">
+                <div class="progress-item">
+                    <input type="checkbox" id="session1-done">
+                    <label for="session1-done">Session 1: Production Hardening</label>
+                </div>
+                <div class="progress-item">
+                    <input type="checkbox" id="session2-done">
+                    <label for="session2-done">Session 2: Security & Auth</label>
+                </div>
+                <div class="progress-item">
+                    <input type="checkbox" id="session3-done">
+                    <label for="session3-done">Session 3: API Hardening</label>
+                </div>
+                <div class="progress-item">
+                    <input type="checkbox" id="session4-done">
+                    <label for="session4-done">Session 4: Email Compliance</label>
+                </div>
+                <div class="progress-item">
+                    <input type="checkbox" id="session5-done">
+                    <label for="session5-done">Session 5: CRM</label>
+                </div>
+                <div class="progress-item">
+                    <input type="checkbox" id="session6-done">
+                    <label for="session6-done">Session 6: Deployment</label>
+                </div>
+            </div>
+        </div>
+
+        <div class="sessions-grid">
+            <!-- Session 1 -->
+            <div class="session-card" data-session="1">
+                <div class="session-header" onclick="toggleSession(this)">
+                    <div class="session-info">
+                        <div class="session-title">Session 1</div>
+                        <div class="session-meta">
+                            <div class="session-meta-item">⏱️ 2–3 hours</div>
+                            <div class="session-meta-item">🔴 P0</div>
+                        </div>
+                        <div class="session-description">Fix 8 critical production bugs before deploying</div>
+                    </div>
+                    <div class="toggle-icon">▼</div>
+                </div>
+                <div class="session-content">
+                    <div class="copy-button-area">
+                        <button class="copy-button" onclick="copyToClipboard(1)">
+                            <span class="clipboard-icon">📋</span>
+                            Copy to Clipboard
+                        </button>
+                    </div>
+                    <div class="spec-preview"><pre id="session-1-content"># Spec 01: Production Hardening
+
+**Priority:** P0 — BLOCKING. Do this first before any other spec.
+**Estimated time:** 2–3 hours
+**Prerequisite:** None
+
+---
+
+## Problem Statement
+
+The codebase has 6 known bugs and 3 performance bottlenecks that will cause failures in production. These must be fixed before adding features or deploying. The bugs were identified in the March 3 code review (see `CODE_REVIEW_COMPREHENSIVE.md` and `NEXT_STEPS.md`).
+
+---
+
+## Task 1: Fix Double Compliance Footer in HTML Emails
+
+**File:** `src/services/email_sender.py` (around line 160–185)
+**Bug:** The compliance footer is added to the plain-text body. Then the text is converted to HTML (which includes the footer). Then the HTML footer is added AGAIN. Result: duplicate footer in HTML emails.
+
+**Fix logic:**
+1. Render the template body (plain text)
+2. Convert body (WITHOUT footer) to HTML
+3. Add plain-text footer to plain-text version
+4. Add HTML footer to HTML version
+5. Each version gets the footer exactly once
+
+**Acceptance criteria:**
+- [ ] Send a test email — HTML version has exactly one compliance footer
+- [ ] Plain-text version has exactly one compliance footer
+- [ ] Footer contains: physical address, unsubscribe link
+- [ ] Existing test `test_email_sender.py` still passes
+
+---
+
+## Task 2: Fix Deduplication Transaction Safety
+
+**File:** `src/services/deduplication.py` (lines 37–100)
+**Bug:** The 3-pass dedup loop does DELETE + INSERT without rollback on failure. If pass 2 fails mid-way, pass 1's changes are committed but pass 2 leaves corrupt data.
+
+**Fix:**
+```python
+# Wrap each pass in try/except with rollback
+for pass_name, pass_func in passes:
+    try:
+        result = pass_func(conn, ...)
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"Dedup pass '{pass_name}' failed: {e}")
+        raise
+```
+
+**Acceptance criteria:**
+- [ ] Each dedup pass is wrapped in try/except with conn.rollback()
+- [ ] If a pass fails, subsequent passes do NOT run
+- [ ] Error is logged with pass name and exception details
+- [ ] Existing test `test_deduplication.py` still passes
+
+---
+
+## Task 3: Fix NULL Template Body Crash
+
+**File:** `src/services/email_sender.py` (around line 167)
+**Bug:** If `body_template` is NULL in the database, calling `.endswith(".txt")` crashes with `AttributeError: 'NoneType'`.
+
+**Fix:**
+```python
+template_body = template_row.get("body_template") or ""
+```
+
+**Acceptance criteria:**
+- [ ] Calling send with a template that has NULL body_template does not crash
+- [ ] Returns False or logs a warning instead of raising AttributeError
+- [ ] Add a test case for NULL body_template in `test_email_sender.py`
+
+---
+
+## Task 4: Fix Cursor Leaks in Services
+
+**Files:** `src/services/priority_queue.py`, `src/services/state_machine.py`, `src/services/compliance.py`
+**Bug:** Cursors are created with `conn.cursor()` but never closed in a finally block. If an exception occurs, the cursor leaks.
+
+**Fix pattern for all three files:**
+```python
+cursor = conn.cursor()
+try:
+    cursor.execute(...)
+    # ... business logic ...
+finally:
+    cursor.close()
+```
+
+**Acceptance criteria:**
+- [ ] Every `conn.cursor()` call in these 3 files is wrapped in try/finally
+- [ ] All existing tests pass
+- [ ] No cursor objects left open on exception paths
+
+---
+
+## Task 5: Move Migrations to App Startup
+
+**File:** `src/web/dependencies.py` (around line 14)
+**Bug:** `run_migrations(conn)` is called on EVERY web request via the `get_db` dependency. This executes 330+ lines of SQL on every API call.
+
+**Fix:**
+```python
+# In src/web/app.py, add startup event:
+from contextlib import asynccontextmanager
+from src.models.database import get_connection, run_migrations
+import os
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Run migrations once at startup
+    db_url = os.getenv("SUPABASE_DB_URL")
+    if db_url:
+        conn = get_connection(db_url)
+        try:
+            run_migrations(conn)
+            conn.commit()
+        finally:
+            conn.close()
+    yield
+
+app = FastAPI(
+    title="Outreach Campaign Dashboard",
+    version="2.0.0",
+    lifespan=lifespan,
+)
+```
+
+Then REMOVE the `run_migrations()` call from `get_db()` in `dependencies.py`.
+
+**Acceptance criteria:**
+- [ ] Migrations run exactly once on server startup
+- [ ] `get_db()` no longer calls `run_migrations()`
+- [ ] API requests are faster (no 330-line SQL overhead per request)
+- [ ] App still works correctly after restart
+
+---
+
+## Task 6: Add Connection Pooling
+
+**File:** `src/models/database.py`
+**Bug:** `get_connection()` creates a brand-new psycopg2 connection on every call. The web app calls this per-request, which will exhaust Supabase's 60-connection limit under any real load.
+
+**Fix:**
+```python
+import psycopg2
+import psycopg2.extras
+import psycopg2.pool
+from pathlib import Path
+import os
+
+MIGRATIONS_DIR = Path(__file__).parent.parent.parent / "migrations" / "pg"
+
+_pool = None
+
+def get_pool(db_url: str = None, minconn: int = 2, maxconn: int = 10):
+    global _pool
+    if _pool is None:
+        url = db_url or os.getenv("SUPABASE_DB_URL")
+        _pool = psycopg2.pool.ThreadedConnectionPool(
+            minconn, maxconn, url,
+            cursor_factory=psycopg2.extras.RealDictCursor,
+        )
+    return _pool
+
+def get_connection(db_url: str = None):
+    """Get a connection from the pool (or create direct if no pool)."""
+    if _pool is not None:
+        conn = _pool.getconn()
+        conn.autocommit = False
+        return conn
+    # Fallback for CLI commands and tests
+    url = db_url or os.getenv("SUPABASE_DB_URL")
+    conn = psycopg2.connect(url, cursor_factory=psycopg2.extras.RealDictCursor)
+    conn.autocommit = False
+    return conn
+
+def return_connection(conn):
+    """Return a connection to the pool."""
+    if _pool is not None:
+        _pool.putconn(conn)
+    else:
+        conn.close()
+
+def run_migrations(conn) -> None:
+    migration_files = sorted(MIGRATIONS_DIR.glob("*.sql"))
+    cursor = conn.cursor()
+    for migration_file in migration_files:
+        sql = migration_file.read_text().strip()
+        if sql:
+            cursor.execute(sql)
+    conn.commit()
+
+def get_table_names(conn) -> list[str]:
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT table_name FROM information_schema.tables "
+        "WHERE table_schema = 'public'"
+    )
+    return [row["table_name"] for row in cursor.fetchall()]
+```
+
+Then update `src/web/dependencies.py` to use `return_connection`:
+```python
+def get_db():
+    conn = get_connection()
+    try:
+        yield conn
+    finally:
+        return_connection(conn)
+```
+
+Initialize the pool in the lifespan handler (from Task 5):
+```python
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    db_url = os.getenv("SUPABASE_DB_URL")
+    if db_url:
+        pool = get_pool(db_url)
+        conn = get_connection()
+        try:
+            run_migrations(conn)
+        finally:
+            return_connection(conn)
+    yield
+    # Cleanup pool on shutdown
+    if _pool:
+        _pool.closeall()
+```
+
+**Acceptance criteria:**
+- [ ] Web requests use pooled connections (verify with `_pool.getconn()` / `putconn()`)
+- [ ] CLI commands still work (fallback to direct connection when no pool)
+- [ ] Tests still work (they use their own ephemeral PG instance)
+- [ ] Connections are always returned to pool (no leaks)
+
+---
+
+## Task 7: Fix N+1 Query in Priority Queue
+
+**File:** `src/services/priority_queue.py` (lines 118–120)
+**Bug:** For each contact in the queue, a separate query fetches `total_steps`. With 50 contacts in queue, this is 51 queries.
+
+**Fix:** Replace the per-row call with a single JOIN or subquery in the main queue query:
+```python
+# Instead of:
+for row in rows:
+    total_steps = count_steps_for_contact(conn, row["contact_id"], campaign_id)
+
+# Use a single query that includes step counts:
+query = """
+    SELECT ccs.*, c.full_name, c.email, co.name AS company_name, co.aum_millions,
+           (SELECT COUNT(*) FROM sequence_steps ss
+            WHERE ss.campaign_id = ccs.campaign_id) AS total_steps
+    FROM contact_campaign_status ccs
+    JOIN contacts c ON c.id = ccs.contact_id
+    LEFT JOIN companies co ON co.id = c.company_id
+    WHERE ccs.campaign_id = %s AND ccs.status = 'queued'
+    ...
+"""
+```
+
+Note: If `total_steps` is the same for all contacts in a campaign (sequence_steps are campaign-level, not per-contact), this can be a single count fetched once outside the loop.
+
+**Acceptance criteria:**
+- [ ] No per-row query calls inside the priority queue loop
+- [ ] Queue generation uses at most 2-3 queries total (regardless of queue size)
+- [ ] `test_priority_queue.py` still passes
+- [ ] Queue output is identical to before (same contacts, same order)
+
+---
+
+## Task 8: Fix current_step Schema Default
+
+**File:** `migrations/pg/001_initial_schema.sql`
+**Bug:** `current_step` column defaults to 0 in the schema, but enrollment always inserts 1 (sequence steps start at 1). Inconsistency causes confusion.
+
+**Fix:** Change the DEFAULT in the migration:
+```sql
+current_step INTEGER NOT NULL DEFAULT 1,
+```
+
+**Acceptance criteria:**
+- [ ] Schema default matches enrollment behavior
+- [ ] Existing enrolled contacts not affected (they already have current_step=1)
+
+---
+
+## Verification Checklist
+
+After completing all 8 tasks:
+
+```bash
+# Run the full test suite
+PATH="/opt/homebrew/opt/postgresql@16/bin:$PATH" make test
+
+# Start the web app and verify it launches without errors
+python3 -m uvicorn src.web.app:app --reload
+
+# Hit the health endpoint
+curl http://localhost:8000/api/health
+```
+
+- [ ] All tests pass
+- [ ] Web app starts without migration errors
+- [ ] Health endpoint returns 200
+- [ ] No Python warnings about deprecated patterns</pre></div>
+                </div>
+            </div>
+
+            <!-- Session 2 -->
+            <div class="session-card" data-session="2">
+                <div class="session-header" onclick="toggleSession(this)">
+                    <div class="session-info">
+                        <div class="session-title">Session 2</div>
+                        <div class="session-meta">
+                            <div class="session-meta-item">⏱️ 3–4 hours</div>
+                            <div class="session-meta-item">🔴 P0</div>
+                        </div>
+                        <div class="session-description">Add API authentication, secure Gmail tokens, validate uploads</div>
+                    </div>
+                    <div class="toggle-icon">▼</div>
+                </div>
+                <div class="session-content">
+                    <div class="copy-button-area">
+                        <button class="copy-button" onclick="copyToClipboard(2)">
+                            <span class="clipboard-icon">📋</span>
+                            Copy to Clipboard
+                        </button>
+                    </div>
+                    <div class="spec-preview"><pre id="session-2-content"># Spec 02: Security & Authentication
+
+**Priority:** P0 — BLOCKING before any public deployment
+**Estimated time:** 3–4 hours
+**Prerequisite:** Spec 01 (Production Hardening) completed
+
+---
+
+## Problem Statement
+
+The web API has zero authentication. All 50+ endpoints are publicly accessible to anyone on the network. There is no API key, no JWT, no session management. Additionally, CORS is hardcoded to localhost, Gmail tokens are stored insecurely, and file uploads have no size/type validation. These issues must be resolved before the app can be accessed outside of localhost.
+
+---
+
+## Task 1: Add API Key Authentication Middleware
+
+**Files to create/modify:**
+- Create: `src/web/auth.py`
+- Modify: `src/web/app.py`
+- Modify: `.env` (add API_SECRET_KEY)
+- Modify: `.env.example`
+
+**Implementation:**
+
+Create `src/web/auth.py`:
+```python
+"""API key authentication middleware."""
+
+from __future__ import annotations
+
+import os
+import secrets
+from typing import Optional
+
+from fastapi import HTTPException, Security
+from fastapi.security import APIKeyHeader
+
+API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+def get_api_key() -> str:
+    """Get or generate the API key from environment."""
+    key = os.getenv("API_SECRET_KEY")
+    if not key:
+        # Generate a key and print it (for first-time setup)
+        key = secrets.token_urlsafe(32)
+        print(f"\n⚠️  No API_SECRET_KEY set. Generated: {key}")
+        print(f"   Add to .env: API_SECRET_KEY={key}\n")
+    return key
+
+async def verify_api_key(api_key: Optional[str] = Security(API_KEY_HEADER)):
+    """FastAPI dependency that validates the API key header."""
+    expected = get_api_key()
+    if not api_key or api_key != expected:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or missing API key. Pass X-API-Key header.",
+        )
+    return api_key
+```
+
+Apply to all routes in `src/web/app.py`:
+```python
+from src.web.auth import verify_api_key
+from fastapi import Depends
+
+# Add global dependency to all routes
+app = FastAPI(
+    title="Outreach Campaign Dashboard",
+    version="2.0.0",
+    lifespan=lifespan,
+    dependencies=[Depends(verify_api_key)],
+)
+
+# EXCEPT health check — override to be public:
+@app.get("/api/health", dependencies=[])
+def health_check():
+    ...
+```
+
+Update `.env` and `.env.example`:
+```
+API_SECRET_KEY=your-secret-key-here
+```
+
+Update the React frontend `api/client.ts` to include the API key:
+```typescript
+const API_KEY = import.meta.env.VITE_API_KEY || "";
+
+async function fetchAPI(path: string, options: RequestInit = {}) {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      "X-API-Key": API_KEY,
+      ...options.headers,
+    },
+  });
+  // ... existing error handling
+}
+```
+
+Add to frontend `.env`:
+```
+VITE_API_KEY=your-secret-key-here
+```
+
+**Acceptance criteria:**
+- [ ] All API endpoints (except /api/health) return 401 without X-API-Key header
+- [ ] All endpoints return 200 with valid X-API-Key header
+- [ ] Health check is accessible without authentication
+- [ ] Frontend sends API key in all requests
+- [ ] API key is loaded from .env (not hardcoded)
+- [ ] .env.example is updated with API_SECRET_KEY placeholder
+
+---
+
+## Task 2: Fix CORS Configuration
+
+**File:** `src/web/app.py`
+
+**Current (broken):**
+```python
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+**Fix:**
+```python
+import os
+
+ALLOWED_ORIGINS = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:5173,http://127.0.0.1:5173"
+).split(",")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in ALLOWED_ORIGINS],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "X-API-Key", "Authorization"],
+)
+```
+
+Update `.env.example`:
+```
+ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+```
+
+**Acceptance criteria:**
+- [ ] Origins loaded from ALLOWED_ORIGINS env var
+- [ ] Default still allows localhost:5173 (dev mode works)
+- [ ] Only specified HTTP methods are allowed (no wildcard)
+- [ ] Only needed headers are allowed (Content-Type, X-API-Key)
+- [ ] Production can set `ALLOWED_ORIGINS=https://app.yourdomain.com`
+
+---
+
+## Task 3: Secure Gmail Token Storage
+
+**File:** `src/services/gmail_drafter.py` (around line 94)
+
+**Current (insecure):**
+```python
+self.token_path = Path(token_path)  # defaults to ".gmail_token.json" in project root
+self.token_path.write_text(creds.to_json())
+```
+
+**Fix:**
+```python
+import os
+
+# Store tokens in a secure directory outside project root
+DEFAULT_TOKEN_DIR = os.path.expanduser("~/.outreach-campaign")
+DEFAULT_TOKEN_PATH = os.path.join(DEFAULT_TOKEN_DIR, "gmail_token.json")
+
+def __init__(self, ..., token_path: str = None):
+    self.token_path = Path(token_path or os.getenv("GMAIL_TOKEN_PATH", DEFAULT_TOKEN_PATH))
+
+    # Create directory with restricted permissions
+    self.token_path.parent.mkdir(parents=True, exist_ok=True)
+    os.chmod(str(self.token_path.parent), 0o700)
+
+def _save_token(self, creds):
+    """Save token with restricted file permissions."""
+    self.token_path.write_text(creds.to_json())
+    os.chmod(str(self.token_path), 0o600)  # Owner read/write only
+```
+
+Also add to `.gitignore`:
+```
+.gmail_token.json
+**/gmail_token.json
+```
+
+**Acceptance criteria:**
+- [ ] Token file stored in ~/.outreach-campaign/ (not project root)
+- [ ] Token file has 600 permissions (owner read/write only)
+- [ ] Token directory has 700 permissions
+- [ ] GMAIL_TOKEN_PATH env var overrides default location
+- [ ] .gitignore blocks all gmail_token.json files
+
+---
+
+## Task 4: Add File Upload Validation
+
+**File:** `src/web/routes/import_routes.py`
+
+**Current (vulnerable):**
+```python
+async def import_csv(file: UploadFile = File(...)):
+    if not file.filename or not file.filename.endswith(".csv"):
+        raise HTTPException(400, "File must be a CSV")
+    content = await file.read()
+    # No size limit, no MIME type check
+```
+
+**Fix:**
+```python
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+
+ALLOWED_MIME_TYPES = [
+    "text/csv",
+    "application/csv",
+    "text/plain",              # Some systems send CSV as text/plain
+    "application/vnd.ms-excel", # Excel sometimes masquerades as CSV
+]
+
+async def import_csv(file: UploadFile = File(...)):
+    # Check filename
+    if not file.filename or not file.filename.endswith(".csv"):
+        raise HTTPException(400, "File must be a CSV")
+
+    # Check MIME type
+    if file.content_type and file.content_type not in ALLOWED_MIME_TYPES:
+        raise HTTPException(400, f"Invalid file type: {file.content_type}. Must be CSV.")
+
+    # Read with size limit
+    content = await file.read(MAX_FILE_SIZE + 1)
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(413, f"File too large. Maximum size: {MAX_FILE_SIZE // (1024*1024)}MB")
+
+    # Validate content is parseable as CSV
+    try:
+        import csv
+        import io
+        reader = csv.DictReader(io.StringIO(content.decode("utf-8")))
+        # Read first row to validate structure
+        first_row = next(reader, None)
+        if first_row is None:
+            raise HTTPException(400, "CSV file is empty")
+    except UnicodeDecodeError:
+        raise HTTPException(400, "File must be UTF-8 encoded text")
+    except csv.Error as e:
+        raise HTTPException(400, f"Invalid CSV format: {e}")
+
+    # ... rest of existing import logic
+```
+
+**Acceptance criteria:**
+- [ ] Files larger than 10MB are rejected with 413
+- [ ] Non-CSV MIME types are rejected with 400
+- [ ] Non-UTF-8 files are rejected
+- [ ] Empty CSVs are rejected
+- [ ] Malformed CSVs are rejected
+- [ ] Valid CSVs under 10MB still import correctly
+
+---
+
+## Task 5: Fix Jinja2 Autoescape
+
+**File:** `src/services/template_engine.py` (around line 34)
+
+**Current:**
+```python
+env = Environment(loader=..., autoescape=False)
+```
+
+**Fix:**
+```python
+from jinja2 import Environment, select_autoescape
+
+env = Environment(
+    loader=...,
+    autoescape=select_autoescape(
+        enabled_extensions=("html", "htm"),
+        default_for_string=False,  # Plain text templates stay unescaped
+    ),
+)
+```
+
+This way: `.html` templates get autoescaped (XSS protection), `.txt` templates stay plain text (no unwanted escaping).
+
+**Acceptance criteria:**
+- [ ] HTML templates have autoescape enabled
+- [ ] Plain text templates (.txt) are NOT escaped
+- [ ] Existing template rendering still works
+- [ ] Special characters in contact names don't break HTML emails
+
+---
+
+## Task 6: Add Security Tests
+
+**File:** Create `tests/test_security.py`
+
+```python
+"""Security tests for authentication, CORS, and upload validation."""
+
+import pytest
+from fastapi.testclient import TestClient
+
+
+def test_api_rejects_unauthenticated_request(client):
+    """All endpoints should return 401 without API key."""
+    response = client.get("/api/contacts")
+    assert response.status_code == 401
+
+
+def test_api_accepts_valid_api_key(client):
+    """Endpoints should work with valid API key."""
+    response = client.get(
+        "/api/contacts",
+        headers={"X-API-Key": "test-key"},
+    )
+    assert response.status_code == 200
+
+
+def test_health_check_is_public(client):
+    """Health check should not require authentication."""
+    response = client.get("/api/health")
+    assert response.status_code == 200
+
+
+def test_upload_rejects_oversized_file(client):
+    """Import endpoint should reject files over 10MB."""
+    large_content = b"name,email\n" + b"a,b@c.com\n" * 2_000_000
+    response = client.post(
+        "/api/import/csv",
+        files={"file": ("huge.csv", large_content, "text/csv")},
+        headers={"X-API-Key": "test-key"},
+    )
+    assert response.status_code == 413
+
+
+def test_upload_rejects_non_csv(client):
+    """Import endpoint should reject non-CSV files."""
+    response = client.post(
+        "/api/import/csv",
+        files={"file": ("malware.exe", b"MZ...", "application/octet-stream")},
+        headers={"X-API-Key": "test-key"},
+    )
+    assert response.status_code == 400
+```
+
+**Acceptance criteria:**
+- [ ] Test file created and all tests pass
+- [ ] Tests cover: unauthenticated rejection, authenticated access, health check public, file size limit, file type limit
+
+---
+
+## Verification Checklist
+
+```bash
+# Test auth works
+curl http://localhost:8000/api/contacts          # Should return 401
+curl -H "X-API-Key: YOUR_KEY" http://localhost:8000/api/contacts  # Should return 200
+curl http://localhost:8000/api/health             # Should return 200 (no auth)
+
+# Run all tests
+make test
+```
+
+- [ ] All unauthenticated requests return 401
+- [ ] Health check is publicly accessible
+- [ ] CORS headers use env var
+- [ ] Gmail token stored outside project root
+- [ ] File uploads validated (size + type)
+- [ ] All existing tests still pass</pre></div>
+                </div>
+            </div>
+
+            <!-- Session 3 -->
+            <div class="session-card" data-session="3">
+                <div class="session-header" onclick="toggleSession(this)">
+                    <div class="session-info">
+                        <div class="session-title">Session 3</div>
+                        <div class="session-meta">
+                            <div class="session-meta-item">⏱️ 2–3 hours</div>
+                            <div class="session-meta-item">🔴 P0</div>
+                        </div>
+                        <div class="session-description">Add rate limiting, input validation, error handling, docs</div>
+                    </div>
+                    <div class="toggle-icon">▼</div>
+                </div>
+                <div class="session-content">
+                    <div class="copy-button-area">
+                        <button class="copy-button" onclick="copyToClipboard(3)">
+                            <span class="clipboard-icon">📋</span>
+                            Copy to Clipboard
+                        </button>
+                    </div>
+                    <div class="spec-preview"><pre id="session-3-content"># Spec 03: API Hardening
+
+**Priority:** P0 — Required before production
+**Estimated time:** 2–3 hours
+**Prerequisite:** Spec 01 + Spec 02 completed
+
+---
+
+## Problem Statement
+
+The FastAPI web API lacks input validation, rate limiting, consistent error responses, and proper health checks. Malformed requests can crash endpoints, there's no protection against abuse, and errors return raw Python tracebacks instead of structured JSON. These issues make the API fragile and insecure under real-world usage.
+
+---
+
+## Task 1: Add Rate Limiting
+
+**Install dependency:**
+```bash
+pip install slowapi>=0.1 --break-system-packages
+```
+
+**Add to `pyproject.toml` dependencies:**
+```
+"slowapi>=0.1",
+```
+
+**File:** `src/web/app.py`
+
+```python
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+```
+
+Apply default rate limit to all routes and stricter limits on mutation endpoints:
+
+```python
+# In src/web/app.py — apply default limit
+from slowapi.middleware import SlowAPIMiddleware
+app.add_middleware(SlowAPIMiddleware)
+
+# Default: 60 requests/minute per IP
+# For write endpoints, add decorator in individual route files:
+# @limiter.limit("10/minute")
+```
+
+Apply stricter limits on sensitive routes:
+- `POST /api/import/csv` → 5/minute (heavy operation)
+- `POST /api/contacts/{id}/status` → 30/minute
+- `POST /api/gmail/send` → 10/minute
+- All other POST/PUT/DELETE → 30/minute
+- All GET → 60/minute (default)
+
+**Acceptance criteria:**
+- [ ] Rate limiter installed and active
+- [ ] Exceeding rate returns 429 with `Retry-After` header
+- [ ] Import endpoint limited to 5/minute
+- [ ] Default limit is 60 requests/minute per IP
+- [ ] Rate limit info in response headers (X-RateLimit-Limit, X-RateLimit-Remaining)
+
+---
+
+## Task 2: Add Pydantic Request Validation
+
+**Files to modify:** All route files in `src/web/routes/`
+
+Add Pydantic models for request validation. The contacts.py route already has some (StatusTransitionRequest, ResponseNoteRequest). Extend this pattern to all routes.
+
+**Key models to add:**
+
+```python
+# src/web/schemas.py (new file)
+from pydantic import BaseModel, Field
+from typing import Optional
+
+class PaginationParams(BaseModel):
+    page: int = Field(1, ge=1, description="Page number")
+    per_page: int = Field(50, ge=1, le=100, description="Items per page (max 100)")
+
+class ContactSearchParams(PaginationParams):
+    search: Optional[str] = Field(None, max_length=200)
+    status: Optional[str] = Field(None, pattern="^(queued|in_progress|replied_positive|replied_negative|completed|unsubscribed|bounced)$")
+
+class CRMContactSearchParams(PaginationParams):
+    search: Optional[str] = Field(None, max_length=200)
+    status: Optional[str] = None
+    company_type: Optional[str] = None
+    min_aum: Optional[float] = Field(None, ge=0)
+    max_aum: Optional[float] = Field(None, ge=0)
+
+class CampaignCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    description: Optional[str] = Field(None, max_length=500)
+
+class TemplateCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    subject_template: str = Field(..., min_length=1, max_length=300)
+    body_template: str = Field(..., min_length=1)
+    channel: str = Field("email", pattern="^(email|linkedin)$")
+    variant_group: Optional[str] = None
+    variant_label: Optional[str] = None
+
+class GlobalSearchQuery(BaseModel):
+    q: str = Field(..., min_length=1, max_length=200)
+```
+
+Then replace raw query parameters with these models in route functions:
+```python
+# Before:
+def list_contacts(search: Optional[str] = None, page: int = 1, per_page: int = 50, ...):
+
+# After:
+def list_contacts(params: ContactSearchParams = Depends(), conn=Depends(get_db)):
+    offset = (params.page - 1) * params.per_page
+```
+
+**Acceptance criteria:**
+- [ ] All pagination is capped at 100 items per page
+- [ ] Page numbers must be >= 1
+- [ ] Search strings capped at 200 characters
+- [ ] Status values validated against allowed set
+- [ ] AUM filters must be >= 0
+- [ ] Invalid requests return 422 with clear error message
+- [ ] All existing API behavior preserved for valid inputs
+
+---
+
+## Task 3: Add Consistent Error Response Format
+
+**File:** Create `src/web/error_handlers.py`
+
+```python
+"""Centralized error handling for the API."""
+
+from __future__ import annotations
+
+import logging
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
+from pydantic import ValidationError
+
+logger = logging.getLogger(__name__)
+
+
+def register_error_handlers(app: FastAPI):
+    """Register all error handlers on the FastAPI app."""
+
+    @app.exception_handler(HTTPException)
+    async def http_exception_handler(request: Request, exc: HTTPException):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "error": True,
+                "status_code": exc.status_code,
+                "message": exc.detail,
+            },
+        )
+
+    @app.exception_handler(ValidationError)
+    async def validation_exception_handler(request: Request, exc: ValidationError):
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": True,
+                "status_code": 422,
+                "message": "Validation error",
+                "details": exc.errors(),
+            },
+        )
+
+    @app.exception_handler(Exception)
+    async def general_exception_handler(request: Request, exc: Exception):
+        logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": True,
+                "status_code": 500,
+                "message": "Internal server error",
+                # Don't expose stack trace in production
+            },
+        )
+```
+
+Register in `src/web/app.py`:
+```python
+from src.web.error_handlers import register_error_handlers
+register_error_handlers(app)
+```
+
+**Acceptance criteria:**
+- [ ] All errors return JSON with `error`, `status_code`, `message` fields
+- [ ] 422 errors include `details` array from Pydantic
+- [ ] 500 errors do NOT expose stack traces
+- [ ] 500 errors are logged with full traceback server-side
+- [ ] Frontend client.ts can parse all error responses consistently
+
+---
+
+## Task 4: Fix Health Check with DB Ping
+
+**File:** `src/web/app.py`
+
+**Current:**
+```python
+@app.get("/api/health")
+def health_check():
+    return {"status": "ok"}
+```
+
+**Fix:**
+```python
+import time
+
+@app.get("/api/health", dependencies=[])
+def health_check(conn=Depends(get_db)):
+    """Health check with database connectivity verification."""
+    checks = {"api": "ok", "database": "unknown"}
+
+    try:
+        start = time.time()
+        cur = conn.cursor()
+        cur.execute("SELECT 1")
+        cur.close()
+        db_ms = round((time.time() - start) * 1000, 1)
+        checks["database"] = "ok"
+        checks["database_latency_ms"] = db_ms
+    except Exception as e:
+        checks["database"] = f"error: {str(e)}"
+        return JSONResponse(
+            status_code=503,
+            content={"status": "degraded", "checks": checks},
+        )
+
+    return {"status": "ok", "checks": checks}
+```
+
+Note: health check should NOT require API key auth (it's excluded via `dependencies=[]`).
+
+**Acceptance criteria:**
+- [ ] Health check verifies DB connectivity via `SELECT 1`
+- [ ] Returns 200 with `database: ok` when DB is reachable
+- [ ] Returns 503 with `database: error` when DB is down
+- [ ] Includes database latency in milliseconds
+- [ ] Does not require authentication
+
+---
+
+## Task 5: Add Request Logging Middleware
+
+**File:** Create `src/web/middleware.py`
+
+```python
+"""Request logging middleware."""
+
+import logging
+import time
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+
+logger = logging.getLogger("outreach.api")
+
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        start = time.time()
+        response = await call_next(request)
+        duration_ms = round((time.time() - start) * 1000, 1)
+
+        logger.info(
+            "%s %s → %s (%sms)",
+            request.method,
+            request.url.path,
+            response.status_code,
+            duration_ms,
+        )
+        response.headers["X-Response-Time"] = f"{duration_ms}ms"
+        return response
+```
+
+Add to `app.py`:
+```python
+from src.web.middleware import RequestLoggingMiddleware
+app.add_middleware(RequestLoggingMiddleware)
+```
+
+**Acceptance criteria:**
+- [ ] Every request logs: method, path, status code, duration
+- [ ] Response includes X-Response-Time header
+- [ ] No PII logged (no email addresses, no request bodies)
+
+---
+
+## Task 6: Enable OpenAPI Documentation
+
+**File:** `src/web/app.py`
+
+FastAPI auto-generates OpenAPI docs, but they may not be properly exposed. Ensure:
+
+```python
+app = FastAPI(
+    title="Outreach Campaign API",
+    version="2.0.0",
+    description="Multi-channel outreach campaign manager for crypto fund allocators",
+    openapi_url="/api/openapi.json",
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    lifespan=lifespan,
+    dependencies=[Depends(verify_api_key)],
+)
+```
+
+The docs endpoints (`/api/docs`, `/api/redoc`) should be accessible without auth in development but can be restricted in production via an env var:
+
+```python
+import os
+ENABLE_DOCS = os.getenv("ENABLE_API_DOCS", "true").lower() == "true"
+
+app = FastAPI(
+    ...
+    docs_url="/api/docs" if ENABLE_DOCS else None,
+    redoc_url="/api/redoc" if ENABLE_DOCS else None,
+)
+```
+
+**Acceptance criteria:**
+- [ ] `/api/docs` shows Swagger UI
+- [ ] `/api/redoc` shows ReDoc
+- [ ] `/api/openapi.json` returns the OpenAPI spec
+- [ ] Docs can be disabled via `ENABLE_API_DOCS=false` env var
+
+---
+
+## Verification Checklist
+
+```bash
+# Test rate limiting
+for i in $(seq 1 65); do curl -s -o /dev/null -w "%{http_code}\n" -H "X-API-Key: KEY" http://localhost:8000/api/contacts; done
+# Should see 429 after 60 requests
+
+# Test validation
+curl -H "X-API-Key: KEY" "http://localhost:8000/api/contacts?page=-1"        # Should return 422
+curl -H "X-API-Key: KEY" "http://localhost:8000/api/contacts?per_page=9999"  # Should return 422
+
+# Test health check
+curl http://localhost:8000/api/health  # Should return DB status
+
+# Test docs
+open http://localhost:8000/api/docs    # Should show Swagger UI
+
+# Run all tests
+make test
+```
+
+- [ ] Rate limiting active (429 after limit exceeded)
+- [ ] Invalid inputs return 422 with details
+- [ ] All errors use consistent JSON format
+- [ ] Health check pings database
+- [ ] Request logging shows method/path/status/duration
+- [ ] OpenAPI docs accessible at /api/docs</pre></div>
+                </div>
+            </div>
+
+            <!-- Session 4 -->
+            <div class="session-card" data-session="4">
+                <div class="session-header" onclick="toggleSession(this)">
+                    <div class="session-info">
+                        <div class="session-title">Session 4</div>
+                        <div class="session-meta">
+                            <div class="session-meta-item">⏱️ 2–3 hours</div>
+                            <div class="session-meta-item">🔴 P0</div>
+                        </div>
+                        <div class="session-description">One-click unsubscribe, GDPR limits, email retry logic</div>
+                    </div>
+                    <div class="toggle-icon">▼</div>
+                </div>
+                <div class="session-content">
+                    <div class="copy-button-area">
+                        <button class="copy-button" onclick="copyToClipboard(4)">
+                            <span class="clipboard-icon">📋</span>
+                            Copy to Clipboard
+                        </button>
+                    </div>
+                    <div class="spec-preview"><pre id="session-4-content"># Spec 04: Email Deliverability & Compliance
+
+**Priority:** P0 — Required before sending real outreach
+**Estimated time:** 2–3 hours
+**Prerequisite:** Spec 01 completed (double footer bug fixed there)
+
+---
+
+## Problem Statement
+
+The email system has compliance gaps that risk CAN-SPAM fines and deliverability issues. The unsubscribe mechanism uses `mailto:` (requires the recipient to send an email to unsubscribe — not one-click). GDPR enforcement only checks at send time, not at the state machine level (so a 3rd email can be queued even if only 2 are allowed). Email send failures are silently swallowed with no retry or tracking. These issues must be fixed before sending outreach to real fund allocators.
+
+---
+
+## Task 1: Implement One-Click Unsubscribe
+
+**Files to modify:**
+- `src/services/compliance.py` (replace `build_unsubscribe_url`)
+- `src/web/app.py` (add unsubscribe route)
+- Create: `src/web/routes/unsubscribe.py`
+
+**Current (non-compliant):**
+```python
+def build_unsubscribe_url(from_email: str) -> str:
+    return f"mailto:{from_email}?subject=Unsubscribe"
+```
+
+**Fix — create token-based one-click unsubscribe:**
+
+`src/services/compliance.py` changes:
+```python
+import hashlib
+import hmac
+import os
+
+UNSUBSCRIBE_SECRET = os.getenv("UNSUBSCRIBE_SECRET", "change-me-in-production")
+
+def generate_unsubscribe_token(contact_id: int, email: str) -> str:
+    """Generate HMAC token for unsubscribe verification."""
+    payload = f"{contact_id}:{email}"
+    return hmac.new(
+        UNSUBSCRIBE_SECRET.encode(),
+        payload.encode(),
+        hashlib.sha256,
+    ).hexdigest()[:32]
+
+def build_unsubscribe_url(contact_id: int, email: str, base_url: str = None) -> str:
+    """Build a one-click unsubscribe URL."""
+    base = base_url or os.getenv("APP_BASE_URL", "http://localhost:8000")
+    token = generate_unsubscribe_token(contact_id, email)
+    return f"{base}/unsubscribe?id={contact_id}&token={token}"
+
+def verify_unsubscribe_token(contact_id: int, email: str, token: str) -> bool:
+    """Verify an unsubscribe token is valid."""
+    expected = generate_unsubscribe_token(contact_id, email)
+    return hmac.compare_digest(token, expected)
+```
+
+Create `src/web/routes/unsubscribe.py`:
+```python
+"""One-click unsubscribe endpoint (no auth required)."""
+
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import HTMLResponse
+
+from src.services.compliance import verify_unsubscribe_token, process_unsubscribe
+from src.web.dependencies import get_db
+
+router = APIRouter(tags=["unsubscribe"])
+
+@router.get("/unsubscribe", dependencies=[])  # No auth required
+def unsubscribe(
+    id: int = Query(...),
+    token: str = Query(...),
+    conn=Depends(get_db),
+):
+    """One-click unsubscribe. Validates token and marks contact as unsubscribed."""
+    cur = conn.cursor()
+    cur.execute("SELECT id, email, email_normalized FROM contacts WHERE id = %s", (id,))
+    contact = cur.fetchone()
+
+    if not contact:
+        raise HTTPException(404, "Contact not found")
+
+    if not verify_unsubscribe_token(id, contact["email"], token):
+        raise HTTPException(400, "Invalid unsubscribe link")
+
+    # Process the unsubscribe
+    process_unsubscribe(conn, contact["email_normalized"])
+
+    return HTMLResponse(content="""
+    <html>
+    <body style="font-family: sans-serif; text-align: center; padding: 60px;">
+        <h1>You've been unsubscribed</h1>
+        <p>You will no longer receive emails from us.</p>
+    </body>
+    </html>
+    """)
+```
+
+Register in `app.py` (outside auth middleware since recipients click this link):
+```python
+from src.web.routes import unsubscribe
+app.include_router(unsubscribe.router)  # No /api prefix, no auth
+```
+
+**Update all places that call `build_unsubscribe_url`** to pass `contact_id` and `email` instead of just `from_email`. Check:
+- `src/services/compliance.py` → `add_compliance_footer()` and `add_compliance_footer_html()`
+- `src/services/email_sender.py` → wherever the footer is generated
+
+Also add `List-Unsubscribe` header to outgoing emails in `email_sender.py`:
+```python
+msg["List-Unsubscribe"] = f"<{unsubscribe_url}>"
+msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
+```
+
+**Acceptance criteria:**
+- [ ] Clicking unsubscribe URL marks contact as unsubscribed (no email required)
+- [ ] Token prevents abuse (can't unsubscribe arbitrary contacts)
+- [ ] Unsubscribe page shows confirmation HTML
+- [ ] Invalid tokens return 400
+- [ ] List-Unsubscribe header present in all outgoing emails
+- [ ] List-Unsubscribe-Post header present (RFC 8058 compliance)
+- [ ] Unsubscribe endpoint has NO auth requirement
+
+---
+
+## Task 2: Add GDPR Limit Check to State Machine
+
+**File:** `src/services/state_machine.py`
+
+**Bug:** The GDPR email limit (max 2 emails for GDPR contacts) is only checked at send time in email_sender.py. The state machine can advance a contact to step 3, which queues a 3rd email that only gets caught when attempting to send. This wastes a queue slot and is confusing.
+
+**Fix:** Add the GDPR check inside the state machine's `advance_to_next_step` logic:
+
+```python
+from src.services.compliance import check_gdpr_email_limit, is_contact_gdpr
+
+def _can_advance_to_next_email(conn, contact_id: int, campaign_id: int) -> bool:
+    """Check if contact can receive another email (GDPR limit)."""
+    if not is_contact_gdpr(conn, contact_id):
+        return True  # Non-GDPR contacts have no email limit
+
+    return check_gdpr_email_limit(conn, contact_id, campaign_id)
+```
+
+Call this before advancing to the next step in the transition function. If the limit is reached, transition to `completed` instead of advancing.
+
+**Acceptance criteria:**
+- [ ] GDPR contacts are auto-completed when they hit the 2-email limit
+- [ ] Non-GDPR contacts are unaffected
+- [ ] State machine logs WHY it completed the contact (GDPR limit reached)
+- [ ] Test: enroll a GDPR contact, send 2 emails, verify 3rd step is skipped
+
+---
+
+## Task 3: Track Email Send Attempts in Database
+
+**File:** `src/services/email_sender.py`
+
+**Current:** The `send_email()` function returns `True/False` but the result is ignored by CLI commands. Failed emails are silently lost.
+
+**Fix:** Log every send attempt (success or failure) as an event:
+
+```python
+def send_email(conn, contact_id, campaign_id, template_id, ...):
+    # ... existing send logic ...
+
+    try:
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_username, smtp_password)
+            server.sendmail(from_email, to_email, msg.as_string())
+
+        # Log success
+        log_event(
+            conn, contact_id, "email_sent",
+            campaign_id=campaign_id,
+            template_id=template_id,
+            metadata=json.dumps({"to": to_email, "subject": subject, "status": "delivered"}),
+        )
+        logger.info("Email sent to contact %s", contact_id)  # No PII in logs
+        return True
+
+    except smtplib.SMTPException as e:
+        # Log failure
+        log_event(
+            conn, contact_id, "email_failed",
+            campaign_id=campaign_id,
+            template_id=template_id,
+            metadata=json.dumps({"error": str(e), "error_type": type(e).__name__}),
+        )
+        logger.exception("SMTP error sending to contact %s", contact_id)
+        return False
+```
+
+**Acceptance criteria:**
+- [ ] Every send attempt creates an event (email_sent or email_failed)
+- [ ] Failed emails include error type and message in event metadata
+- [ ] Logger uses contact_id, NOT email address (no PII in logs)
+- [ ] Existing event queries can filter by event_type to see failures
+
+---
+
+## Task 4: Add Email Retry with Backoff
+
+**File:** `src/services/email_sender.py`
+
+Add simple retry logic for transient SMTP failures:
+
+```python
+import time
+
+MAX_RETRIES = 3
+RETRY_DELAYS = [5, 15, 30]  # seconds
+
+def send_email_with_retry(conn, contact_id, campaign_id, template_id, ...):
+    """Send email with exponential backoff retry on transient failures."""
+    for attempt in range(MAX_RETRIES):
+        try:
+            result = _send_single_email(conn, contact_id, campaign_id, template_id, ...)
+            if result:
+                return True
+        except smtplib.SMTPServerDisconnected:
+            # Transient — retry
+            if attempt < MAX_RETRIES - 1:
+                delay = RETRY_DELAYS[attempt]
+                logger.warning(
+                    "SMTP disconnected for contact %s, retrying in %ss (attempt %s/%s)",
+                    contact_id, delay, attempt + 1, MAX_RETRIES,
+                )
+                time.sleep(delay)
+                continue
+        except smtplib.SMTPAuthenticationError:
+            # Permanent — don't retry
+            logger.error("SMTP auth failed — check credentials")
+            return False
+        except smtplib.SMTPRecipientsRefused:
+            # Permanent — don't retry, mark as bounced
+            log_event(conn, contact_id, "email_bounced", campaign_id=campaign_id)
+            return False
+
+    # All retries exhausted
+    log_event(
+        conn, contact_id, "email_failed",
+        campaign_id=campaign_id,
+        metadata=json.dumps({"error": "max_retries_exhausted", "attempts": MAX_RETRIES}),
+    )
+    return False
+```
+
+**Acceptance criteria:**
+- [ ] Transient SMTP errors (disconnect) trigger retry with delay
+- [ ] Permanent errors (auth failure, recipient refused) do NOT retry
+- [ ] Bounced emails log a `email_bounced` event
+- [ ] Max 3 retries with 5s, 15s, 30s delays
+- [ ] All retry attempts are logged
+
+---
+
+## Task 5: Add SPF/DKIM/DMARC Setup Guide
+
+**File:** Create `docs/email_setup.md`
+
+This isn't code — it's documentation for the user to configure their sending domain. Generate a guide covering:
+
+1. **SPF record** — What TXT record to add for their domain
+2. **DKIM** — How to generate DKIM keys and add the DNS record
+3. **DMARC** — Recommended DMARC policy (start with `p=none` for monitoring)
+4. **Testing** — How to verify setup using mail-tester.com
+5. **Google Workspace specifics** — Since the platform uses Gmail SMTP/drafts
+
+**Acceptance criteria:**
+- [ ] Guide created with step-by-step DNS configuration
+- [ ] Includes example DNS records
+- [ ] Includes verification commands/tools
+- [ ] Mentions Gmail-specific considerations
+
+---
+
+## Verification Checklist
+
+```bash
+# Test unsubscribe flow
+# 1. Check that outgoing emails include List-Unsubscribe header
+# 2. Visit the unsubscribe URL from an email
+# 3. Verify contact is marked unsubscribed in DB
+
+# Test GDPR limits
+# 1. Create a GDPR contact
+# 2. Send 2 emails
+# 3. Verify state machine completes the contact (no 3rd email queued)
+
+# Run tests
+make test
+```
+
+- [ ] One-click unsubscribe works end-to-end
+- [ ] List-Unsubscribe header in all outgoing emails
+- [ ] GDPR limit enforced at state machine level
+- [ ] All send attempts tracked in events table
+- [ ] Retry logic handles transient SMTP failures
+- [ ] No PII in application logs</pre></div>
+                </div>
+            </div>
+
+            <!-- Session 5 -->
+            <div class="session-card" data-session="5">
+                <div class="session-header" onclick="toggleSession(this)">
+                    <div class="session-info">
+                        <div class="session-title">Session 5</div>
+                        <div class="session-meta">
+                            <div class="session-meta-item">⏱️ 8–12 hours</div>
+                            <div class="session-meta-item">🟠 P1</div>
+                        </div>
+                        <div class="session-description">CRM kanban board, bulk operations, engagement scoring</div>
+                    </div>
+                    <div class="toggle-icon">▼</div>
+                </div>
+                <div class="session-content">
+                    <div class="copy-button-area">
+                        <button class="copy-button" onclick="copyToClipboard(5)">
+                            <span class="clipboard-icon">📋</span>
+                            Copy to Clipboard
+                        </button>
+                    </div>
+                    <div class="spec-preview"><pre id="session-5-content"># Spec 05: CRM (Phase 5)
+
+**Priority:** P1 — Largest feature gap, biggest user-facing impact
+**Estimated time:** 8–12 hours (split across 2–3 Claude Code sessions)
+**Prerequisite:** Specs 01–03 completed (stable backend required)
+
+---
+
+## Problem Statement
+
+The platform manages 875+ companies and thousands of contacts for crypto fund allocator outreach. Currently, there's a basic contact detail page, company detail page, and a timeline view — but no way to manage the pipeline as a whole. There's no kanban board to visualize deal stages, no way to log meetings/calls inline, no company engagement scoring, no bulk operations, and no saved filter views. Fund allocator outreach requires seeing the "big picture" of which firms are responding and which need follow-up — the CRM layer makes that possible.
+
+---
+
+## What Already Exists (Don't Rebuild)
+
+Before building, review what's already done:
+
+**Backend routes (functional):**
+- `src/web/routes/crm.py` — CRM contacts list with AUM/status/firm_type filtering, contact timeline, company list, company detail, global search
+- `src/web/routes/contacts.py` — Contact detail, status transitions, notes, phone update, events
+- `src/web/routes/replies.py` — Pending replies with LLM classification
+
+**Frontend pages (functional):**
+- `frontend/src/pages/ContactDetail.tsx` — Contact info, company link, enrollments table, status logging, notes, phone input, unified timeline
+- `frontend/src/pages/CompanyDetail.tsx` — AUM/contacts/activities cards, company details, contacts table with status
+- `frontend/src/pages/ContactList.tsx` — Paginated contact list with search
+- `frontend/src/components/UnifiedTimeline.tsx` — Timeline component (already reusable)
+
+**Database tables (exist):**
+- `contacts`, `companies`, `contact_campaign_status`, `events`, `response_notes`, `interaction_timeline_view`
+
+The task is to EXTEND what exists, not rebuild it.
+
+---
+
+## Task 1: Pipeline / Kanban Board
+
+**Goal:** Visualize all active contacts across deal stages as a drag-and-drop kanban board.
+
+**Backend:** Create `src/web/routes/pipeline.py`
+
+```python
+router = APIRouter(prefix="/pipeline", tags=["pipeline"])
+
+@router.get("/board")
+def get_pipeline_board(
+    campaign: str = "Q1_2026_initial",
+    conn=Depends(get_db),
+):
+    """Get contacts grouped by status for kanban view."""
+    # Columns: queued | in_progress | replied_positive | replied_negative | completed
+    camp = get_campaign_by_name(conn, campaign)
+    if not camp:
+        raise HTTPException(404, f"Campaign '{campaign}' not found")
+
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT ccs.status, ccs.current_step, ccs.next_action_date,
+               c.id AS contact_id, c.full_name, c.email, c.title,
+               co.name AS company_name, co.aum_millions, co.firm_type,
+               (SELECT MAX(e.created_at) FROM events e WHERE e.contact_id = c.id) AS last_activity
+        FROM contact_campaign_status ccs
+        JOIN contacts c ON c.id = ccs.contact_id
+        LEFT JOIN companies co ON co.id = c.company_id
+        WHERE ccs.campaign_id = %s
+        ORDER BY co.aum_millions DESC NULLS LAST
+    """, (camp["id"],))
+    rows = cur.fetchall()
+
+    # Group by status
+    columns = {}
+    for row in rows:
+        status = row["status"]
+        if status not in columns:
+            columns[status] = []
+        columns[status].append(dict(row))
+
+    return {
+        "campaign": campaign,
+        "columns": columns,
+        "column_order": ["queued", "in_progress", "replied_positive", "replied_negative", "completed", "unsubscribed", "bounced"],
+    }
+
+@router.post("/move")
+def move_contact_in_pipeline(
+    body: PipelineMoveRequest,  # contact_id, campaign, new_status, note
+    conn=Depends(get_db),
+):
+    """Move a contact between pipeline stages (status transition)."""
+    # Reuse existing transition_contact from state_machine
+    ...
+```
+
+Register in `app.py`:
+```python
+from src.web.routes import pipeline
+app.include_router(pipeline.router, prefix="/api")
+```
+
+**Frontend:** Create `frontend/src/pages/Pipeline.tsx`
+
+Build a kanban board with columns for each status. Each card shows: contact name, company, AUM, last activity date. Cards in `queued` and `in_progress` columns are most important.
+
+Use react-beautiful-dnd or a simpler approach with CSS grid columns. Cards should be clickable (link to contact detail page).
+
+Column layout:
+```
+| Queued (12) | In Progress (8) | Replied+ (3) | Replied- (5) | Completed (20) |
+|-------------|-----------------|--------------|--------------|----------------|
+| [Card]      | [Card]          | [Card]       | [Card]       | [Card]         |
+| [Card]      | [Card]          |              | [Card]       | [Card]         |
+```
+
+Each card:
+```
+┌─────────────────────┐
+│ John Smith          │
+│ Crypto Capital      │
+│ $2,500M AUM         │
+│ Step 2/4 · 3 days   │
+└─────────────────────┘
+```
+
+Add to `App.tsx` routes:
+```tsx
+<Route path="/pipeline" element={<Pipeline />} />
+```
+
+Add to Layout navigation.
+
+**Acceptance criteria:**
+- [ ] Pipeline page shows contacts grouped by campaign status
+- [ ] Each column shows count and is sorted by AUM (highest first)
+- [ ] Cards show: name, company, AUM, current step, days since last activity
+- [ ] Clicking a card navigates to contact detail
+- [ ] Campaign selector dropdown at the top
+- [ ] Column totals visible (e.g., "Queued (12)")
+
+---
+
+## Task 2: Inline Note Adding
+
+**Goal:** Allow adding notes from the CRM contact list without navigating to the detail page.
+
+**Backend:** Already exists — `POST /api/contacts/{id}/notes` in contacts.py
+
+**Frontend:** Modify `frontend/src/pages/ContactList.tsx`
+
+Add an expandable row or modal when clicking a contact row. The expanded area shows:
+1. Quick note textarea + save button
+2. Last 3 notes (preview)
+3. Status badge
+4. One-click status transition buttons (Positive Reply, Negative Reply, No Response)
+
+This avoids having to open the full detail page just to log a response.
+
+**Acceptance criteria:**
+- [ ] Clicking a contact row expands an inline panel
+- [ ] Panel has note textarea + save button
+- [ ] Panel shows last 3 notes as previews
+- [ ] Quick-action buttons for status transitions
+- [ ] Saving a note refreshes the row without full page reload
+
+---
+
+## Task 3: Company Engagement Scoring
+
+**Goal:** Score companies based on outreach engagement to prioritize follow-up.
+
+**Backend:** Create `src/services/engagement_scorer.py`
+
+```python
+def score_company_engagement(conn, company_id: int, campaign_id: int = None) -> dict:
+    """Calculate engagement score for a company based on all contact interactions."""
+    cur = conn.cursor()
+
+    # Get all events for contacts at this company
+    cur.execute("""
+        SELECT e.event_type, e.created_at, c.id as contact_id
+        FROM events e
+        JOIN contacts c ON c.id = e.contact_id
+        WHERE c.company_id = %s
+        ORDER BY e.created_at DESC
+    """, (company_id,))
+    events = cur.fetchall()
+
+    # Scoring weights
+    WEIGHTS = {
+        "email_sent": 1,
+        "email_opened": 3,      # If tracked
+        "email_replied": 10,
+        "linkedin_sent": 2,
+        "linkedin_replied": 10,
+        "call_booked": 25,
+        "whatsapp_received": 8,
+        "replied_positive": 20,
+    }
+
+    score = 0
+    for event in events:
+        score += WEIGHTS.get(event["event_type"], 0)
+
+    # Recency boost: events in last 7 days get 2x
+    from datetime import datetime, timedelta
+    recent_cutoff = datetime.now() - timedelta(days=7)
+    # ... apply recency multiplier
+
+    return {
+        "company_id": company_id,
+        "engagement_score": score,
+        "total_events": len(events),
+        "last_activity": events[0]["created_at"] if events else None,
+    }
+```
+
+Add endpoint in `crm.py`:
+```python
+@router.get("/companies/{company_id}/engagement")
+def get_company_engagement(company_id: int, conn=Depends(get_db)):
+    return score_company_engagement(conn, company_id)
+```
+
+Also add a bulk endpoint for the company list:
+```python
+@router.get("/companies/engagement-scores")
+def get_all_engagement_scores(campaign: str = None, conn=Depends(get_db)):
+    """Get engagement scores for all companies, sorted by score."""
+    # Single query with aggregation instead of N+1
+    ...
+```
+
+**Frontend:** Add engagement score column to CompanyDetail and company list views. Show as a colored bar or number (0–100 scale).
+
+**Acceptance criteria:**
+- [ ] Each company has a calculated engagement score
+- [ ] Score reflects email replies, calls booked, and recency
+- [ ] Company list can be sorted by engagement score
+- [ ] CompanyDetail page shows engagement score prominently
+- [ ] Score calculation uses a single aggregation query (not N+1)
+
+---
+
+## Task 4: Bulk Operations
+
+**Goal:** Enroll, transition, or export multiple contacts at once from the CRM list view.
+
+**Backend:** Add endpoints to `crm.py`:
+
+```python
+class BulkStatusRequest(BaseModel):
+    contact_ids: list[int]
+    campaign: str
+    new_status: str
+    note: Optional[str] = None
+
+@router.post("/contacts/bulk-status")
+def bulk_update_status(body: BulkStatusRequest, conn=Depends(get_db)):
+    """Transition multiple contacts to a new status."""
+    results = {"success": [], "failed": []}
+    for contact_id in body.contact_ids:
+        try:
+            transition_contact(conn, contact_id, campaign_id, body.new_status)
+            results["success"].append(contact_id)
+        except (InvalidTransition, Exception) as e:
+            results["failed"].append({"contact_id": contact_id, "error": str(e)})
+    conn.commit()
+    return results
+
+class BulkExportRequest(BaseModel):
+    contact_ids: list[int] = []
+    filters: Optional[dict] = None  # Use same filters as list endpoint
+
+@router.post("/contacts/export-csv")
+def export_contacts_csv(body: BulkExportRequest, conn=Depends(get_db)):
+    """Export selected contacts as CSV."""
+    # Build query based on contact_ids or filters
+    # Return StreamingResponse with CSV content
+    ...
+```
+
+**Frontend:** Add to ContactList:
+1. Checkbox column for multi-select
+2. "Select All" checkbox in header
+3. Action bar that appears when contacts are selected:
+   - "Change Status" dropdown
+   - "Export CSV" button
+   - "Add to Campaign" button
+4. Show selected count: "3 contacts selected"
+
+**Acceptance criteria:**
+- [ ] Checkboxes on contact list rows
+- [ ] Select All toggles all visible contacts
+- [ ] Bulk status transition works for selected contacts
+- [ ] Failed transitions show error per-contact (don't stop on first error)
+- [ ] CSV export downloads a file with selected contacts
+- [ ] Action bar only appears when contacts are selected
+
+---
+
+## Task 5: Activity Feed / Dashboard Widget
+
+**Goal:** Show recent activity across all campaigns in a feed format on the Dashboard page.
+
+**Backend:** Add to `src/web/routes/stats.py` or create `src/web/routes/activity.py`:
+
+```python
+@router.get("/activity/recent")
+def get_recent_activity(
+    limit: int = 20,
+    conn=Depends(get_db),
+):
+    """Get the most recent activities across all campaigns."""
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT e.*, c.full_name, c.email, co.name AS company_name,
+               t.name AS template_name
+        FROM events e
+        JOIN contacts c ON c.id = e.contact_id
+        LEFT JOIN companies co ON co.id = c.company_id
+        LEFT JOIN templates t ON t.id = e.template_id
+        ORDER BY e.created_at DESC
+        LIMIT %s
+    """, (limit,))
+    return [dict(r) for r in cur.fetchall()]
+```
+
+**Frontend:** Add an activity feed widget to `Dashboard.tsx`:
+- Shows last 20 activities as a timeline
+- Each entry: "Email sent to John Smith at Crypto Capital — 2 hours ago"
+- Clickable contact names link to detail page
+- Color-coded by event type (green for replies, blue for sent, red for bounces)
+
+**Acceptance criteria:**
+- [ ] Dashboard shows recent activity feed
+- [ ] Feed updates on page load (no manual refresh needed)
+- [ ] Each activity shows: event type, contact name, company, time ago
+- [ ] Contact names are clickable links
+- [ ] Event types are color-coded
+
+---
+
+## Task 6: Saved Filter Views
+
+**Goal:** Let the user save commonly-used filter combinations for quick access.
+
+**Backend:** Add migration + endpoints:
+
+Migration (`migrations/pg/005_crm_views.sql`):
+```sql
+CREATE TABLE IF NOT EXISTS saved_views (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    view_type TEXT NOT NULL DEFAULT 'contacts',  -- contacts | companies | pipeline
+    filters JSONB NOT NULL DEFAULT '{}',
+    sort_by TEXT,
+    sort_order TEXT DEFAULT 'desc',
+    is_default BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+Endpoints in `crm.py`:
+```python
+@router.get("/views")
+def list_saved_views(conn=Depends(get_db)):
+    ...
+
+@router.post("/views")
+def create_saved_view(body: SavedViewRequest, conn=Depends(get_db)):
+    ...
+
+@router.delete("/views/{view_id}")
+def delete_saved_view(view_id: int, conn=Depends(get_db)):
+    ...
+```
+
+**Frontend:** Add a "Save View" button to the CRM contact list page. When filters are active, show "Save this view" option. Saved views appear as tabs above the contact list.
+
+Example saved views:
+- "High AUM Positive Replies" → status=replied_positive, min_aum=1000
+- "GDPR Contacts Queued" → status=queued, firm_type includes EU countries
+- "Unresponsive > 14 days" → status=in_progress, last_activity > 14 days ago
+
+**Acceptance criteria:**
+- [ ] Users can save current filters as a named view
+- [ ] Saved views appear as clickable tabs/buttons above the list
+- [ ] Clicking a saved view applies those filters instantly
+- [ ] Views can be deleted
+- [ ] Views persist across page reloads (stored in DB)
+
+---
+
+## Task 7: CRM Tests
+
+**File:** Add tests to `tests/test_web_api.py` or create `tests/test_crm.py`
+
+Test coverage needed:
+- [ ] Pipeline board returns contacts grouped by status
+- [ ] Pipeline board sorts by AUM within each column
+- [ ] Engagement score calculation with mixed event types
+- [ ] Bulk status transition (success and partial failure)
+- [ ] CSV export returns valid CSV with correct columns
+- [ ] Saved view CRUD (create, list, delete)
+- [ ] Activity feed returns recent events in order
+- [ ] Company engagement scores use single query (no N+1)
+
+---
+
+## Verification Checklist
+
+After completing all tasks, verify in the browser:
+
+```bash
+# Start backend
+python3 -m uvicorn src.web.app:app --reload
+
+# Start frontend
+cd frontend && npm run dev
+```
+
+- [ ] Pipeline page shows kanban columns with cards
+- [ ] Cards show name, company, AUM, step info
+- [ ] Contact list has inline note expansion
+- [ ] Company list shows engagement scores
+- [ ] Bulk select + status change works on contact list
+- [ ] CSV export downloads a file
+- [ ] Dashboard shows activity feed
+- [ ] Saved views persist and apply correctly
+- [ ] All new tests pass: `make test`</pre></div>
+                </div>
+            </div>
+
+            <!-- Session 6 -->
+            <div class="session-card" data-session="6">
+                <div class="session-header" onclick="toggleSession(this)">
+                    <div class="session-info">
+                        <div class="session-title">Session 6</div>
+                        <div class="session-meta">
+                            <div class="session-meta-item">⏱️ 4–6 hours</div>
+                            <div class="session-meta-item">🟠 P1</div>
+                        </div>
+                        <div class="session-description">Docker setup, CI/CD, deployment, monitoring</div>
+                    </div>
+                    <div class="toggle-icon">▼</div>
+                </div>
+                <div class="session-content">
+                    <div class="copy-button-area">
+                        <button class="copy-button" onclick="copyToClipboard(6)">
+                            <span class="clipboard-icon">📋</span>
+                            Copy to Clipboard
+                        </button>
+                    </div>
+                    <div class="spec-preview"><pre id="session-6-content"># Spec 06: Deployment Infrastructure
+
+**Priority:** P1 — Required for production launch
+**Estimated time:** 4–6 hours
+**Prerequisite:** All previous specs completed (01–05)
+
+---
+
+## Problem Statement
+
+The platform runs exclusively on localhost with no containerization, no CI/CD, no monitoring, and no automated deployment. To go live, we need Docker for consistent environments, a deployment target (Railway/Render/Fly.io), GitHub Actions for CI/CD, and monitoring/alerting to know when things break.
+
+---
+
+## Task 1: Create Dockerfile + Docker Compose
+
+**Files to create:**
+- `Dockerfile`
+- `docker-compose.yml`
+- `.dockerignore`
+
+`Dockerfile`:
+```dockerfile
+# Multi-stage build for smaller image
+FROM python:3.12-slim as builder
+
+WORKDIR /app
+
+# Install system deps for psycopg2
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc libpq-dev && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml .
+RUN pip install --no-cache-dir -e "."
+
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Runtime deps only
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+COPY . .
+
+# Don't run as root
+RUN useradd -m appuser && chown -R appuser:appuser /app
+USER appuser
+
+EXPOSE 8000
+
+CMD ["uvicorn", "src.web.app:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+`docker-compose.yml` (for local development):
+```yaml
+version: "3.8"
+
+services:
+  backend:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      - ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+    depends_on:
+      - db
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: outreach
+      POSTGRES_USER: outreach
+      POSTGRES_PASSWORD: localdev
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
+```
+
+`frontend/Dockerfile`:
+```dockerfile
+FROM node:20-alpine
+
+WORKDIR /app
+COPY package*.json .
+RUN npm ci
+COPY . .
+
+EXPOSE 5173
+CMD ["npm", "run", "dev", "--", "--host"]
+```
+
+`.dockerignore`:
+```
+.git
+.venv
+__pycache__
+*.pyc
+.env
+outreach.db*
+node_modules
+data/imports/
+.gmail_token.json
+*.db-shm
+*.db-wal
+```
+
+**Acceptance criteria:**
+- [ ] `docker compose up` starts backend, frontend, and PostgreSQL
+- [ ] Backend accessible at http://localhost:8000
+- [ ] Frontend accessible at http://localhost:5173
+- [ ] Frontend can communicate with backend
+- [ ] Database persists between restarts (volume mounted)
+- [ ] Non-root user in backend container
+
+---
+
+## Task 2: GitHub Actions CI Pipeline
+
+**File:** Create `.github/workflows/ci.yml`
+
+```yaml
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: test_outreach
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run tests
+        env:
+          SUPABASE_DB_URL: postgresql://test:test@localhost:5432/test_outreach
+        run: python -m pytest tests/ -v --tb=short
+
+      - name: Lint (ruff)
+        run: |
+          pip install ruff
+          ruff check src/
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm ci
+      - run: npm run build
+      # - run: npm test  # Uncomment when frontend tests exist
+```
+
+**Acceptance criteria:**
+- [ ] CI runs on push to main and on pull requests
+- [ ] Python tests run against ephemeral PostgreSQL
+- [ ] Linting checks pass (ruff)
+- [ ] Frontend builds without errors
+- [ ] GitHub shows green/red status on commits
+
+---
+
+## Task 3: Deploy to Railway (or Render/Fly.io)
+
+**Recommended: Railway** — simplest for Python + PostgreSQL + frontend.
+
+**Files to create:**
+
+`railway.toml` (Railway config):
+```toml
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "uvicorn src.web.app:app --host 0.0.0.0 --port $PORT"
+healthcheckPath = "/api/health"
+healthcheckTimeout = 10
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
+```
+
+**Deployment steps (document in `docs/deploy.md`):**
+1. Create Railway account at railway.app
+2. Create new project → "Deploy from GitHub repo"
+3. Connect your GitHub repository
+4. Add PostgreSQL service to the project
+5. Set environment variables:
+   - `SUPABASE_DB_URL` → Railway provides this as `DATABASE_URL`
+   - `API_SECRET_KEY` → Generate with `python -c "import secrets; print(secrets.token_urlsafe(32))"`
+   - `ALLOWED_ORIGINS` → Your frontend domain
+   - `UNSUBSCRIBE_SECRET` → Generate random string
+   - `APP_BASE_URL` → Your Railway backend URL
+   - `SMTP_PASSWORD`, `EMAIL_VERIFY_API_KEY`, etc.
+6. Deploy backend
+7. Deploy frontend (separate service or Vercel/Netlify)
+
+**Alternative: Create `Procfile`** (works on Railway, Render, Heroku):
+```
+web: uvicorn src.web.app:app --host 0.0.0.0 --port ${PORT:-8000}
+```
+
+**Acceptance criteria:**
+- [ ] Backend deploys successfully to Railway
+- [ ] Health check passes on deployed instance
+- [ ] Frontend deployed (Railway or Vercel)
+- [ ] Frontend connects to deployed backend
+- [ ] Environment variables configured (no secrets in code)
+- [ ] Database migrations run on deploy
+
+---
+
+## Task 4: Database Backup Strategy
+
+**For Supabase (current):**
+- Supabase provides daily automated backups on Pro plan
+- Document how to do manual backups:
+
+```bash
+# Manual backup (add to docs/backup.md)
+pg_dump $SUPABASE_DB_URL --no-owner --no-acl > backup_$(date +%Y%m%d).sql
+
+# Restore
+psql $SUPABASE_DB_URL < backup_20260303.sql
+```
+
+**For Railway PostgreSQL:**
+- Railway provides daily backups automatically
+- Document manual backup procedure
+
+**Create `scripts/backup.sh`:**
+```bash
+#!/bin/bash
+# Backup the outreach database
+set -e
+
+BACKUP_DIR="backups"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+FILENAME="${BACKUP_DIR}/outreach_${TIMESTAMP}.sql"
+
+mkdir -p "$BACKUP_DIR"
+pg_dump "$SUPABASE_DB_URL" --no-owner --no-acl > "$FILENAME"
+gzip "$FILENAME"
+
+echo "Backup saved: ${FILENAME}.gz"
+
+# Keep only last 30 backups
+ls -t "${BACKUP_DIR}"/*.gz | tail -n +31 | xargs -r rm
+```
+
+**Acceptance criteria:**
+- [ ] Backup script created and tested
+- [ ] Script compresses output
+- [ ] Script auto-deletes backups older than 30
+- [ ] Documented in `docs/backup.md`
+
+---
+
+## Task 5: Monitoring & Alerting
+
+**Integrate Sentry for error tracking:**
+
+Install:
+```bash
+pip install sentry-sdk[fastapi] --break-system-packages
+```
+
+Add to `pyproject.toml`:
+```
+"sentry-sdk[fastapi]>=2.0",
+```
+
+Configure in `src/web/app.py`:
+```python
+import sentry_sdk
+
+SENTRY_DSN = os.getenv("SENTRY_DSN")
+if SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        traces_sample_rate=0.1,  # 10% of requests traced
+        profiles_sample_rate=0.1,
+    )
+```
+
+**Add uptime monitoring:**
+Document setup for Better Stack (formerly Better Uptime) or UptimeRobot:
+- Monitor: `https://your-app.railway.app/api/health`
+- Check interval: 5 minutes
+- Alert via email on 2 consecutive failures
+
+**Configure structured logging:**
+
+```python
+# src/web/logging_config.py
+import logging
+import json
+import sys
+
+class JSONFormatter(logging.Formatter):
+    def format(self, record):
+        log_entry = {
+            "timestamp": self.formatTime(record),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        if record.exc_info:
+            log_entry["exception"] = self.formatException(record.exc_info)
+        return json.dumps(log_entry)
+
+def setup_logging():
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(JSONFormatter())
+    logging.root.addHandler(handler)
+    logging.root.setLevel(logging.INFO)
+    # Quiet down noisy libraries
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+```
+
+Call in app startup:
+```python
+from src.web.logging_config import setup_logging
+setup_logging()
+```
+
+**Acceptance criteria:**
+- [ ] Sentry captures unhandled exceptions
+- [ ] Sentry DSN configurable via env var (disabled if not set)
+- [ ] Structured JSON logging to stdout
+- [ ] Uptime monitoring documented
+- [ ] No PII in Sentry reports (use contact_id, not email)
+
+---
+
+## Task 6: Production Hardening Checklist
+
+Create `docs/production_checklist.md`:
+
+```markdown
+# Production Launch Checklist
+
+## Environment Variables (all required)
+- [ ] SUPABASE_DB_URL / DATABASE_URL
+- [ ] API_SECRET_KEY (generated, unique per environment)
+- [ ] ALLOWED_ORIGINS (your frontend domain, NO localhost)
+- [ ] SMTP_PASSWORD
+- [ ] EMAIL_VERIFY_API_KEY
+- [ ] UNSUBSCRIBE_SECRET
+- [ ] APP_BASE_URL (your deployed backend URL)
+- [ ] SENTRY_DSN (optional but recommended)
+- [ ] GMAIL_TOKEN_PATH
+- [ ] ENABLE_API_DOCS=false (disable Swagger in production)
+
+## DNS & Email
+- [ ] SPF record configured for sending domain
+- [ ] DKIM record configured
+- [ ] DMARC record configured (start with p=none)
+- [ ] Custom domain pointing to deployed app
+
+## Security
+- [ ] API key authentication enabled
+- [ ] CORS restricted to production domain only
+- [ ] Gmail token NOT in project directory
+- [ ] .env NOT committed to git
+- [ ] No console.log in frontend build
+- [ ] HTTPS enabled
+
+## Monitoring
+- [ ] Sentry configured and capturing errors
+- [ ] Uptime check configured (5-minute interval)
+- [ ] Database backup verified (daily)
+- [ ] Log aggregation accessible
+
+## Testing
+- [ ] All pytest tests passing in CI
+- [ ] Frontend builds without warnings
+- [ ] Smoke test: import CSV → enroll → queue → preview email
+- [ ] Unsubscribe link works end-to-end
+```
+
+**Acceptance criteria:**
+- [ ] Checklist document created
+- [ ] All items actionable and specific
+- [ ] Covers: env vars, DNS, security, monitoring, testing
+
+---
+
+## Verification Checklist
+
+After completing all tasks:
+
+```bash
+# Build and run with Docker
+docker compose up --build
+
+# Verify all services running
+docker compose ps
+
+# Test health check on Docker
+curl http://localhost:8000/api/health
+
+# Run CI locally
+act  # or push to GitHub and check Actions tab
+
+# Test backup script
+./scripts/backup.sh
+```
+
+- [ ] Docker Compose starts all 3 services
+- [ ] CI pipeline passes on GitHub
+- [ ] Deployment guide documented
+- [ ] Backup script works
+- [ ] Sentry captures test exception
+- [ ] Production checklist complete</pre></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const specs = {
+            1: document.getElementById('session-1-content')?.textContent || '',
+            2: document.getElementById('session-2-content')?.textContent || '',
+            3: document.getElementById('session-3-content')?.textContent || '',
+            4: document.getElementById('session-4-content')?.textContent || '',
+            5: document.getElementById('session-5-content')?.textContent || '',
+            6: document.getElementById('session-6-content')?.textContent || '',
+        };
+
+        function toggleSession(header) {
+            const card = header.parentElement;
+            card.classList.toggle('expanded');
+        }
+
+        function copyToClipboard(sessionNum) {
+            const prefix = "Read CLAUDE.md first for project context. Then execute this spec. Run tests after each task. Commit when all tasks pass.\n\n---\n\n";
+            const fullText = prefix + specs[sessionNum];
+
+            navigator.clipboard.writeText(fullText).then(() => {
+                const button = event.target.closest('.copy-button');
+                const originalText = button.innerHTML;
+                button.innerHTML = '<span class="clipboard-icon">✓</span>Copied!';
+                button.classList.add('copied');
+
+                setTimeout(() => {
+                    button.innerHTML = originalText;
+                    button.classList.remove('copied');
+                }, 2000);
+            }).catch(err => {
+                console.error('Failed to copy:', err);
+                alert('Failed to copy to clipboard');
+            });
+        }
+    </script>
+</body>
+</html>

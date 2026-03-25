@@ -18,6 +18,7 @@ from src.models.campaigns import (
     get_contact_campaign_status,
     log_event,
 )
+from tests.conftest import TEST_USER_ID
 from src.services.compliance import (
     add_compliance_footer,
     add_compliance_footer_html,
@@ -101,8 +102,8 @@ def sample_company(conn):
     """Insert a company and return its id."""
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO companies (name, name_normalized, country, is_gdpr) VALUES (%s, %s, %s, %s) RETURNING id",
-        ("Acme Crypto Fund", "acme crypto fund", "United States", False),
+        "INSERT INTO companies (name, name_normalized, country, is_gdpr, user_id) VALUES (%s, %s, %s, %s, %s) RETURNING id",
+        ("Acme Crypto Fund", "acme crypto fund", "United States", False, TEST_USER_ID),
     )
     company_id = cursor.fetchone()["id"]
     conn.commit()
@@ -114,8 +115,8 @@ def gdpr_company(conn):
     """Insert a GDPR-subject company and return its id."""
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO companies (name, name_normalized, country, is_gdpr) VALUES (%s, %s, %s, %s) RETURNING id",
-        ("Berlin Capital GmbH", "berlin capital gmbh", "Germany", True),
+        "INSERT INTO companies (name, name_normalized, country, is_gdpr, user_id) VALUES (%s, %s, %s, %s, %s) RETURNING id",
+        ("Berlin Capital GmbH", "berlin capital gmbh", "Germany", True, TEST_USER_ID),
     )
     company_id = cursor.fetchone()["id"]
     conn.commit()
@@ -127,9 +128,9 @@ def sample_contact(conn, sample_company):
     """Insert a contact and return its id."""
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO contacts (company_id, first_name, last_name, full_name, email, email_normalized, source) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
-        (sample_company, "Alice", "Smith", "Alice Smith", "alice@example.com", "alice@example.com", "csv"),
+        "INSERT INTO contacts (company_id, first_name, last_name, full_name, email, email_normalized, source, user_id) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+        (sample_company, "Alice", "Smith", "Alice Smith", "alice@example.com", "alice@example.com", "csv", TEST_USER_ID),
     )
     contact_id = cursor.fetchone()["id"]
     conn.commit()
@@ -141,9 +142,9 @@ def gdpr_contact(conn, gdpr_company):
     """Insert a GDPR-subject contact and return its id."""
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO contacts (company_id, first_name, last_name, full_name, email, source, is_gdpr) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
-        (gdpr_company, "Hans", "Mueller", "Hans Mueller", "hans@berlin-cap.de", "csv", True),
+        "INSERT INTO contacts (company_id, first_name, last_name, full_name, email, source, is_gdpr, user_id) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+        (gdpr_company, "Hans", "Mueller", "Hans Mueller", "hans@berlin-cap.de", "csv", True, TEST_USER_ID),
     )
     contact_id = cursor.fetchone()["id"]
     conn.commit()
@@ -153,7 +154,7 @@ def gdpr_contact(conn, gdpr_company):
 @pytest.fixture
 def sample_campaign(conn):
     """Create and return a campaign id."""
-    return create_campaign(conn, "Q1 Outreach", description="Test campaign")
+    return create_campaign(conn, "Q1 Outreach", description="Test campaign", user_id=TEST_USER_ID)
 
 
 @pytest.fixture
@@ -165,6 +166,7 @@ def sample_template(conn):
         channel="email",
         body_template="Hi {{ first_name }}, let's talk about {{ company_name }}.",
         subject="Quick intro from our team",
+        user_id=TEST_USER_ID,
     )
 
 
@@ -293,35 +295,35 @@ class TestCheckGdprEmailLimit:
 
     def test_at_limit_returns_false(self, conn, gdpr_contact, sample_campaign):
         # Send 2 emails (the limit)
-        log_event(conn, gdpr_contact, "email_sent", campaign_id=sample_campaign)
-        log_event(conn, gdpr_contact, "email_sent", campaign_id=sample_campaign)
+        log_event(conn, gdpr_contact, "email_sent", campaign_id=sample_campaign, user_id=TEST_USER_ID)
+        log_event(conn, gdpr_contact, "email_sent", campaign_id=sample_campaign, user_id=TEST_USER_ID)
         assert check_gdpr_email_limit(conn, gdpr_contact, sample_campaign) is False
 
     def test_one_email_still_ok(self, conn, gdpr_contact, sample_campaign):
-        log_event(conn, gdpr_contact, "email_sent", campaign_id=sample_campaign)
+        log_event(conn, gdpr_contact, "email_sent", campaign_id=sample_campaign, user_id=TEST_USER_ID)
         assert check_gdpr_email_limit(conn, gdpr_contact, sample_campaign) is True
 
     def test_over_limit_returns_false(self, conn, gdpr_contact, sample_campaign):
         for _ in range(3):
-            log_event(conn, gdpr_contact, "email_sent", campaign_id=sample_campaign)
+            log_event(conn, gdpr_contact, "email_sent", campaign_id=sample_campaign, user_id=TEST_USER_ID)
         assert check_gdpr_email_limit(conn, gdpr_contact, sample_campaign) is False
 
     def test_other_event_types_not_counted(self, conn, gdpr_contact, sample_campaign):
         # Log non-email events
-        log_event(conn, gdpr_contact, "linkedin_connect_sent", campaign_id=sample_campaign)
-        log_event(conn, gdpr_contact, "status_in_progress", campaign_id=sample_campaign)
-        log_event(conn, gdpr_contact, "email_opened", campaign_id=sample_campaign)
+        log_event(conn, gdpr_contact, "linkedin_connect_sent", campaign_id=sample_campaign, user_id=TEST_USER_ID)
+        log_event(conn, gdpr_contact, "status_in_progress", campaign_id=sample_campaign, user_id=TEST_USER_ID)
+        log_event(conn, gdpr_contact, "email_opened", campaign_id=sample_campaign, user_id=TEST_USER_ID)
         assert check_gdpr_email_limit(conn, gdpr_contact, sample_campaign) is True
 
     def test_different_campaign_not_counted(self, conn, gdpr_contact, sample_campaign):
-        other_campaign = create_campaign(conn, "Other Campaign")
-        log_event(conn, gdpr_contact, "email_sent", campaign_id=other_campaign)
-        log_event(conn, gdpr_contact, "email_sent", campaign_id=other_campaign)
+        other_campaign = create_campaign(conn, "Other Campaign", user_id=TEST_USER_ID)
+        log_event(conn, gdpr_contact, "email_sent", campaign_id=other_campaign, user_id=TEST_USER_ID)
+        log_event(conn, gdpr_contact, "email_sent", campaign_id=other_campaign, user_id=TEST_USER_ID)
         # Different campaign, so the original should still be under limit
         assert check_gdpr_email_limit(conn, gdpr_contact, sample_campaign) is True
 
     def test_custom_limit(self, conn, gdpr_contact, sample_campaign):
-        log_event(conn, gdpr_contact, "email_sent", campaign_id=sample_campaign)
+        log_event(conn, gdpr_contact, "email_sent", campaign_id=sample_campaign, user_id=TEST_USER_ID)
         # With max_emails=1, one email should hit the limit
         assert check_gdpr_email_limit(conn, gdpr_contact, sample_campaign, max_emails=1) is False
 
@@ -341,9 +343,9 @@ class TestIsContactGdpr:
         """Contact is not GDPR but company is."""
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO contacts (company_id, first_name, email, source, is_gdpr) "
-            "VALUES (%s, %s, %s, %s, %s) RETURNING id",
-            (gdpr_company, "Max", "max@test.de", "csv", False),
+            "INSERT INTO contacts (company_id, first_name, email, source, is_gdpr, user_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+            (gdpr_company, "Max", "max@test.de", "csv", False, TEST_USER_ID),
         )
         contact_id = cursor.fetchone()["id"]
         conn.commit()
@@ -379,12 +381,12 @@ class TestProcessUnsubscribe:
         # Insert two contacts
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO contacts (company_id, first_name, email, source) VALUES (%s, %s, %s, %s)",
-            (sample_company, "Bob", "bob@example.com", "csv"),
+            "INSERT INTO contacts (company_id, first_name, email, source, user_id) VALUES (%s, %s, %s, %s, %s)",
+            (sample_company, "Bob", "bob@example.com", "csv", TEST_USER_ID),
         )
         cursor.execute(
-            "INSERT INTO contacts (company_id, first_name, email, source) VALUES (%s, %s, %s, %s)",
-            (sample_company, "Carol", "carol@example.com", "csv"),
+            "INSERT INTO contacts (company_id, first_name, email, source, user_id) VALUES (%s, %s, %s, %s, %s)",
+            (sample_company, "Carol", "carol@example.com", "csv", TEST_USER_ID),
         )
         conn.commit()
 
@@ -507,7 +509,7 @@ class TestRenderTemplate:
 
 class TestGetTemplateContext:
     def test_builds_correct_context(self, conn, sample_contact, sample_config):
-        ctx = get_template_context(conn, sample_contact, sample_config)
+        ctx = get_template_context(conn, sample_contact, sample_config, user_id=1)
         assert ctx["first_name"] == "Alice"
         assert ctx["last_name"] == "Smith"
         assert ctx["full_name"] == "Alice Smith"
@@ -519,31 +521,31 @@ class TestGetTemplateContext:
 
     def test_missing_contact_raises(self, conn, sample_config):
         with pytest.raises(ValueError, match="not found"):
-            get_template_context(conn, 99999, sample_config)
+            get_template_context(conn, 99999, sample_config, user_id=1)
 
     def test_contact_without_company(self, conn, sample_config):
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO contacts (first_name, last_name, email, source) VALUES (%s, %s, %s, %s) RETURNING id",
-            ("Orphan", "Contact", "orphan@example.com", "csv"),
+            "INSERT INTO contacts (first_name, last_name, email, source, user_id) VALUES (%s, %s, %s, %s, %s) RETURNING id",
+            ("Orphan", "Contact", "orphan@example.com", "csv", TEST_USER_ID),
         )
         contact_id = cursor.fetchone()["id"]
         conn.commit()
 
-        ctx = get_template_context(conn, contact_id, sample_config)
+        ctx = get_template_context(conn, contact_id, sample_config, user_id=1)
         assert ctx["first_name"] == "Orphan"
         assert ctx["company_name"] == ""
 
     def test_contact_with_missing_names(self, conn, sample_company, sample_config):
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO contacts (company_id, email, source) VALUES (%s, %s, %s) RETURNING id",
-            (sample_company, "noname@example.com", "csv"),
+            "INSERT INTO contacts (company_id, email, source, user_id) VALUES (%s, %s, %s, %s) RETURNING id",
+            (sample_company, "noname@example.com", "csv", TEST_USER_ID),
         )
         contact_id = cursor.fetchone()["id"]
         conn.commit()
 
-        ctx = get_template_context(conn, contact_id, sample_config)
+        ctx = get_template_context(conn, contact_id, sample_config, user_id=1)
         assert ctx["first_name"] == ""
         assert ctx["last_name"] == ""
         assert ctx["full_name"] == ""
@@ -769,10 +771,10 @@ class TestSendCampaignEmail:
         mock_smtp_class.return_value.__enter__ = MagicMock(return_value=mock_server)
         mock_smtp_class.return_value.__exit__ = MagicMock(return_value=False)
 
-        enroll_contact(conn, sample_contact, sample_campaign)
+        enroll_contact(conn, sample_contact, sample_campaign, user_id=TEST_USER_ID)
 
         result = send_campaign_email(
-            conn, sample_contact, sample_campaign, sample_template, sample_config
+            conn, sample_contact, sample_campaign, sample_template, sample_config, user_id=1
         )
 
         assert result is True
@@ -797,15 +799,15 @@ class TestSendCampaignEmail:
         mock_smtp_class.return_value.__enter__ = MagicMock(return_value=mock_server)
         mock_smtp_class.return_value.__exit__ = MagicMock(return_value=False)
 
-        enroll_contact(conn, sample_contact, sample_campaign)
-        status_before = get_contact_campaign_status(conn, sample_contact, sample_campaign)
+        enroll_contact(conn, sample_contact, sample_campaign, user_id=TEST_USER_ID)
+        status_before = get_contact_campaign_status(conn, sample_contact, sample_campaign, user_id=1)
         step_before = status_before["current_step"]
 
         send_campaign_email(
-            conn, sample_contact, sample_campaign, sample_template, sample_config
+            conn, sample_contact, sample_campaign, sample_template, sample_config, user_id=1
         )
 
-        status_after = get_contact_campaign_status(conn, sample_contact, sample_campaign)
+        status_after = get_contact_campaign_status(conn, sample_contact, sample_campaign, user_id=1)
         assert status_after["current_step"] == step_before + 1
 
     @patch("src.services.email_sender.smtplib.SMTP")
@@ -819,10 +821,10 @@ class TestSendCampaignEmail:
 
         # Unsubscribe the contact first
         process_unsubscribe(conn, "alice@example.com")
-        enroll_contact(conn, sample_contact, sample_campaign)
+        enroll_contact(conn, sample_contact, sample_campaign, user_id=TEST_USER_ID)
 
         result = send_campaign_email(
-            conn, sample_contact, sample_campaign, sample_template, sample_config
+            conn, sample_contact, sample_campaign, sample_template, sample_config, user_id=1
         )
 
         assert result is False
@@ -837,14 +839,14 @@ class TestSendCampaignEmail:
         mock_smtp_class.return_value.__enter__ = MagicMock(return_value=mock_server)
         mock_smtp_class.return_value.__exit__ = MagicMock(return_value=False)
 
-        enroll_contact(conn, gdpr_contact, sample_campaign)
+        enroll_contact(conn, gdpr_contact, sample_campaign, user_id=TEST_USER_ID)
 
         # Send 2 emails (the GDPR limit)
-        log_event(conn, gdpr_contact, "email_sent", campaign_id=sample_campaign)
-        log_event(conn, gdpr_contact, "email_sent", campaign_id=sample_campaign)
+        log_event(conn, gdpr_contact, "email_sent", campaign_id=sample_campaign, user_id=TEST_USER_ID)
+        log_event(conn, gdpr_contact, "email_sent", campaign_id=sample_campaign, user_id=TEST_USER_ID)
 
         result = send_campaign_email(
-            conn, gdpr_contact, sample_campaign, sample_template, sample_config
+            conn, gdpr_contact, sample_campaign, sample_template, sample_config, user_id=1
         )
 
         assert result is False
@@ -855,7 +857,7 @@ class TestSendCampaignEmail:
         self, mock_smtp_class, conn, sample_campaign, sample_template, sample_config
     ):
         result = send_campaign_email(
-            conn, 99999, sample_campaign, sample_template, sample_config
+            conn, 99999, sample_campaign, sample_template, sample_config, user_id=1
         )
         assert result is False
 
@@ -867,10 +869,10 @@ class TestSendCampaignEmail:
         mock_smtp_class.return_value.__enter__ = MagicMock(return_value=mock_server)
         mock_smtp_class.return_value.__exit__ = MagicMock(return_value=False)
 
-        enroll_contact(conn, sample_contact, sample_campaign)
+        enroll_contact(conn, sample_contact, sample_campaign, user_id=TEST_USER_ID)
 
         result = send_campaign_email(
-            conn, sample_contact, sample_campaign, 99999, sample_config
+            conn, sample_contact, sample_campaign, 99999, sample_config, user_id=1
         )
         assert result is False
 
@@ -883,10 +885,10 @@ class TestSendCampaignEmail:
         mock_smtp_class.return_value.__enter__ = MagicMock(return_value=mock_server)
         mock_smtp_class.return_value.__exit__ = MagicMock(return_value=False)
 
-        enroll_contact(conn, sample_contact, sample_campaign)
+        enroll_contact(conn, sample_contact, sample_campaign, user_id=TEST_USER_ID)
 
         send_campaign_email(
-            conn, sample_contact, sample_campaign, sample_template, sample_config
+            conn, sample_contact, sample_campaign, sample_template, sample_config, user_id=1
         )
 
         raw_message = mock_server.sendmail.call_args[0][2]
@@ -903,10 +905,10 @@ class TestSendCampaignEmail:
         mock_smtp_class.return_value.__enter__ = MagicMock(return_value=mock_server)
         mock_smtp_class.return_value.__exit__ = MagicMock(return_value=False)
 
-        enroll_contact(conn, sample_contact, sample_campaign)
+        enroll_contact(conn, sample_contact, sample_campaign, user_id=TEST_USER_ID)
 
         send_campaign_email(
-            conn, sample_contact, sample_campaign, sample_template, sample_config
+            conn, sample_contact, sample_campaign, sample_template, sample_config, user_id=1
         )
 
         raw_message = mock_server.sendmail.call_args[0][2]

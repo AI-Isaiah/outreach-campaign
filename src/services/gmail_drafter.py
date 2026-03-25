@@ -8,12 +8,17 @@ from __future__ import annotations
 
 import base64
 import logging
+import os
 from email.mime.multipart import MIMEMultipart
+
+from src.services.retry import retry_on_failure
 from email.mime.text import MIMEText
 from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+_BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
 # Scopes needed: compose drafts and check if they've been sent
 SCOPES = [
@@ -78,7 +83,7 @@ class GmailDrafter:
         flow = Flow.from_client_secrets_file(
             str(self.credentials_path),
             scopes=SCOPES,
-            redirect_uri="http://localhost:8000/api/gmail/callback",
+            redirect_uri=f"{_BACKEND_URL}/api/gmail/callback",
         )
         auth_url, _ = flow.authorization_url(
             access_type="offline",
@@ -101,7 +106,7 @@ class GmailDrafter:
         flow = Flow.from_client_secrets_file(
             str(self.credentials_path),
             scopes=SCOPES,
-            redirect_uri="http://localhost:8000/api/gmail/callback",
+            redirect_uri=f"{_BACKEND_URL}/api/gmail/callback",
         )
         flow.fetch_token(code=auth_code)
         self._save_credentials(flow.credentials)
@@ -122,6 +127,7 @@ class GmailDrafter:
         self._service = build("gmail", "v1", credentials=creds)
         return self._service
 
+    @retry_on_failure(max_retries=3, backoff_base=1.0, exceptions=(Exception,))
     def create_draft(
         self,
         to_email: str,
@@ -163,15 +169,23 @@ class GmailDrafter:
         """Check if a draft still exists (meaning it hasn't been sent yet).
 
         Returns:
-            'draft' if it still exists, 'sent' if it's gone (was sent or deleted).
+            'draft' if it still exists, 'sent' if it was sent/deleted,
+            'error' if there was a non-404 API error.
         """
+        from googleapiclient.errors import HttpError
+
         service = self._get_service()
         try:
             service.users().drafts().get(userId="me", id=draft_id).execute()
             return "draft"
+        except HttpError as e:
+            if e.resp.status == 404:
+                return "sent"
+            logger.warning("Gmail API error checking draft %s: %s", draft_id, e)
+            return "error"
         except Exception:
-            # Draft no longer exists — was sent or deleted
-            return "sent"
+            logger.exception("Unexpected error checking draft %s", draft_id)
+            return "error"
 
     def create_batch_drafts(self, drafts: list[dict]) -> list[dict]:
         """Create multiple Gmail drafts.

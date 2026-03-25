@@ -9,23 +9,34 @@ from itertools import combinations
 
 from thefuzz import fuzz
 
+from src.constants import FUZZY_DEDUP_THRESHOLD
+from src.models.database import get_cursor
+
 logger = logging.getLogger(__name__)
 
-FUZZY_THRESHOLD = 85
+FUZZY_THRESHOLD = FUZZY_DEDUP_THRESHOLD
 
 
-def run_dedup(conn, export_dir: str | None = None) -> dict:
+def run_dedup(conn, export_dir: str | None = None, user_id: int | None = None) -> dict:
     """Run the 3-pass deduplication pipeline.
 
     Pass 1: Exact email match
     Pass 2: Exact LinkedIn URL match
     Pass 3: Fuzzy company name match (flag only, no deletes)
 
+    All destructive passes run in a single transaction — either all
+    succeed or all roll back.
+
     Returns a dict with counts: email_dupes, linkedin_dupes, fuzzy_flagged.
     """
-    email_dupes = _pass_exact_email(conn)
-    linkedin_dupes = _pass_exact_linkedin(conn)
-    fuzzy_flagged = _pass_fuzzy_company(conn, export_dir)
+    try:
+        email_dupes = _pass_exact_email(conn, user_id=user_id)
+        linkedin_dupes = _pass_exact_linkedin(conn, user_id=user_id)
+        fuzzy_flagged = _pass_fuzzy_company(conn, export_dir)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
 
     return {
         "email_dupes": email_dupes,
@@ -34,79 +45,75 @@ def run_dedup(conn, export_dir: str | None = None) -> dict:
     }
 
 
-def _pass_exact_email(conn) -> int:
+def _pass_exact_email(conn, user_id: int | None = None) -> int:
     """Pass 1: find contacts sharing the same email_normalized, keep lowest id."""
     dupes_removed = 0
 
-    cursor = conn.cursor()
-    cursor.execute(
-        """SELECT email_normalized, string_agg(id::text, ',') AS ids
-           FROM contacts
-           WHERE email_normalized IS NOT NULL AND email_normalized != ''
-           GROUP BY email_normalized
-           HAVING COUNT(*) > 1"""
-    )
-    rows = cursor.fetchall()
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            """SELECT email_normalized, string_agg(id::text, ',') AS ids
+               FROM contacts
+               WHERE email_normalized IS NOT NULL AND email_normalized != ''
+               GROUP BY email_normalized
+               HAVING COUNT(*) > 1"""
+        )
+        rows = cursor.fetchall()
 
-    for row in rows:
-        ids = sorted(int(i) for i in row["ids"].split(","))
-        keep_id = ids[0]
-        remove_ids = ids[1:]
+        for row in rows:
+            ids = sorted(int(i) for i in row["ids"].split(","))
+            keep_id = ids[0]
+            remove_ids = ids[1:]
 
-        for rid in remove_ids:
-            cursor.execute(
-                "INSERT INTO dedup_log (kept_contact_id, merged_contact_id, match_type, match_score) "
-                "VALUES (%s, %s, 'exact_email', 1.0)",
-                (keep_id, rid),
-            )
-            cursor.execute("DELETE FROM contacts WHERE id = %s", (rid,))
-            dupes_removed += 1
-            logger.info("Dedup exact_email: kept %d, removed %d", keep_id, rid)
-
-    conn.commit()
+            for rid in remove_ids:
+                cursor.execute(
+                    "INSERT INTO dedup_log (kept_contact_id, merged_contact_id, match_type, match_score, user_id) "
+                    "VALUES (%s, %s, 'exact_email', 1.0, %s)",
+                    (keep_id, rid, user_id),
+                )
+                cursor.execute("DELETE FROM contacts WHERE id = %s", (rid,))
+                dupes_removed += 1
+                logger.info("Dedup exact_email: kept %d, removed %d", keep_id, rid)
     return dupes_removed
 
 
-def _pass_exact_linkedin(conn) -> int:
+def _pass_exact_linkedin(conn, user_id: int | None = None) -> int:
     """Pass 2: find contacts sharing the same linkedin_url_normalized, keep lowest id."""
     dupes_removed = 0
 
-    cursor = conn.cursor()
-    cursor.execute(
-        """SELECT linkedin_url_normalized, string_agg(id::text, ',') AS ids
-           FROM contacts
-           WHERE linkedin_url_normalized IS NOT NULL AND linkedin_url_normalized != ''
-           GROUP BY linkedin_url_normalized
-           HAVING COUNT(*) > 1"""
-    )
-    rows = cursor.fetchall()
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            """SELECT linkedin_url_normalized, string_agg(id::text, ',') AS ids
+               FROM contacts
+               WHERE linkedin_url_normalized IS NOT NULL AND linkedin_url_normalized != ''
+               GROUP BY linkedin_url_normalized
+               HAVING COUNT(*) > 1"""
+        )
+        rows = cursor.fetchall()
 
-    for row in rows:
-        ids = sorted(int(i) for i in row["ids"].split(","))
-        keep_id = ids[0]
-        remove_ids = ids[1:]
+        for row in rows:
+            ids = sorted(int(i) for i in row["ids"].split(","))
+            keep_id = ids[0]
+            remove_ids = ids[1:]
 
-        for rid in remove_ids:
-            cursor.execute(
-                "INSERT INTO dedup_log (kept_contact_id, merged_contact_id, match_type, match_score) "
-                "VALUES (%s, %s, 'exact_linkedin', 1.0)",
-                (keep_id, rid),
-            )
-            cursor.execute("DELETE FROM contacts WHERE id = %s", (rid,))
-            dupes_removed += 1
-            logger.info("Dedup exact_linkedin: kept %d, removed %d", keep_id, rid)
-
-    conn.commit()
+            for rid in remove_ids:
+                cursor.execute(
+                    "INSERT INTO dedup_log (kept_contact_id, merged_contact_id, match_type, match_score, user_id) "
+                    "VALUES (%s, %s, 'exact_linkedin', 1.0, %s)",
+                    (keep_id, rid, user_id),
+                )
+                cursor.execute("DELETE FROM contacts WHERE id = %s", (rid,))
+                dupes_removed += 1
+                logger.info("Dedup exact_linkedin: kept %d, removed %d", keep_id, rid)
     return dupes_removed
 
 
 def _pass_fuzzy_company(conn, export_dir: str | None) -> int:
     """Pass 3: fuzzy match company names, flag for manual review (no deletes)."""
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT id, name, name_normalized FROM companies ORDER BY id"
-    )
-    rows = cursor.fetchall()
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            "SELECT id, name, name_normalized FROM companies ORDER BY id"
+        )
+        rows = cursor.fetchall()
 
     flagged_pairs: list[dict] = []
 

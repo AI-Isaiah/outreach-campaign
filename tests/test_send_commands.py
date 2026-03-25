@@ -21,6 +21,7 @@ from src.models.campaigns import (
 from src.services.ab_testing import assign_variant, get_variant_stats
 from src.services.compliance import process_unsubscribe
 from src.services.state_machine import transition_contact
+from tests.conftest import TEST_USER_ID
 
 runner = CliRunner()
 
@@ -43,9 +44,9 @@ def sample_company(conn):
     """Insert a company and return its id."""
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO companies (name, name_normalized, country, is_gdpr, aum_millions) "
-        "VALUES (%s, %s, %s, %s, %s) RETURNING id",
-        ("Acme Crypto Fund", "acme crypto fund", "United States", False, 500.0),
+        "INSERT INTO companies (name, name_normalized, country, is_gdpr, aum_millions, user_id) "
+        "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+        ("Acme Crypto Fund", "acme crypto fund", "United States", False, 500.0, TEST_USER_ID),
     )
     company_id = cursor.fetchone()["id"]
     conn.commit()
@@ -59,10 +60,10 @@ def sample_contact(conn, sample_company):
     cursor.execute(
         "INSERT INTO contacts "
         "(company_id, first_name, last_name, full_name, email, email_normalized, "
-        "email_status, priority_rank, source) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+        "email_status, priority_rank, source, user_id) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
         (sample_company, "Alice", "Smith", "Alice Smith",
-         "alice@example.com", "alice@example.com", "valid", 1, "csv"),
+         "alice@example.com", "alice@example.com", "valid", 1, "csv", TEST_USER_ID),
     )
     contact_id = cursor.fetchone()["id"]
     conn.commit()
@@ -72,7 +73,7 @@ def sample_contact(conn, sample_company):
 @pytest.fixture
 def sample_campaign(conn):
     """Create a campaign and return its id."""
-    return create_campaign(conn, "Q1 Outreach", description="Test campaign")
+    return create_campaign(conn, "Q1 Outreach", description="Test campaign", user_id=TEST_USER_ID)
 
 
 @pytest.fixture
@@ -84,13 +85,14 @@ def sample_template(conn):
         channel="email",
         body_template="Hi {{ first_name }}, let's talk about {{ company_name }}.",
         subject="Quick intro",
+        user_id=TEST_USER_ID,
     )
 
 
 @pytest.fixture
 def campaign_with_sequence(conn, sample_campaign, sample_template):
     """Set up a campaign with a single email sequence step. Returns campaign_id."""
-    add_sequence_step(conn, sample_campaign, 1, "email", sample_template, delay_days=0)
+    add_sequence_step(conn, sample_campaign, 1, "email", sample_template, delay_days=0, user_id=1)
     return sample_campaign
 
 
@@ -101,6 +103,7 @@ def enrolled_contact(conn, sample_contact, campaign_with_sequence):
     enroll_contact(
         conn, sample_contact, campaign_with_sequence,
         next_action_date=date.today().isoformat(),
+        user_id=1,
     )
     return sample_contact, campaign_with_sequence
 
@@ -170,7 +173,7 @@ class TestStatusCommand:
         assert result.exit_code == 0
         assert "positive" in result.output.lower()
 
-        ccs = get_contact_campaign_status(conn, contact_id, campaign_id)
+        ccs = get_contact_campaign_status(conn, contact_id, campaign_id, user_id=1)
         assert ccs["status"] == "replied_positive"
 
     def test_reply_negative(self, tmp_db, conn, enrolled_contact):
@@ -185,7 +188,7 @@ class TestStatusCommand:
         assert result.exit_code == 0
         assert "negative" in result.output.lower()
 
-        ccs = get_contact_campaign_status(conn, contact_id, campaign_id)
+        ccs = get_contact_campaign_status(conn, contact_id, campaign_id, user_id=1)
         assert ccs["status"] == "replied_negative"
 
     def test_reply_call_booked(self, tmp_db, conn, enrolled_contact):
@@ -201,7 +204,7 @@ class TestStatusCommand:
         assert "call-booked" in result.output.lower()
 
         # Status should be replied_positive
-        ccs = get_contact_campaign_status(conn, contact_id, campaign_id)
+        ccs = get_contact_campaign_status(conn, contact_id, campaign_id, user_id=1)
         assert ccs["status"] == "replied_positive"
 
         # Should have a call_booked event with metadata
@@ -227,7 +230,7 @@ class TestStatusCommand:
         assert result.exit_code == 0
         assert "no-response" in result.output.lower()
 
-        ccs = get_contact_campaign_status(conn, contact_id, campaign_id)
+        ccs = get_contact_campaign_status(conn, contact_id, campaign_id, user_id=1)
         assert ccs["status"] == "no_response"
 
     def test_reply_by_contact_id(self, tmp_db, conn, enrolled_contact):
@@ -242,7 +245,7 @@ class TestStatusCommand:
 
         assert result.exit_code == 0
 
-        ccs = get_contact_campaign_status(conn, contact_id, campaign_id)
+        ccs = get_contact_campaign_status(conn, contact_id, campaign_id, user_id=1)
         assert ccs["status"] == "replied_positive"
 
     def test_reply_unknown_contact(self, tmp_db, conn, sample_campaign):
@@ -342,9 +345,9 @@ class TestGetVariantStats:
             cursor = conn.cursor()
             cursor.execute(
                 "INSERT INTO contacts "
-                "(company_id, first_name, email, email_normalized, priority_rank, source) "
-                "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
-                (sample_company, f"Contact{i}", f"c{i}@test.com", f"c{i}@test.com", i + 1, "csv"),
+                "(company_id, first_name, email, email_normalized, priority_rank, source, user_id) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+                (sample_company, f"Contact{i}", f"c{i}@test.com", f"c{i}@test.com", i + 1, "csv", TEST_USER_ID),
             )
             cid = cursor.fetchone()["id"]
             conn.commit()
@@ -385,8 +388,8 @@ class TestGetVariantStats:
         cursor = conn.cursor()
         cursor.execute(
             "INSERT INTO contacts "
-            "(company_id, first_name, email, priority_rank, source) VALUES (%s, %s, %s, %s, %s) RETURNING id",
-            (sample_company, "NoVariant", "nv@test.com", 1, "csv"),
+            "(company_id, first_name, email, priority_rank, source, user_id) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+            (sample_company, "NoVariant", "nv@test.com", 1, "csv", TEST_USER_ID),
         )
         cid = cursor.fetchone()["id"]
         conn.commit()

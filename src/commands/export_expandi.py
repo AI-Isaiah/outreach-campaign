@@ -7,6 +7,8 @@ import os
 from datetime import date
 from typing import Optional
 
+from src.models.database import get_cursor
+
 
 def export_expandi_csv(
     conn,
@@ -36,7 +38,7 @@ def export_expandi_csv(
     from src.models.campaigns import get_campaign_by_name
     from src.services.priority_queue import get_daily_queue
 
-    campaign = get_campaign_by_name(conn, campaign_name)
+    campaign = get_campaign_by_name(conn, campaign_name, user_id=1)
     if not campaign:
         raise ValueError(f"Campaign not found: {campaign_name}")
 
@@ -66,12 +68,12 @@ def export_expandi_csv(
 
         for item in linkedin_items:
             contact_id = item["contact_id"]
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT first_name, last_name, email FROM contacts WHERE id = %s",
-                (contact_id,),
-            )
-            row = cursor.fetchone()
+            with get_cursor(conn) as cursor:
+                cursor.execute(
+                    "SELECT first_name, last_name, email FROM contacts WHERE id = %s",
+                    (contact_id,),
+                )
+                row = cursor.fetchone()
 
             if row is None:
                 continue

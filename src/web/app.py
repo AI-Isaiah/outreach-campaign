@@ -44,7 +44,9 @@ from src.web.routes import (  # noqa: E402
     conversations,
     crm,
     deals,
+    deep_research,
     gmail,
+    gmail_oauth,
     import_routes,
     inbox,
     insights,
@@ -53,7 +55,9 @@ from src.web.routes import (  # noqa: E402
     queue,
     replies,
     research,
+    sequence_generator,
     settings,
+    smart_import,
     stats,
     tags,
     templates,
@@ -72,14 +76,17 @@ async def lifespan(app: FastAPI):
     Connections are created per-request in get_db() when the pool is not initialized.
     """
     if SUPABASE_DB_URL:
-        conn = get_connection(SUPABASE_DB_URL)
         try:
-            run_migrations(conn)
-            logger.info("Database migrations completed")
-        finally:
-            conn.close()
-        init_pool(SUPABASE_DB_URL)
-        logger.info("Connection pool initialized")
+            conn = get_connection(SUPABASE_DB_URL)
+            try:
+                run_migrations(conn)
+                logger.info("Database migrations completed")
+            finally:
+                conn.close()
+            init_pool(SUPABASE_DB_URL)
+            logger.info("Connection pool initialized")
+        except Exception as e:
+            logger.warning("Could not connect to database at startup: %s", e)
     yield
     close_pool()
 
@@ -119,7 +126,7 @@ app.add_middleware(
 # Health endpoint — no auth required
 @app.get("/api/health")
 def health_check():
-    from src.models.database import is_pool_initialized, get_pool_connection, put_pool_connection
+    from src.models.database import is_pool_initialized, get_pool_connection, put_pool_connection, get_cursor
 
     if not is_pool_initialized():
         return {"status": "ok", "database": "no_pool"}
@@ -128,12 +135,9 @@ def health_check():
     try:
         conn = get_pool_connection()
         try:
-            cursor = conn.cursor()
-            try:
+            with get_cursor(conn) as cursor:
                 cursor.execute("SELECT 1")
                 db_ok = True
-            finally:
-                cursor.close()
         finally:
             put_pool_connection(conn)
     except Exception:
@@ -141,8 +145,9 @@ def health_check():
     return {"status": "ok" if db_ok else "degraded", "database": db_ok}
 
 
-# Auth router — no auth dependency (it IS the auth entry point)
+# Auth routers — no global auth dependency (they handle auth internally)
 app.include_router(auth.router, prefix="/api")
+app.include_router(gmail_oauth.router, prefix="/api")
 
 # All other routers — auth required
 _auth_deps = [Depends(require_auth)]
@@ -166,6 +171,9 @@ app.include_router(conversations.router, prefix="/api", dependencies=_auth_deps)
 app.include_router(products.router, prefix="/api", dependencies=_auth_deps)
 app.include_router(newsletters.router, prefix="/api", dependencies=_auth_deps)
 app.include_router(research.router, prefix="/api", dependencies=_auth_deps)
+app.include_router(deep_research.router, prefix="/api", dependencies=_auth_deps)
+app.include_router(sequence_generator.router, prefix="/api", dependencies=_auth_deps)
+app.include_router(smart_import.router, prefix="/api", dependencies=_auth_deps)
 
 # --- Static file serving (production: frontend/dist baked into image) ---
 _frontend_dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"

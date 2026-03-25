@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Optional
 
+from src.models.database import get_cursor
 from src.services.response_analyzer import get_segment_performance
 
 
@@ -30,26 +31,26 @@ def score_contacts(
     segment_rates = {s["aum_tier"]: s["reply_rate"] for s in segments}
 
     # Get max AUM for normalization
-    cursor = conn.cursor()
-    cursor.execute("SELECT MAX(aum_millions) AS max_aum FROM companies WHERE aum_millions IS NOT NULL")
-    max_aum_row = cursor.fetchone()
-    max_aum = max_aum_row["max_aum"] if max_aum_row and max_aum_row["max_aum"] else 1.0
+    with get_cursor(conn) as cursor:
+        cursor.execute("SELECT MAX(aum_millions) AS max_aum FROM companies WHERE aum_millions IS NOT NULL")
+        max_aum_row = cursor.fetchone()
+        max_aum = max_aum_row["max_aum"] if max_aum_row and max_aum_row["max_aum"] else 1.0
 
-    # Fetch contact data
-    placeholders = ",".join(["%s"] * len(contact_ids))
-    cursor.execute(
-        f"""
-        SELECT c.id, c.email_status, c.linkedin_url, c.is_gdpr,
-               comp.aum_millions, comp.firm_type,
-               ccs.next_action_date, ccs.current_step
-        FROM contacts c
-        JOIN companies comp ON comp.id = c.company_id
-        JOIN contact_campaign_status ccs ON ccs.contact_id = c.id AND ccs.campaign_id = %s
-        WHERE c.id IN ({placeholders})
-        """,
-        [campaign_id] + contact_ids,
-    )
-    rows = cursor.fetchall()
+        # Fetch contact data
+        placeholders = ",".join(["%s"] * len(contact_ids))
+        cursor.execute(
+            f"""
+            SELECT c.id, c.email_status, c.linkedin_url, c.is_gdpr,
+                   comp.aum_millions, comp.firm_type,
+                   ccs.next_action_date, ccs.current_step
+            FROM contacts c
+            JOIN companies comp ON comp.id = c.company_id
+            JOIN contact_campaign_status ccs ON ccs.contact_id = c.id AND ccs.campaign_id = %s
+            WHERE c.id IN ({placeholders})
+            """,
+            [campaign_id] + contact_ids,
+        )
+        rows = cursor.fetchall()
 
     today = date.today()
     results = []
@@ -59,7 +60,7 @@ def score_contacts(
         aum_score = min(aum / max_aum, 1.0) if max_aum > 0 else 0.0
 
         # Segment reply rate
-        tier = _aum_to_tier(aum)
+        tier = aum_to_tier(aum)
         segment_score = segment_rates.get(tier, 0.0)
 
         # Channel availability (0-1): has email + has linkedin = 1.0
@@ -101,7 +102,7 @@ def score_contacts(
     return results
 
 
-def _aum_to_tier(aum: float) -> str:
+def aum_to_tier(aum: float) -> str:
     """Map AUM in millions to a tier string."""
     if aum < 100:
         return "$0-100M"
