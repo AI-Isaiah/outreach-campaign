@@ -1,7 +1,38 @@
 # TODOS
 
-## P0 — Campaign Sequence Builder
+## P0 — Daily Outreach System (B+C Plan)
 
+### Phase 2: LinkedIn automation L1
+**Priority:** P0 (next to build)
+**Files:** `frontend/src/pages/Queue.tsx`, `frontend/src/components/QueueLinkedInCard.tsx`
+**What:** Enhanced LinkedIn card with copy-to-clipboard button, expandable message, channel icons (Lucide Mail/Linkedin). LinkedIn templates already exist at `src/templates/linkedin/`.
+**Design decisions:** Copy button: `bg-blue-600 text-white` → "Copied" with check for 2s. `aria-label="Copy message to clipboard"`.
+**Tests needed:** 4 frontend tests.
+
+### Phase 3: Reply feedback + template badge
+**Priority:** P0
+**Files:** `src/enums.py`, `src/services/state_machine.py`, `frontend/src/pages/CampaignDetail.tsx`, `frontend/src/pages/Templates.tsx`, migration `022_replied_neutral.sql`
+**What:** Add REPLIED_NEUTRAL status (NOT terminal — no auto-activation). Map reply_detector's "neutral" → REPLIED_NEUTRAL. Reply breakdown (positive/neutral/negative) in analytics. "Winning" template badge reusing `response_analyzer.py:get_template_performance()`.
+**Design decisions:** replied_neutral badge: `bg-purple-100 text-purple-700`. Winning badge: `bg-green-100 text-green-800` with Lucide Trophy icon. Reply breakdown: stacked bar (green/purple/red).
+**Tests needed:** 8 (state machine + metrics).
+
+### Phase 4: Research-powered messages
+**Priority:** P0
+**Files:** new `src/services/message_drafter.py`, `src/services/deep_research_service.py`, `src/application/queue_service.py`, `src/web/routes/queue.py`, `frontend/src/types/index.ts`, migration `023_message_drafts.sql`
+**What:** LLM draft generation at research-completion time (Claude Haiku). Stored in message_drafts table. Batch-queried in _batch_enrich() alongside gmail_drafts. Queue cards show draft_text when available, Jinja2 fallback when null. Error isolation: Haiku failure does NOT affect research completion.
+**Design decisions:** Draft indicator: "AI-drafted from research" label in `text-xs text-purple-600` with Lucide Sparkles icon. Edit button opens inline panel.
+**Schema:** `message_drafts(id, contact_id FK, campaign_id FK, step_order, draft_text, model, generated_at, research_id FK, user_id FK, UNIQUE(contact_id, campaign_id, step_order))`
+**Tests needed:** 8 (drafter + queue integration).
+
+### Phase 5: Campaign kanban
+**Priority:** P1
+**Files:** `frontend/src/pages/CampaignDetail.tsx`, `src/web/routes/campaigns.py`
+**What:** "Pipeline" tab in CampaignDetail. Columns = sequence steps, cards = contacts. dnd-kit drag for step changes.
+**Engineering decisions:** Drag calls `update_contact_campaign_status(current_step=N)` — NOT `transition_contact()` (steps != statuses). Backend owns delay_days calculation. Forward AND backward drags allowed. Log `step_manual_advance` event.
+**Design decisions:** Compact cards (~40px): company bold + contact + StatusBadge + channel icon. Ghost card `opacity-50 ring-2 ring-blue-400`. Empty column: "No contacts at this step". Mobile: disable drag, show "Move to step" dropdown. A11y: `role="list"` on columns, keyboard arrow nav.
+**Tests needed:** 7 (API + frontend).
+
+---
 
 ### Per-field conflict resolution in merge (V2)
 **Priority:** P1

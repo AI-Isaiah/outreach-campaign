@@ -10,6 +10,8 @@ Multi-channel outreach campaign manager for crypto fund allocators. Multi-tenant
 
 Check `TODOS.md` for the prioritized backlog. P0 items are the next thing to build. When starting a new session, read TODOS.md first to understand what needs doing.
 
+**Active plan:** "Complete Daily Outreach System (B+C)" — 5 phases. Phase 1 (cross-campaign email dedup) is COMPLETE. Phases 2-5 are next. Full plan at `~/.claude/plans/magical-juggling-shamir.md`. Design doc at `~/.gstack/projects/AI-Isaiah-outreach-campaign/helios-mammut-feat-smart-import-design-20260325-015128.md`. Eng review test plan at `~/.gstack/projects/AI-Isaiah-outreach-campaign/helios-mammut-feat-smart-import-eng-review-test-plan-20260325-021556.md`.
+
 ## Commands
 
 ```bash
