@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import GlobalSearchBar from "./GlobalSearchBar";
+import ImportStatusBanner from "./ImportStatusBanner";
 
 const primaryLinks = [
   { to: "/", label: "Campaigns", icon: Megaphone },
@@ -159,6 +160,7 @@ export default function Layout() {
 
       {/* Main content */}
       <main className="flex-1 overflow-y-auto pt-14 md:pt-0" aria-label="Page content">
+        <ImportStatusBanner />
         <div className="max-w-7xl mx-auto px-6 py-8 animate-page-in">
           <Outlet />
         </div>

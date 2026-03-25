@@ -1,5 +1,17 @@
 import { BASE, authHeaders, request } from "./request";
 
+export type ImportJobStatus = "analyzing" | "pending" | "previewed" | "completed" | "failed";
+
+/** Response from POST /import/smart (async — job starts analyzing in background). */
+export interface AnalyzeStartResult {
+  import_job_id: string;
+  status: "analyzing";
+  row_count: number;
+  headers: string[];
+  filename: string;
+}
+
+/** Full analysis result stored in import_jobs.analysis_result after LLM completes. */
 export interface AnalyzeResult {
   import_job_id: string;
   headers: string[];
@@ -14,6 +26,20 @@ export interface AnalyzeResult {
   };
   confidence: number;
   row_count: number;
+}
+
+/** Import job as returned by GET /import/jobs/active and GET /import/jobs/{id}. */
+export interface ImportJob {
+  id: string;
+  status: ImportJobStatus;
+  filename: string | null;
+  row_count: number;
+  headers: string[] | null;
+  column_mapping: Record<string, string> | null;
+  multi_contact_pattern: Record<string, unknown> | null;
+  analysis_result: Omit<AnalyzeResult, "import_job_id"> | null;
+  source_label: string | null;
+  created_at: string;
 }
 
 export interface ExistingContact {
@@ -43,6 +69,17 @@ export interface RowDecision {
   existing_contact_id?: number;
 }
 
+export type ResolutionTier = "auto_merge" | "review" | "company_change" | "file_duplicate" | "new";
+
+export interface TriageSummary {
+  auto_mergeable: number;
+  needs_review: number;
+  company_changes: number;
+  file_duplicates: number;
+  new_contacts: number;
+  total: number;
+}
+
 export interface PreviewRow {
   _index: number;
   company_name: string;
@@ -60,6 +97,9 @@ export interface PreviewRow {
   is_gdpr: boolean;
   is_duplicate: boolean;
   match_type: MatchType | null;
+  resolution_tier: ResolutionTier;
+  conflict_fields: string[] | null;
+  existing_company_name: string | null;
   existing_contact_id: number | null;
   existing_contact: ExistingContact | null;
   field_diffs: FieldDiffs | null;
@@ -76,6 +116,7 @@ export interface PreviewResult {
   total_companies: number;
   duplicates: number;
   new_contacts: number;
+  triage_summary?: TriageSummary;
   preview_rows: PreviewRow[];
 }
 
@@ -89,7 +130,8 @@ export interface ImportResult {
 }
 
 export const smartImportApi = {
-  analyze: async (file: File): Promise<AnalyzeResult> => {
+  /** Upload CSV and start async LLM analysis (returns immediately). */
+  analyze: async (file: File): Promise<AnalyzeStartResult> => {
     const formData = new FormData();
     formData.append("file", file);
     const res = await fetch(`${BASE}/import/smart`, {
@@ -103,6 +145,16 @@ export const smartImportApi = {
     }
     return res.json();
   },
+
+  /** Get the most recent non-completed import job (for resume on navigation). */
+  getActiveJob: async (): Promise<ImportJob | null> => {
+    const data = await request<{ job: ImportJob | null }>("/import/jobs/active");
+    return data.job;
+  },
+
+  /** Get a specific import job by ID. */
+  getJob: async (jobId: string): Promise<ImportJob> =>
+    request<ImportJob>(`/import/jobs/${jobId}`),
 
   preview: async (
     jobId: string,
