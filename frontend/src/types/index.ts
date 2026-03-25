@@ -1,3 +1,12 @@
+export interface MessageDraft {
+  draft_subject: string | null;
+  draft_text: string;
+  channel: string;
+  model: string;
+  generated_at: string;
+  research_id: number | null;
+}
+
 export interface QueueItem {
   contact_id: number;
   contact_name: string;
@@ -24,6 +33,10 @@ export interface QueueItem {
   priority_score?: number;
   selection_mode?: string;
   reasoning?: string;
+  // Phase 4: AI draft fields
+  message_draft?: MessageDraft | null;
+  has_research?: boolean;
+  draft_mode?: 'template' | 'ai';
 }
 
 export interface RenderedEmail {

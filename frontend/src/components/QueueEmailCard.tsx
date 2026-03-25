@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import React from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Mail, Pencil } from "lucide-react";
 import { api } from "../api/client";
+import { queueApi } from "../api/queue";
+import AiDraftControls from "./AiDraftControls";
 import type { QueueItem } from "../types";
 import AumTierBadge from "./AumTierBadge";
 import StatusBadge from "./StatusBadge";
@@ -20,18 +22,30 @@ function QueueEmailCard({
   onDeferred?: () => void;
 }) {
   const [subject, setSubject] = useState(
-    item.rendered_email?.subject || "",
+    item.message_draft?.draft_subject || item.rendered_email?.subject || "",
   );
   const [bodyText, setBodyText] = useState(
-    item.rendered_email?.body_text || "",
+    item.message_draft?.draft_text || item.rendered_email?.body_text || "",
   );
   const [draftStatus, setDraftStatus] = useState(
     item.gmail_draft?.status || null,
   );
   const [skipped, setSkipped] = useState(false);
+  const subjectRef = useRef<HTMLInputElement>(null);
 
   const queryClient = useQueryClient();
   const contactEdit = useContactEdit(item);
+
+  const generateMutation = useMutation({
+    mutationFn: () =>
+      queueApi.generateDraft(item.contact_id, item.campaign_id!, item.step_order),
+    onSuccess: (data) => {
+      setSubject(data.draft_subject || "");
+      setBodyText(data.draft_text);
+      queryClient.invalidateQueries({ queryKey: ["queue-all"], refetchType: "none" });
+      setTimeout(() => subjectRef.current?.focus(), 100);
+    },
+  });
 
   const skipMutation = useMutation({
     mutationFn: (reason: string) =>
@@ -107,18 +121,26 @@ function QueueEmailCard({
 
       <ContactEditPanel edit={contactEdit} />
 
-      {item.rendered_email ? (
+      {item.rendered_email || item.message_draft || generateMutation.isSuccess ? (
         <div className="p-5 space-y-4">
           <div className="text-sm">
             <span className="text-gray-500">To: </span>
-            <span className="font-medium">{item.rendered_email.contact_email}</span>
+            <span className="font-medium">{item.rendered_email?.contact_email || item.email}</span>
           </div>
 
-          <div>
+          <AiDraftControls
+            hasAiDraft={!!item.message_draft || generateMutation.isSuccess}
+            draftMode={item.draft_mode}
+            hasResearch={item.has_research}
+            generateMutation={generateMutation}
+          />
+
+          <div className={`transition-opacity duration-200 ease-in ${item.draft_mode === "ai" && !(item.message_draft || generateMutation.isSuccess) ? "opacity-50" : ""}`}>
             <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
               Subject
             </label>
             <input
+              ref={subjectRef}
               type="text"
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
@@ -126,7 +148,7 @@ function QueueEmailCard({
             />
           </div>
 
-          <div>
+          <div className={`transition-opacity duration-200 ease-in ${item.draft_mode === "ai" && !(item.message_draft || generateMutation.isSuccess) ? "opacity-50" : ""}`}>
             <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
               Body
             </label>
@@ -141,8 +163,14 @@ function QueueEmailCard({
             {draftStatus !== "sent" && (
               <button
                 onClick={() => draftMutation.mutate()}
-                disabled={draftMutation.isPending || draftStatus === "drafted"}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                disabled={
+                  draftMutation.isPending ||
+                  draftStatus === "drafted" ||
+                  (item.draft_mode === "ai" && !(item.message_draft || generateMutation.isSuccess))
+                }
+                className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                title={item.draft_mode === "ai" && !(item.message_draft || generateMutation.isSuccess) ? "Generate AI Draft first" : undefined}
+                aria-disabled={item.draft_mode === "ai" && !(item.message_draft || generateMutation.isSuccess)}
               >
                 {draftMutation.isPending
                   ? "Creating..."

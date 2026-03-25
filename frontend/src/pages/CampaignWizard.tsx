@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Upload,
   Check,
@@ -39,6 +39,8 @@ import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
 import { campaignsApi } from "../api/campaigns";
 import type { GeneratedStep } from "../api/campaigns";
+import { api } from "../api/client";
+import type { Template } from "../types";
 import { useToast } from "../components/Toast";
 import { splitCsvLine } from "../utils/parseCsv";
 
@@ -97,22 +99,61 @@ export default function CampaignWizard() {
   const [channels, setChannels] = useState<Set<string>>(new Set(["email", "linkedin"]));
   const [generatedSteps, setGeneratedSteps] = useState<GeneratedStep[]>([]);
 
-  // Step 4: Messages (template_id per step — null means "pick later")
+  // Step 4: Messages
   const [stepTemplates, setStepTemplates] = useState<Record<number, number | null>>({});
+  const [templateModes, setTemplateModes] = useState<Record<number, 'template' | 'manual' | 'ai'>>({});
+  const [manualSubjects, setManualSubjects] = useState<Record<number, string>>({});
+  const [manualBodies, setManualBodies] = useState<Record<number, string>>({});
+  const [refTemplates, setRefTemplates] = useState<Record<number, number | null>>({});
 
   // Launch mutation
   const launchMutation = useMutation({
-    mutationFn: (data: { status: "active" | "draft" }) =>
-      campaignsApi.launchCampaign({
+    mutationFn: async (data: { status: "active" | "draft" }) => {
+      // For manual mode steps, create templates on the fly
+      const stepData = await Promise.all(
+        generatedSteps.map(async ({ _id: _, ...s }) => {
+          const mode = templateModes[s.step_order] || "template";
+
+          if (mode === "manual" && manualBodies[s.step_order]?.trim()) {
+            const isEmail = s.channel === "email";
+            const result = await api.createTemplate({
+              name: `${name} - Step ${s.step_order}`,
+              channel: s.channel,
+              body_template: manualBodies[s.step_order],
+              subject: isEmail ? manualSubjects[s.step_order] || "" : undefined,
+            });
+            return {
+              ...s,
+              template_id: result.id,
+              draft_mode: "template" as const,
+            };
+          }
+
+          if (mode === "ai") {
+            return {
+              ...s,
+              template_id: refTemplates[s.step_order] ?? null,
+              draft_mode: "ai" as const,
+            };
+          }
+
+          // template mode
+          return {
+            ...s,
+            template_id: stepTemplates[s.step_order] ?? null,
+            draft_mode: "template" as const,
+          };
+        })
+      );
+
+      return campaignsApi.launchCampaign({
         name,
         description,
-        steps: generatedSteps.map(({ _id: _, ...s }) => ({
-          ...s,
-          template_id: stepTemplates[s.step_order] ?? null,
-        })),
+        steps: stepData,
         contact_ids: selectedContactIds,
         status: data.status,
-      }),
+      });
+    },
     onSuccess: (data) => {
       if (data.status === "active") {
         toast(
@@ -330,6 +371,14 @@ export default function CampaignWizard() {
             steps={generatedSteps}
             stepTemplates={stepTemplates}
             setStepTemplates={setStepTemplates}
+            templateModes={templateModes}
+            setTemplateModes={setTemplateModes}
+            manualSubjects={manualSubjects}
+            setManualSubjects={setManualSubjects}
+            manualBodies={manualBodies}
+            setManualBodies={setManualBodies}
+            refTemplates={refTemplates}
+            setRefTemplates={setRefTemplates}
           />
         )}
         {step === 4 && (
@@ -951,54 +1000,228 @@ function recalcSteps(steps: GeneratedStep[]): GeneratedStep[] {
 
 // ─── Step 4: Messages ──────────────────────────────────────────────
 
+function isEmailChannel(channel: string): boolean {
+  return channel === "email";
+}
+
 function StepMessages({
   steps,
   stepTemplates,
   setStepTemplates,
+  templateModes,
+  setTemplateModes,
+  manualSubjects,
+  setManualSubjects,
+  manualBodies,
+  setManualBodies,
+  refTemplates,
+  setRefTemplates,
 }: {
   steps: GeneratedStep[];
   stepTemplates: Record<number, number | null>;
   setStepTemplates: (v: Record<number, number | null>) => void;
+  templateModes: Record<number, 'template' | 'manual' | 'ai'>;
+  setTemplateModes: (v: Record<number, 'template' | 'manual' | 'ai'>) => void;
+  manualSubjects: Record<number, string>;
+  setManualSubjects: (v: Record<number, string>) => void;
+  manualBodies: Record<number, string>;
+  setManualBodies: (v: Record<number, string>) => void;
+  refTemplates: Record<number, number | null>;
+  setRefTemplates: (v: Record<number, number | null>) => void;
 }) {
+  const { data: templates = [] } = useQuery<Template[]>({
+    queryKey: ["templates"],
+    queryFn: () => api.listTemplates(undefined, true),
+  });
+
+  const getMode = (stepOrder: number) => templateModes[stepOrder] || "template";
+
+  const setMode = (stepOrder: number, mode: 'template' | 'manual' | 'ai') => {
+    setTemplateModes({ ...templateModes, [stepOrder]: mode });
+  };
+
+  const filteredTemplates = (channel: string) =>
+    templates.filter((t) =>
+      isEmailChannel(channel) ? t.channel === "email" : t.channel !== "email"
+    );
+
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-semibold">Choose message templates</h2>
       <p className="text-sm text-gray-500">
-        Pick a template for each step, or leave blank to choose later from the campaign dashboard.
+        Pick a template, write your own message, or use AI to generate personalized drafts from research data.
       </p>
 
-      <div className="space-y-3">
-        {steps.map((s) => (
-          <div
-            key={s.step_order}
-            className="flex items-center gap-4 p-3 border border-gray-200 rounded-lg"
-          >
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="text-xs text-gray-400 shrink-0">Day {s.delay_days}</span>
-              <span
-                className={`text-xs font-medium px-2 py-0.5 rounded shrink-0 ${
-                  s.channel === "email"
-                    ? "bg-blue-100 text-blue-700"
-                    : "bg-indigo-100 text-indigo-700"
-                }`}
+      <div className="space-y-4">
+        {steps.map((s) => {
+          const mode = getMode(s.step_order);
+          const isEmail = isEmailChannel(s.channel);
+          const available = filteredTemplates(s.channel);
+
+          return (
+            <div
+              key={s.step_order}
+              className="p-4 border border-gray-200 rounded-lg space-y-3"
+            >
+              {/* Step header */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-400 shrink-0">
+                  Step {s.step_order} &middot; Day {s.delay_days}
+                </span>
+                <span
+                  className={`text-xs font-medium px-2 py-0.5 rounded shrink-0 ${
+                    isEmail
+                      ? "bg-blue-100 text-blue-700"
+                      : "bg-indigo-100 text-indigo-700"
+                  }`}
+                >
+                  {isEmail ? "Email" : "LinkedIn"}
+                </span>
+              </div>
+
+              {/* Radio group */}
+              <div
+                className="flex flex-col sm:flex-row gap-2 sm:gap-4"
+                role="radiogroup"
+                aria-label={`Template mode for Step ${s.step_order}: ${s.channel}`}
               >
-                {s.channel === "email" ? "Email" : "LinkedIn"}
-              </span>
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="radio"
+                    name={`mode-${s.step_order}`}
+                    checked={mode === "template"}
+                    onChange={() => setMode(s.step_order, "template")}
+                    className="text-blue-600"
+                  />
+                  <span className="text-sm font-medium text-gray-700">Select template</span>
+                </label>
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="radio"
+                    name={`mode-${s.step_order}`}
+                    checked={mode === "manual"}
+                    onChange={() => setMode(s.step_order, "manual")}
+                    className="text-blue-600"
+                  />
+                  <span className="text-sm font-medium text-gray-700">Write manually</span>
+                </label>
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="radio"
+                    name={`mode-${s.step_order}`}
+                    checked={mode === "ai"}
+                    onChange={() => setMode(s.step_order, "ai")}
+                    className="text-purple-600"
+                  />
+                  <Sparkles size={14} className="text-purple-500" />
+                  <span className="text-sm font-medium text-purple-600">AI draft</span>
+                </label>
+              </div>
+
+              {/* Mode-specific content */}
+              {mode === "template" && (
+                <div>
+                  <select
+                    value={stepTemplates[s.step_order] ?? ""}
+                    onChange={(e) =>
+                      setStepTemplates({
+                        ...stepTemplates,
+                        [s.step_order]: e.target.value ? Number(e.target.value) : null,
+                      })
+                    }
+                    className="bg-white border border-gray-200 rounded-md px-3 py-2 text-sm w-full"
+                  >
+                    <option value="">Choose later...</option>
+                    {available.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                        {t.variant_label ? ` (${t.variant_label})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                  {available.length === 0 && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      No {isEmail ? "email" : "LinkedIn"} templates yet -- write manually or use AI.
+                    </p>
+                  )}
+                  {/* Template preview */}
+                  {stepTemplates[s.step_order] && (() => {
+                    const tpl = templates.find((t) => t.id === stepTemplates[s.step_order]);
+                    if (!tpl) return null;
+                    return (
+                      <div className="bg-gray-50 rounded-md p-3 text-sm text-gray-600 max-h-32 overflow-y-auto mt-2 whitespace-pre-wrap">
+                        {tpl.subject && <div className="font-medium mb-1">{tpl.subject}</div>}
+                        {tpl.body_template}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {mode === "manual" && (
+                <div className="space-y-2">
+                  <p className="text-xs text-gray-400">
+                    Variables: <code className="text-purple-600 font-medium">{"{{first_name}}"}</code>, <code className="text-purple-600 font-medium">{"{{company_name}}"}</code>, <code className="text-purple-600 font-medium">{"{{title}}"}</code>
+                  </p>
+                  {isEmail && (
+                    <input
+                      type="text"
+                      placeholder="Subject line"
+                      value={manualSubjects[s.step_order] || ""}
+                      onChange={(e) =>
+                        setManualSubjects({ ...manualSubjects, [s.step_order]: e.target.value })
+                      }
+                      className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  )}
+                  <textarea
+                    placeholder="Message body..."
+                    value={manualBodies[s.step_order] || ""}
+                    onChange={(e) =>
+                      setManualBodies({ ...manualBodies, [s.step_order]: e.target.value })
+                    }
+                    className="w-full h-28 p-3 border border-gray-200 rounded-md text-sm resize-y focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              )}
+
+              {mode === "ai" && (
+                <div className="space-y-2">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">
+                      Reference template (optional)
+                    </label>
+                    <select
+                      value={refTemplates[s.step_order] ?? ""}
+                      onChange={(e) =>
+                        setRefTemplates({
+                          ...refTemplates,
+                          [s.step_order]: e.target.value ? Number(e.target.value) : null,
+                        })
+                      }
+                      className="bg-white border border-gray-200 rounded-md px-3 py-2 text-sm w-full"
+                    >
+                      <option value="">None</option>
+                      {available.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                          {t.variant_label ? ` (${t.variant_label})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    AI generates a personalized message using deep research data. You'll review and edit each draft before sending.
+                  </p>
+                </div>
+              )}
             </div>
-            <div className="flex-1 flex items-center gap-2">
-              <FileText size={14} className="text-gray-400 shrink-0" />
-              <span className="text-sm text-gray-500">
-                {stepTemplates[s.step_order]
-                  ? `Template #${stepTemplates[s.step_order]}`
-                  : "No template selected"}
-              </span>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <p className="text-xs text-gray-400">
-        Templates can be assigned later from the campaign's Sequence tab.
+        Templates can also be changed later from the campaign's Sequence tab.
       </p>
     </div>
   );

@@ -14,6 +14,7 @@ export interface SequenceStepInput {
   channel: string;
   delay_days: number;
   template_id?: number | null;
+  draft_mode?: 'template' | 'ai';
 }
 
 export interface LaunchCampaignRequest {
@@ -53,7 +54,8 @@ export interface GeneratedStep {
   step_order: number;
   channel: string;
   delay_days: number;
-  template_id: null;
+  template_id: number | null;
+  draft_mode?: 'template' | 'ai';
 }
 
 export const campaignsApi = {
