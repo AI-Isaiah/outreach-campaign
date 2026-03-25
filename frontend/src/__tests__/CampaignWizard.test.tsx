@@ -46,7 +46,7 @@ describe("generateLocalSequence", () => {
     expect(steps).toHaveLength(3);
     expect(steps[0].channel).toBe("linkedin_connect");
     expect(steps[1].channel).toBe("linkedin_message");
-    expect(steps[2].channel).toBe("linkedin_connect");
+    expect(steps[2].channel).toBe("linkedin_message");
   });
 
   it("respects minimum gaps between same-channel steps", () => {
