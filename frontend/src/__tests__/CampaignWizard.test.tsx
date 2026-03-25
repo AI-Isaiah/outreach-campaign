@@ -98,3 +98,29 @@ describe("CSV parsing", () => {
     expect(result.every((c) => c.selected)).toBe(true);
   });
 });
+
+describe("generateLocalSequence — draft_mode defaults", () => {
+  it("all generated steps default to template draft_mode", () => {
+    const steps = generateLocalSequence(3, ["email"]);
+    // Generated steps should not include draft_mode — that's set by the wizard UI
+    // Verify the base structure doesn't include AI mode by default
+    for (const step of steps) {
+      expect(step).not.toHaveProperty("draft_mode");
+    }
+  });
+
+  it("step_order is sequential starting from 1", () => {
+    const steps = generateLocalSequence(5, ["email", "linkedin"]);
+    steps.forEach((step, i) => {
+      expect(step.step_order).toBe(i + 1);
+    });
+  });
+
+  it("channel-aware gap enforcement: same-channel has minimum 3-day gap", () => {
+    const steps = generateLocalSequence(4, ["email"]);
+    for (let i = 1; i < steps.length; i++) {
+      const gap = steps[i].delay_days - steps[i - 1].delay_days;
+      expect(gap).toBeGreaterThanOrEqual(3);
+    }
+  });
+});

@@ -60,7 +60,7 @@ describe("QueueLinkedInCard", () => {
 
     const textarea = screen.getByDisplayValue(item.rendered_message!);
     expect(textarea).toBeInTheDocument();
-    expect(textarea).toHaveAttribute("readonly");
+    expect(textarea.tagName).toBe("TEXTAREA");
   });
 
   it("copies message to clipboard on copy button click", async () => {

@@ -71,7 +71,7 @@ def _setup(conn, *, with_research=True, channel="email", draft_mode="template"):
     return company_id, contact_id, campaign_id, template_id, research_id
 
 
-def _mock_haiku_response(subject=None, body="Test draft body"):
+def _mock_haiku_response(subject=None, body="This is a sufficiently long test draft body for validation."):
     """Create a mock httpx response matching Haiku API format."""
     if subject:
         text = f"SUBJECT: {subject}\nBODY: {body}"
@@ -122,12 +122,12 @@ def test_generate_draft_no_research(mock_post, tmp_db):
     run_migrations(conn)
     _, contact_id, campaign_id, _, _ = _setup(conn, with_research=False)
 
-    mock_post.return_value = _mock_haiku_response("Subject", "Generic but personalized")
+    mock_post.return_value = _mock_haiku_response("Subject", "Generic but personalized email body for testing the flow.")
 
     from src.services.message_drafter import generate_draft
     result = generate_draft(conn, contact_id, campaign_id, 1, user_id=TEST_USER_ID)
 
-    assert result["draft_text"] == "Generic but personalized"
+    assert result["draft_text"] == "Generic but personalized email body for testing the flow."
     assert result["research_id"] is None
 
     # Verify the prompt included "No research available"
@@ -201,7 +201,7 @@ def test_generate_draft_endpoint_logic(mock_post, tmp_db):
     run_migrations(conn)
     _, contact_id, campaign_id, _, _ = _setup(conn, with_research=True)
 
-    mock_post.return_value = _mock_haiku_response("Test Subject", "Test body from Haiku")
+    mock_post.return_value = _mock_haiku_response("Test Subject", "Test body from Haiku with enough length for validation checks.")
 
     # Simulate the route logic directly
     from src.models.database import verify_ownership
@@ -219,7 +219,7 @@ def test_generate_draft_endpoint_logic(mock_post, tmp_db):
     assert enrollment["current_step"] == 1
 
     result = generate_draft(conn, contact_id, campaign_id, 1, user_id=TEST_USER_ID)
-    assert result["draft_text"] == "Test body from Haiku"
+    assert result["draft_text"] == "Test body from Haiku with enough length for validation checks."
     assert result["research_id"] is not None  # research was used
     conn.close()
 
@@ -244,7 +244,7 @@ def test_message_draft_in_queue_response(mock_post, tmp_db):
     run_migrations(conn)
     _, contact_id, campaign_id, _, _ = _setup(conn, with_research=True)
 
-    mock_post.return_value = _mock_haiku_response("Subject", "Draft body")
+    mock_post.return_value = _mock_haiku_response("Subject", "This is a sufficiently long draft body for validation.")
 
     from src.services.message_drafter import generate_draft
     generate_draft(conn, contact_id, campaign_id, 1, user_id=TEST_USER_ID)
@@ -258,7 +258,7 @@ def test_message_draft_in_queue_response(mock_post, tmp_db):
 
     assert len(enriched) == 1
     assert enriched[0]["message_draft"] is not None
-    assert enriched[0]["message_draft"]["draft_text"] == "Draft body"
+    assert enriched[0]["message_draft"]["draft_text"] == "This is a sufficiently long draft body for validation."
     conn.close()
 
 
@@ -327,19 +327,19 @@ def test_upsert_overwrite(mock_post, tmp_db):
     _, contact_id, campaign_id, _, _ = _setup(conn, with_research=True)
 
     # First generation
-    mock_post.return_value = _mock_haiku_response("First Subject", "First body")
+    mock_post.return_value = _mock_haiku_response("First Subject", "First body of the AI-generated draft message for testing.")
     from src.services.message_drafter import generate_draft
     generate_draft(conn, contact_id, campaign_id, 1, user_id=TEST_USER_ID)
 
     draft1 = get_message_draft(conn, contact_id, campaign_id, 1, user_id=TEST_USER_ID)
-    assert draft1["draft_text"] == "First body"
+    assert draft1["draft_text"] == "First body of the AI-generated draft message for testing."
 
     # Second generation (regenerate)
-    mock_post.return_value = _mock_haiku_response("Second Subject", "Second body")
+    mock_post.return_value = _mock_haiku_response("Second Subject", "Second body of the regenerated AI draft message for testing.")
     generate_draft(conn, contact_id, campaign_id, 1, user_id=TEST_USER_ID)
 
     draft2 = get_message_draft(conn, contact_id, campaign_id, 1, user_id=TEST_USER_ID)
-    assert draft2["draft_text"] == "Second body"
+    assert draft2["draft_text"] == "Second body of the regenerated AI draft message for testing."
     assert draft2["draft_subject"] == "Second Subject"
     conn.close()
 
@@ -412,4 +412,70 @@ def test_step_order_mismatch(tmp_db):
     assert enrollment["current_step"] == 1
     # If frontend sends step_order=5, backend detects mismatch
     assert enrollment["current_step"] != 5
+    conn.close()
+
+
+# ===========================================================================
+# CEO REVIEW HARDENING TESTS (3)
+# ===========================================================================
+
+@patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"})
+@patch("src.services.message_drafter.httpx.post")
+def test_haiku_429_rate_limit(mock_post, tmp_db):
+    """Haiku 429 rate limit → raises HTTPStatusError"""
+    import httpx
+
+    conn = get_connection(tmp_db)
+    run_migrations(conn)
+    _, contact_id, campaign_id, _, _ = _setup(conn, with_research=True)
+
+    mock_response = MagicMock()
+    mock_response.status_code = 429
+    mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+        "Rate limited", request=MagicMock(), response=mock_response
+    )
+    mock_post.return_value = mock_response
+
+    from src.services.message_drafter import generate_draft
+    with pytest.raises(httpx.HTTPStatusError):
+        generate_draft(conn, contact_id, campaign_id, 1, user_id=TEST_USER_ID)
+    conn.close()
+
+
+@patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"})
+@patch("src.services.message_drafter.httpx.post")
+def test_haiku_timeout(mock_post, tmp_db):
+    """Haiku timeout → raises TimeoutException"""
+    import httpx
+
+    conn = get_connection(tmp_db)
+    run_migrations(conn)
+    _, contact_id, campaign_id, _, _ = _setup(conn, with_research=True)
+
+    mock_post.side_effect = httpx.TimeoutException("Connection timed out")
+
+    from src.services.message_drafter import generate_draft
+    with pytest.raises(httpx.TimeoutException):
+        generate_draft(conn, contact_id, campaign_id, 1, user_id=TEST_USER_ID)
+    conn.close()
+
+
+@patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"})
+@patch("src.services.message_drafter.httpx.post")
+def test_empty_draft_raises_value_error(mock_post, tmp_db):
+    """Empty or too-short Haiku response → raises ValueError"""
+    conn = get_connection(tmp_db)
+    run_migrations(conn)
+    _, contact_id, campaign_id, _, _ = _setup(conn, with_research=True)
+
+    # Haiku returns a very short body
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"content": [{"text": "SUBJECT: Hi\nBODY: Ok"}]}
+    mock_resp.raise_for_status = MagicMock()
+    mock_post.return_value = mock_resp
+
+    from src.services.message_drafter import generate_draft
+    with pytest.raises(ValueError, match="empty or too-short"):
+        generate_draft(conn, contact_id, campaign_id, 1, user_id=TEST_USER_ID)
     conn.close()
