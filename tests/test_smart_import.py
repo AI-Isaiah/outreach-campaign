@@ -1035,3 +1035,740 @@ class TestWithinFileDuplicates:
             assert rows[1].get("within_file_duplicate") is False
         finally:
             conn.close()
+
+
+# ---------------------------------------------------------------------------
+# 20–37. Smart Duplicate Resolution V2 tests
+# ---------------------------------------------------------------------------
+
+
+def _insert_contact_at_company(conn, company_name, *, email=None, linkedin_url=None,
+                                title=None, first_name="Alice", last_name="Smith"):
+    """Insert a company (by name) + contact, return (company_id, contact_id).
+
+    Unlike _insert_existing_contact which always uses 'Acme Corp', this helper
+    accepts an arbitrary company name so tests can set up cross-company scenarios.
+    """
+    name_norm = normalize_company_name(company_name)
+    email_norm = normalize_email(email) if email else None
+    linkedin_norm = normalize_linkedin_url(linkedin_url) if linkedin_url else None
+    with get_cursor(conn) as cur:
+        cur.execute(
+            "SELECT id FROM companies WHERE name_normalized = %s AND user_id = %s",
+            (name_norm, TEST_USER_ID),
+        )
+        existing = cur.fetchone()
+        if existing:
+            co_id = existing["id"]
+        else:
+            cur.execute(
+                """INSERT INTO companies (name, name_normalized, user_id)
+                   VALUES (%s, %s, %s) RETURNING id""",
+                (company_name, name_norm, TEST_USER_ID),
+            )
+            co_id = cur.fetchone()["id"]
+        cur.execute(
+            """INSERT INTO contacts
+               (company_id, first_name, last_name, full_name,
+                email, email_normalized,
+                linkedin_url, linkedin_url_normalized,
+                title, user_id)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+            (co_id, first_name, last_name, f"{first_name} {last_name}",
+             email, email_norm, linkedin_url, linkedin_norm, title, TEST_USER_ID),
+        )
+        contact_id = cur.fetchone()["id"]
+    conn.commit()
+    return co_id, contact_id
+
+
+# ---------------------------------------------------------------------------
+# 20. test_tier_classification_auto_merge
+# ---------------------------------------------------------------------------
+
+
+def test_tier_classification_auto_merge(tmp_db):
+    """Exact match (email+LinkedIn) + same company -> resolution_tier = 'auto_merge'."""
+    conn = _setup_db(tmp_db)
+    try:
+        _insert_contact_at_company(
+            conn, "Acme Corp",
+            email="alice@acme.com",
+            linkedin_url="https://linkedin.com/in/alice",
+            title="CEO",
+        )
+        row = _make_transformed_row(
+            company="Acme Corp",
+            email="alice@acme.com",
+            linkedin="https://linkedin.com/in/alice",
+            title="CEO",
+        )
+        result = preview_import(conn, [row], user_id=TEST_USER_ID)
+        r = result["preview_rows"][0]
+        assert r["match_type"] == "exact"
+        assert r["resolution_tier"] == "auto_merge"
+        assert r["is_duplicate"] is True
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# 21. test_tier_classification_company_change
+# ---------------------------------------------------------------------------
+
+
+def test_tier_classification_company_change(tmp_db):
+    """Exact match (email+LinkedIn) + different company -> resolution_tier = 'company_change'."""
+    conn = _setup_db(tmp_db)
+    try:
+        _insert_contact_at_company(
+            conn, "Old Ventures",
+            email="alice@old.com",
+            linkedin_url="https://linkedin.com/in/alice",
+            title="VP",
+        )
+        row = _make_transformed_row(
+            company="New Capital",
+            email="alice@old.com",
+            linkedin="https://linkedin.com/in/alice",
+            title="VP",
+        )
+        result = preview_import(conn, [row], user_id=TEST_USER_ID)
+        r = result["preview_rows"][0]
+        assert r["match_type"] == "exact"
+        assert r["resolution_tier"] == "company_change"
+        assert "company_name" in r["conflict_fields"]
+        assert r["existing_company_name"] == "Old Ventures"
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# 22. test_tier_classification_review_email_diff
+# ---------------------------------------------------------------------------
+
+
+def test_tier_classification_review_email_diff(tmp_db):
+    """LinkedIn match + different email -> resolution_tier = 'review'."""
+    conn = _setup_db(tmp_db)
+    try:
+        _insert_contact_at_company(
+            conn, "Acme Corp",
+            email="alice-old@acme.com",
+            linkedin_url="https://linkedin.com/in/alice",
+            title="CEO",
+        )
+        row = _make_transformed_row(
+            company="Acme Corp",
+            email="alice-new@acme.com",
+            linkedin="https://linkedin.com/in/alice",
+            title="CEO",
+        )
+        result = preview_import(conn, [row], user_id=TEST_USER_ID)
+        r = result["preview_rows"][0]
+        # LinkedIn matches but email differs -> linkedin_only match
+        # (email doesn't match an existing contact, linkedin does)
+        assert r["match_type"] == "linkedin_only"
+        assert r["resolution_tier"] == "review"
+        # email should be a conflict or new since CRM has different email
+        diffs = r["field_diffs"]
+        assert diffs["email"] in ("conflict", "new")
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# 23. test_tier_classification_review_email_only
+# ---------------------------------------------------------------------------
+
+
+def test_tier_classification_review_email_only(tmp_db):
+    """Email-only match (no LinkedIn match) -> resolution_tier = 'review'."""
+    conn = _setup_db(tmp_db)
+    try:
+        _insert_contact_at_company(
+            conn, "Acme Corp",
+            email="alice@acme.com",
+            linkedin_url=None,
+            title="CEO",
+        )
+        row = _make_transformed_row(
+            company="Acme Corp",
+            email="alice@acme.com",
+            linkedin="https://linkedin.com/in/alice",
+            title="CEO",
+        )
+        result = preview_import(conn, [row], user_id=TEST_USER_ID)
+        r = result["preview_rows"][0]
+        assert r["match_type"] == "email_only"
+        assert r["resolution_tier"] == "review"
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# 24. test_auto_merge_fills_empty_fields
+# ---------------------------------------------------------------------------
+
+
+def test_auto_merge_fills_empty_fields(tmp_db):
+    """Merge action fills NULL fields via COALESCE (default merge behavior)."""
+    conn = _setup_db(tmp_db)
+    try:
+        _co_id, contact_id = _insert_contact_at_company(
+            conn, "Acme Corp",
+            email="alice@acme.com",
+            linkedin_url=None,
+            title=None,
+            first_name="Alice",
+            last_name="Smith",
+        )
+        row = _make_transformed_row(
+            company="Acme Corp",
+            email="alice@acme.com",
+            linkedin="https://linkedin.com/in/alice",
+            title="CEO",
+        )
+        decisions = {0: {"action": "merge", "existing_contact_id": contact_id}}
+        with patch("src.services.deduplication.run_dedup"):
+            execute_import(conn, [row], user_id=TEST_USER_ID, row_decisions=decisions)
+
+        with get_cursor(conn) as cur:
+            cur.execute("SELECT title, linkedin_url, email FROM contacts WHERE id = %s", (contact_id,))
+            updated = cur.fetchone()
+        # NULL fields should be filled
+        assert updated["title"] == "CEO"
+        assert updated["linkedin_url"] == "https://linkedin.com/in/alice"
+        # Existing field preserved
+        assert updated["email"] == "alice@acme.com"
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# 25. test_auto_merge_skips_conflicting_fields
+# ---------------------------------------------------------------------------
+
+
+def test_auto_merge_skips_conflicting_fields(tmp_db):
+    """Default merge: fields with existing values NOT overwritten (COALESCE)."""
+    conn = _setup_db(tmp_db)
+    try:
+        _co_id, contact_id = _insert_contact_at_company(
+            conn, "Acme Corp",
+            email="alice@acme.com",
+            linkedin_url="https://linkedin.com/in/alice",
+            title="CFO",
+            first_name="Alice",
+            last_name="Smith",
+        )
+        row = _make_transformed_row(
+            company="Acme Corp",
+            email="alice@acme.com",
+            linkedin="https://linkedin.com/in/alice",
+            title="CEO",
+            first_name="Alicia",
+            last_name="Smithson",
+        )
+        decisions = {0: {"action": "merge", "existing_contact_id": contact_id}}
+        with patch("src.services.deduplication.run_dedup"):
+            execute_import(conn, [row], user_id=TEST_USER_ID, row_decisions=decisions)
+
+        with get_cursor(conn) as cur:
+            cur.execute(
+                "SELECT title, first_name, last_name, linkedin_url FROM contacts WHERE id = %s",
+                (contact_id,),
+            )
+            updated = cur.fetchone()
+        # COALESCE preserves existing non-NULL values
+        assert updated["title"] == "CFO"
+        assert updated["first_name"] == "Alice"
+        assert updated["last_name"] == "Smith"
+        assert updated["linkedin_url"] == "https://linkedin.com/in/alice"
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# 26. test_per_field_merge_decisions
+# ---------------------------------------------------------------------------
+
+
+def test_per_field_merge_decisions(tmp_db):
+    """field_overrides: email='import', title='crm' -> selective overwrite."""
+    conn = _setup_db(tmp_db)
+    try:
+        _co_id, contact_id = _insert_contact_at_company(
+            conn, "Acme Corp",
+            email="alice-old@acme.com",
+            linkedin_url="https://linkedin.com/in/alice",
+            title="CFO",
+            first_name="Alice",
+            last_name="Smith",
+        )
+        row = _make_transformed_row(
+            company="Acme Corp",
+            email="alice-new@acme.com",
+            linkedin="https://linkedin.com/in/alice",
+            title="CEO",
+        )
+        decisions = {
+            0: {
+                "action": "merge",
+                "existing_contact_id": contact_id,
+                "field_overrides": {
+                    "email": "import",
+                    "title": "crm",
+                },
+            },
+        }
+        with patch("src.services.deduplication.run_dedup"):
+            execute_import(conn, [row], user_id=TEST_USER_ID, row_decisions=decisions)
+
+        with get_cursor(conn) as cur:
+            cur.execute(
+                "SELECT email, email_normalized, title FROM contacts WHERE id = %s",
+                (contact_id,),
+            )
+            updated = cur.fetchone()
+        # email: override=import -> overwritten with import value
+        assert updated["email"] == "alice-new@acme.com"
+        assert updated["email_normalized"] == "alice-new@acme.com"
+        # title: override=crm -> kept existing
+        assert updated["title"] == "CFO"
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# 27. test_file_duplicate_both_shown
+# ---------------------------------------------------------------------------
+
+
+def test_file_duplicate_both_shown(tmp_db):
+    """Same contact 2x in CSV -> second has within_file_duplicate flag + file_duplicate tier."""
+    conn = _setup_db(tmp_db)
+    try:
+        row1 = _make_transformed_row(email="alice@acme.com", linkedin="https://linkedin.com/in/alice")
+        row2 = _make_transformed_row(email="alice@acme.com", linkedin="https://linkedin.com/in/alice", title="VP")
+        result = preview_import(conn, [row1, row2], user_id=TEST_USER_ID)
+        rows = result["preview_rows"]
+        assert len(rows) == 2
+        # First row is NOT a file duplicate
+        assert rows[0]["within_file_duplicate"] is False
+        assert rows[0]["resolution_tier"] == "new"
+        # Second row IS a file duplicate
+        assert rows[1]["within_file_duplicate"] is True
+        assert rows[1]["within_file_duplicate_of"] == 0
+        assert rows[1]["resolution_tier"] == "file_duplicate"
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# 28. test_linkedin_collision_guard
+# ---------------------------------------------------------------------------
+
+
+def test_linkedin_collision_guard(tmp_db):
+    """'new' contact with existing LinkedIn URL -> skipped (not crash) during execute."""
+    conn = _setup_db(tmp_db)
+    try:
+        _insert_contact_at_company(
+            conn, "Acme Corp",
+            email="alice@acme.com",
+            linkedin_url="https://linkedin.com/in/alice",
+        )
+        # Import row claims to be new but LinkedIn URL collides
+        row = _make_transformed_row(
+            company="Acme Corp",
+            email="different@acme.com",
+            linkedin="https://linkedin.com/in/alice",
+            first_name="Bob",
+        )
+        decisions = {0: {"action": "import"}}
+        with patch("src.services.deduplication.run_dedup"):
+            result = execute_import(conn, [row], user_id=TEST_USER_ID, row_decisions=decisions)
+        # Should skip gracefully, not crash
+        assert result["duplicates_skipped"] == 1
+        assert result["contacts_created"] == 0
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# 29. test_triage_summary_counts
+# ---------------------------------------------------------------------------
+
+
+def test_triage_summary_counts(tmp_db):
+    """triage_summary counts match actual row classifications."""
+    conn = _setup_db(tmp_db)
+    try:
+        # Set up existing contacts for various match types
+        _insert_contact_at_company(
+            conn, "Acme Corp",
+            email="exact@acme.com",
+            linkedin_url="https://linkedin.com/in/exact",
+            title="CEO",
+        )
+        _insert_contact_at_company(
+            conn, "Acme Corp",
+            email="review@acme.com",
+            linkedin_url=None,
+            title="CFO",
+        )
+
+        rows = [
+            # Row 0: exact match, same company -> auto_merge
+            _make_transformed_row(
+                company="Acme Corp", email="exact@acme.com",
+                linkedin="https://linkedin.com/in/exact", title="CEO",
+            ),
+            # Row 1: email-only match -> review
+            _make_transformed_row(
+                company="Acme Corp", email="review@acme.com",
+                linkedin="https://linkedin.com/in/review-new", title="CFO",
+            ),
+            # Row 2: brand new contact
+            _make_transformed_row(
+                company="New Corp", email="new@newcorp.com",
+                linkedin="https://linkedin.com/in/new", first_name="Bob",
+            ),
+            # Row 3: file duplicate of row 2
+            _make_transformed_row(
+                company="New Corp", email="new@newcorp.com",
+                linkedin="https://linkedin.com/in/new", first_name="Bob",
+            ),
+        ]
+        result = preview_import(conn, rows, user_id=TEST_USER_ID)
+        triage = result["triage_summary"]
+
+        assert triage["total"] == 4
+        assert triage["auto_mergeable"] == 1
+        assert triage["needs_review"] == 1
+        assert triage["new_contacts"] == 1
+        assert triage["file_duplicates"] == 1
+        # Verify counts add up
+        assert (triage["auto_mergeable"] + triage["needs_review"]
+                + triage["new_contacts"] + triage["file_duplicates"]) == triage["total"]
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# 30. test_tier_linkedin_only_same_co
+# ---------------------------------------------------------------------------
+
+
+def test_tier_linkedin_only_same_co(tmp_db):
+    """LinkedIn-only match + same company -> resolution_tier = 'auto_merge'."""
+    conn = _setup_db(tmp_db)
+    try:
+        _insert_contact_at_company(
+            conn, "Acme Corp",
+            email=None,
+            linkedin_url="https://linkedin.com/in/alice",
+            title="CEO",
+        )
+        row = _make_transformed_row(
+            company="Acme Corp",
+            email=None,
+            linkedin="https://linkedin.com/in/alice",
+            title="CEO",
+        )
+        result = preview_import(conn, [row], user_id=TEST_USER_ID)
+        r = result["preview_rows"][0]
+        assert r["match_type"] == "linkedin_only"
+        assert r["resolution_tier"] == "auto_merge"
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# 31. test_tier_both_different_contacts
+# ---------------------------------------------------------------------------
+
+
+def test_tier_both_different_contacts(tmp_db):
+    """Email matches contact A, LinkedIn matches contact B -> resolution_tier = 'review'."""
+    conn = _setup_db(tmp_db)
+    try:
+        _insert_contact_at_company(
+            conn, "Acme Corp",
+            email="alice@acme.com",
+            linkedin_url=None,
+            first_name="Alice",
+            last_name="A",
+        )
+        _insert_contact_at_company(
+            conn, "Acme Corp",
+            email=None,
+            linkedin_url="https://linkedin.com/in/alice",
+            first_name="Alice",
+            last_name="B",
+        )
+        row = _make_transformed_row(
+            company="Acme Corp",
+            email="alice@acme.com",
+            linkedin="https://linkedin.com/in/alice",
+            title="CEO",
+        )
+        result = preview_import(conn, [row], user_id=TEST_USER_ID)
+        r = result["preview_rows"][0]
+        assert r["match_type"] == "both_different_contacts"
+        assert r["resolution_tier"] == "review"
+        assert r["is_duplicate"] is False
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# 32. test_conflict_fields_derived
+# ---------------------------------------------------------------------------
+
+
+def test_conflict_fields_derived(tmp_db):
+    """field_diffs with 'conflict' values -> conflict_fields array populated."""
+    conn = _setup_db(tmp_db)
+    try:
+        _insert_contact_at_company(
+            conn, "Acme Corp",
+            email="alice@acme.com",
+            linkedin_url="https://linkedin.com/in/alice",
+            title="CFO",
+            first_name="Alice",
+            last_name="Old",
+        )
+        row = _make_transformed_row(
+            company="Acme Corp",
+            email="alice@acme.com",
+            linkedin="https://linkedin.com/in/alice",
+            title="CEO",
+            first_name="Alice",
+            last_name="New",
+        )
+        result = preview_import(conn, [row], user_id=TEST_USER_ID)
+        r = result["preview_rows"][0]
+        assert r["field_diffs"]["title"] == "conflict"
+        assert r["field_diffs"]["last_name"] == "conflict"
+        assert r["field_diffs"]["email"] == "same"
+        assert r["field_diffs"]["first_name"] == "same"
+        # conflict_fields should contain exactly the conflicting fields
+        assert "title" in r["conflict_fields"]
+        assert "last_name" in r["conflict_fields"]
+        assert "email" not in r["conflict_fields"]
+        assert "first_name" not in r["conflict_fields"]
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# 33. test_auto_merge_enrolls_in_campaign
+# ---------------------------------------------------------------------------
+
+
+def test_auto_merge_enrolls_in_campaign(tmp_db):
+    """Merged contacts enrolled when campaign_id is set."""
+    conn = _setup_db(tmp_db)
+    try:
+        _co_id, contact_id = _insert_contact_at_company(
+            conn, "Acme Corp",
+            email="alice@acme.com",
+            linkedin_url=None,
+            title=None,
+        )
+        with get_cursor(conn) as cur:
+            cur.execute(
+                "INSERT INTO campaigns (name, user_id) VALUES ('MergeCampaign', %s) RETURNING id",
+                (TEST_USER_ID,),
+            )
+            campaign_id = cur.fetchone()["id"]
+        conn.commit()
+
+        row = _make_transformed_row(
+            company="Acme Corp",
+            email="alice@acme.com",
+            linkedin="https://linkedin.com/in/alice",
+            title="CEO",
+        )
+        decisions = {0: {"action": "merge", "existing_contact_id": contact_id}}
+        with patch("src.services.deduplication.run_dedup"):
+            result = execute_import(
+                conn, [row], user_id=TEST_USER_ID,
+                row_decisions=decisions, campaign_id=campaign_id,
+            )
+        assert result["contacts_merged"] == 1
+        assert result["contacts_enrolled"] >= 1
+
+        with get_cursor(conn) as cur:
+            cur.execute(
+                "SELECT * FROM contact_campaign_status WHERE contact_id = %s AND campaign_id = %s",
+                (contact_id, campaign_id),
+            )
+            enrollment = cur.fetchone()
+        assert enrollment is not None
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# 34. test_company_relink_creates_new
+# ---------------------------------------------------------------------------
+
+
+def test_company_relink_creates_new(tmp_db):
+    """Company change merge -> INSERT new company + UPDATE contact.company_id."""
+    conn = _setup_db(tmp_db)
+    try:
+        _co_id_old, contact_id = _insert_contact_at_company(
+            conn, "Old Ventures",
+            email="alice@old.com",
+            linkedin_url="https://linkedin.com/in/alice",
+            title="VP",
+        )
+        row = _make_transformed_row(
+            company="New Capital",
+            email="alice@old.com",
+            linkedin="https://linkedin.com/in/alice",
+            title="VP",
+        )
+        decisions = {
+            0: {
+                "action": "merge",
+                "existing_contact_id": contact_id,
+                "field_overrides": {
+                    "company_name": "import",
+                },
+            },
+        }
+        with patch("src.services.deduplication.run_dedup"):
+            result = execute_import(conn, [row], user_id=TEST_USER_ID, row_decisions=decisions)
+        assert result["contacts_merged"] == 1
+
+        # New Capital company should be created
+        with get_cursor(conn) as cur:
+            cur.execute(
+                "SELECT id FROM companies WHERE name_normalized = %s AND user_id = %s",
+                (normalize_company_name("New Capital"), TEST_USER_ID),
+            )
+            new_co = cur.fetchone()
+        assert new_co is not None
+        new_co_id = new_co["id"]
+        assert new_co_id != _co_id_old
+
+        # Contact should be re-linked to the new company
+        with get_cursor(conn) as cur:
+            cur.execute("SELECT company_id FROM contacts WHERE id = %s", (contact_id,))
+            updated = cur.fetchone()
+        assert updated["company_id"] == new_co_id
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# 35. test_company_relink_existing_co
+# ---------------------------------------------------------------------------
+
+
+def test_company_relink_existing_co(tmp_db):
+    """Company change where new company already exists -> SELECT id, re-link."""
+    conn = _setup_db(tmp_db)
+    try:
+        _co_id_old, contact_id = _insert_contact_at_company(
+            conn, "Old Ventures",
+            email="alice@old.com",
+            linkedin_url="https://linkedin.com/in/alice",
+            title="VP",
+        )
+        # Pre-create the target company
+        _co_id_target, _unused = _insert_contact_at_company(
+            conn, "New Capital",
+            email="bob@new.com",
+            linkedin_url="https://linkedin.com/in/bob",
+            first_name="Bob",
+            last_name="Jones",
+        )
+
+        row = _make_transformed_row(
+            company="New Capital",
+            email="alice@old.com",
+            linkedin="https://linkedin.com/in/alice",
+            title="VP",
+        )
+        decisions = {
+            0: {
+                "action": "merge",
+                "existing_contact_id": contact_id,
+                "field_overrides": {
+                    "company_name": "import",
+                },
+            },
+        }
+        with patch("src.services.deduplication.run_dedup"):
+            result = execute_import(conn, [row], user_id=TEST_USER_ID, row_decisions=decisions)
+        assert result["contacts_merged"] == 1
+        # No new company created (it already existed)
+        assert result["companies_created"] == 0
+
+        # Contact re-linked to existing New Capital company
+        with get_cursor(conn) as cur:
+            cur.execute("SELECT company_id FROM contacts WHERE id = %s", (contact_id,))
+            updated = cur.fetchone()
+        assert updated["company_id"] == _co_id_target
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# 36. test_normalize_company_suffixes
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_company_suffixes():
+    """normalize_company_name strips suffixes and normalizes '&' to 'and'."""
+    # "BlackRock Inc" -> "blackrock"
+    assert normalize_company_name("BlackRock Inc") == "blackrock"
+    # "100 & 100 Capital" -> "100 and 100" (Capital stripped, & -> and)
+    assert normalize_company_name("100 & 100 Capital") == "100 and 100"
+    # Other suffix variants
+    assert normalize_company_name("Acme LLC") == "acme"
+    assert normalize_company_name("Foo Partners") == "foo"
+    assert normalize_company_name("Bar Ltd.") == "bar"
+    assert normalize_company_name("  Some  Fund  ") == "some"
+    # Preserves meaningful parts
+    assert normalize_company_name("Two Sigma Investments") == "two sigma"
+
+
+# ---------------------------------------------------------------------------
+# 37. test_file_duplicate_triple
+# ---------------------------------------------------------------------------
+
+
+def test_file_duplicate_triple(tmp_db):
+    """Same contact 3x in CSV -> 2nd and 3rd flagged as within_file_duplicate."""
+    conn = _setup_db(tmp_db)
+    try:
+        row1 = _make_transformed_row(email="alice@acme.com", linkedin="https://linkedin.com/in/alice")
+        row2 = _make_transformed_row(email="alice@acme.com", linkedin="https://linkedin.com/in/alice", title="VP")
+        row3 = _make_transformed_row(email="alice@acme.com", linkedin="https://linkedin.com/in/alice", title="CTO")
+        result = preview_import(conn, [row1, row2, row3], user_id=TEST_USER_ID)
+        rows = result["preview_rows"]
+        assert len(rows) == 3
+        # First row: not a file duplicate
+        assert rows[0]["within_file_duplicate"] is False
+        assert rows[0]["resolution_tier"] == "new"
+        # Second row: file duplicate of row 0
+        assert rows[1]["within_file_duplicate"] is True
+        assert rows[1]["within_file_duplicate_of"] == 0
+        assert rows[1]["resolution_tier"] == "file_duplicate"
+        # Third row: file duplicate of row 0
+        assert rows[2]["within_file_duplicate"] is True
+        assert rows[2]["within_file_duplicate_of"] == 0
+        assert rows[2]["resolution_tier"] == "file_duplicate"
+        # triage_summary should count 2 file duplicates
+        triage = result["triage_summary"]
+        assert triage["file_duplicates"] == 2
+        assert triage["new_contacts"] == 1
+    finally:
+        conn.close()
