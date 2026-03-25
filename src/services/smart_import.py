@@ -808,11 +808,63 @@ def preview_import(
         if linkedin_n and linkedin_n not in seen_linkedins:
             seen_linkedins[linkedin_n] = idx
 
+    # --- Tier classification (V2) ---
+    from src.services.normalization_utils import normalize_company_name
+
+    triage = {"auto_mergeable": 0, "needs_review": 0, "company_changes": 0,
+              "file_duplicates": 0, "new_contacts": 0, "total": len(all_rows)}
+
+    for row in all_rows:
+        # File duplicates get their own tier
+        if row["within_file_duplicate"]:
+            row["resolution_tier"] = "file_duplicate"
+            triage["file_duplicates"] += 1
+            continue
+
+        match_type = row.get("match_type")
+        if not match_type:
+            row["resolution_tier"] = "new"
+            row["conflict_fields"] = None
+            row["existing_company_name"] = None
+            triage["new_contacts"] += 1
+            continue
+
+        # Derive conflict_fields from field_diffs
+        diffs = row.get("field_diffs") or {}
+        conflict_fields = [k for k, v in diffs.items() if v == "conflict"]
+
+        # Compare company names (normalized)
+        import_co = normalize_company_name(row.get("company_name") or "")
+        existing_co_raw = (row.get("existing_contact") or {}).get("company_name") or ""
+        existing_co = normalize_company_name(existing_co_raw)
+        same_company = import_co and existing_co and import_co == existing_co
+
+        # Add company_name to conflict_fields if different
+        if import_co and existing_co and not same_company:
+            conflict_fields.append("company_name")
+
+        row["conflict_fields"] = conflict_fields or None
+        row["existing_company_name"] = existing_co_raw or None
+
+        has_linkedin = match_type in ("exact", "linkedin_only")
+
+        if has_linkedin and not same_company and import_co and existing_co:
+            row["resolution_tier"] = "company_change"
+            triage["company_changes"] += 1
+            triage["needs_review"] += 1
+        elif has_linkedin and not conflict_fields:
+            row["resolution_tier"] = "auto_merge"
+            triage["auto_mergeable"] += 1
+        else:
+            row["resolution_tier"] = "review"
+            triage["needs_review"] += 1
+
     return {
         "total_contacts": len(transformed),
         "total_companies": len(company_names),
         "duplicates": exact_duplicates,
-        "new_contacts": len(transformed) - exact_duplicates,
+        "new_contacts": triage["new_contacts"],
+        "triage_summary": triage,
         "preview_rows": all_rows,
     }
 
@@ -919,9 +971,16 @@ def execute_import(
                     continue
 
                 if action == "merge" and decision.get("existing_contact_id"):
-                    # UPDATE existing CRM contact — enrich null fields
                     existing_id = decision["existing_contact_id"]
-                    _merge_contact(cursor, existing_id, contact)
+                    overrides = decision.get("field_overrides")
+                    _merge_contact(cursor, existing_id, contact,
+                                   field_overrides=overrides)
+                    # Company re-link: if overrides say to use import company
+                    if overrides and overrides.get("company_name") == "import" and company_id:
+                        cursor.execute(
+                            "UPDATE contacts SET company_id = %s WHERE id = %s",
+                            (company_id, existing_id),
+                        )
                     contacts_merged += 1
                     all_contact_ids.append(existing_id)
                     continue
@@ -933,6 +992,17 @@ def execute_import(
                     continue
 
                 # Default: INSERT new contact (action == "import" or no decision)
+                # Guard: skip if LinkedIn URL already exists (unique index)
+                linkedin_norm = contact.get("linkedin_url_normalized")
+                if linkedin_norm:
+                    cursor.execute(
+                        "SELECT id FROM contacts WHERE user_id = %s AND linkedin_url_normalized = %s",
+                        (user_id, linkedin_norm),
+                    )
+                    if cursor.fetchone():
+                        duplicates_skipped += 1
+                        continue
+
                 email_norm = contact.get("email_normalized")
                 cursor.execute(
                     """INSERT INTO contacts
@@ -999,10 +1069,12 @@ def execute_import(
     }
 
 
-def _merge_contact(cursor, existing_contact_id: int, import_data: dict):
-    """Update an existing CRM contact with non-null fields from import data.
+def _merge_contact(cursor, existing_contact_id: int, import_data: dict,
+                    field_overrides: dict | None = None):
+    """Update an existing CRM contact with import data.
 
-    Only fills in fields that are currently NULL in the CRM — does not overwrite.
+    Default behavior: fill NULL fields only (COALESCE).
+    With field_overrides: per-field control — "import" overwrites, "crm" keeps existing.
     """
     MERGE_FIELDS = [
         ("title", "title"),
@@ -1010,12 +1082,33 @@ def _merge_contact(cursor, existing_contact_id: int, import_data: dict):
         ("linkedin_url_normalized", "linkedin_url_normalized"),
         ("email", "email"),
         ("email_normalized", "email_normalized"),
+        ("first_name", "first_name"),
+        ("last_name", "last_name"),
+        ("full_name", "full_name"),
+        ("phone", "phone"),
     ]
+    overrides = field_overrides or {}
+    # Propagate overrides to normalized counterparts
+    _NORM_PAIRS = {"email": "email_normalized", "linkedin_url": "linkedin_url_normalized"}
+    for base, norm in _NORM_PAIRS.items():
+        if base in overrides and norm not in overrides:
+            overrides[norm] = overrides[base]
     set_parts = []
     values = []
     for import_key, db_col in MERGE_FIELDS:
         val = import_data.get(import_key)
-        if val:
+        if not val:
+            continue
+        override = overrides.get(import_key) or overrides.get(db_col)
+        if override == "import":
+            # Force overwrite with import value
+            set_parts.append(f"{db_col} = %s")
+            values.append(val)
+        elif override == "crm":
+            # Explicitly keep CRM value — skip
+            continue
+        else:
+            # Default: fill only if CRM field is NULL
             set_parts.append(f"{db_col} = COALESCE({db_col}, %s)")
             values.append(val)
 
