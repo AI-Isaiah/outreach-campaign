@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Upload,
@@ -164,7 +164,7 @@ function PreviewTableRow({
           return (
             <td
               key={col.key}
-              className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap max-w-[200px] truncate"
+              className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap max-w-[280px] truncate cursor-default"
               title={val != null ? String(val) : undefined}
             >
               {val != null && val !== "" ? (
@@ -187,7 +187,11 @@ function PreviewTableRow({
 
 export default function SmartImport() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Job ID persisted in URL — survives navigation
+  const [jobId, setJobId] = useState<string | null>(searchParams.get("job"));
 
   // Wizard state
   const [step, setStep] = useState<Step>("upload");
@@ -198,6 +202,7 @@ export default function SmartImport() {
   const [sourceLabel, setSourceLabel] = useState("");
   const [previewData, setPreviewData] = useState<PreviewResult | null>(null);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const resumeCheckedRef = useRef(false);
 
   // Preview table state
   const [previewPage, setPreviewPage] = useState(1);
@@ -215,6 +220,95 @@ export default function SmartImport() {
   // Accept file from ImportWizard navigation state
   const location = useLocation();
   const locationStateFile = (location.state as { file?: File } | null)?.file ?? null;
+
+  // --- Helper: apply analysis result from server to local state ---
+  const applyAnalysisResult = useCallback(
+    (id: string, result: Omit<AnalyzeResult, "import_job_id">) => {
+      const fullAnalysis: AnalyzeResult = { import_job_id: id, ...result };
+      setAnalysis(fullAnalysis);
+      const fullMapping: Record<string, string> = {};
+      for (const h of result.headers ?? []) {
+        fullMapping[h] = result.proposed_mapping[h] || "";
+      }
+      setMapping(fullMapping);
+      setStep("mapping");
+    },
+    [], // all deps are stable state setters
+  );
+
+  // --- Persist jobId in URL ---
+  useEffect(() => {
+    if (jobId && searchParams.get("job") !== jobId) {
+      setSearchParams({ job: jobId }, { replace: true });
+    }
+  }, [jobId, searchParams, setSearchParams]);
+
+  // --- Poll for analysis completion when job is analyzing ---
+  const isAnalyzingInBackground = step === "upload" && !!jobId && !analysis;
+  const pollingJobId = isAnalyzingInBackground ? jobId : undefined;
+  const jobPollQuery = useQuery({
+    queryKey: ["import-job", pollingJobId],
+    queryFn: () => smartImportApi.getJob(pollingJobId!),
+    enabled: isAnalyzingInBackground,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === "analyzing" ? 2000 : false;
+    },
+  });
+
+  // When polling detects analysis complete, apply the result
+  useEffect(() => {
+    if (!jobPollQuery.data || !jobId) return;
+    const job = jobPollQuery.data;
+    if (job.status === "pending" && job.analysis_result) {
+      applyAnalysisResult(jobId, job.analysis_result);
+    } else if (job.status === "failed") {
+      setStep("upload");
+      setJobId(null);
+    }
+  }, [jobPollQuery.data, jobId, applyAnalysisResult]);
+
+  // --- Resume: on mount, check URL job param or active job ---
+  useEffect(() => {
+    if (resumeCheckedRef.current) return;
+    resumeCheckedRef.current = true;
+    let cancelled = false;
+
+    const urlJobId = searchParams.get("job");
+
+    const resumeJob = (id: string, job: { status: string; analysis_result?: unknown; column_mapping?: Record<string, string> | null }) => {
+      if (cancelled) return;
+      setJobId(id);
+      if ((job.status === "pending" || job.status === "previewed") && job.analysis_result) {
+        const result = job.analysis_result as Omit<AnalyzeResult, "import_job_id">;
+        // If user already approved a mapping (previewed), use that instead of the LLM proposal
+        if (job.status === "previewed" && job.column_mapping) {
+          const fullAnalysis: AnalyzeResult = { import_job_id: id, ...result };
+          setAnalysis(fullAnalysis);
+          setMapping(job.column_mapping);
+          setStep("mapping");
+        } else {
+          applyAnalysisResult(id, result);
+        }
+      }
+      // If analyzing, polling will handle the rest
+    };
+
+    if (urlJobId) {
+      smartImportApi.getJob(urlJobId).then((job) => {
+        resumeJob(urlJobId, job);
+      }).catch(() => {
+        if (!cancelled) setJobId(null);
+      });
+    } else {
+      smartImportApi.getActiveJob().then((job) => {
+        if (cancelled || !job) return;
+        resumeJob(job.id, job);
+      }).catch(() => {});
+    }
+
+    return () => { cancelled = true; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps — mount-only
 
   // Campaigns for enrollment selector
   const campaignsQuery = useQuery({
@@ -234,14 +328,8 @@ export default function SmartImport() {
   const analyzeMutation = useMutation({
     mutationFn: (f: File) => smartImportApi.analyze(f),
     onSuccess: (data) => {
-      setAnalysis(data);
-      // Build mapping from ALL headers, pre-select LLM matches
-      const fullMapping: Record<string, string> = {};
-      for (const h of data.headers ?? []) {
-        fullMapping[h] = data.proposed_mapping[h] || "";
-      }
-      setMapping(fullMapping);
-      setStep("mapping");
+      // Async: store jobId, polling handles the rest
+      setJobId(data.import_job_id);
     },
   });
 
@@ -255,7 +343,7 @@ export default function SmartImport() {
   const previewMutation = useMutation({
     mutationFn: () =>
       smartImportApi.preview(
-        analysis!.import_job_id,
+        jobId!,
         mapping,
         sourceLabel || undefined,
       ),
@@ -268,7 +356,7 @@ export default function SmartImport() {
   const executeMutation = useMutation({
     mutationFn: () =>
       smartImportApi.execute(
-        analysis!.import_job_id,
+        jobId!,
         excludedIndices.size > 0 ? [...excludedIndices] : undefined,
         Object.keys(rowDecisions).length > 0 ? rowDecisions : undefined,
         selectedCampaignId ?? undefined,
@@ -317,6 +405,7 @@ export default function SmartImport() {
   const resetAll = () => {
     setStep("upload");
     setFile(null);
+    setJobId(null);
     setAnalysis(null);
     setMapping({});
     setSourceLabel("");
@@ -336,6 +425,7 @@ export default function SmartImport() {
     analyzeMutation.reset();
     previewMutation.reset();
     executeMutation.reset();
+    setSearchParams({}, { replace: true });
   };
 
   // Derived
@@ -346,13 +436,13 @@ export default function SmartImport() {
     if (!previewData) return [];
     let rows = previewData.preview_rows;
 
-    // Status filter
+    // Status filter (V2: tier-based)
     if (previewShowFilter === "new")
-      rows = rows.filter((r) => !r.match_type && !r.within_file_duplicate);
+      rows = rows.filter((r) => r.resolution_tier === "new" || r.resolution_tier === "auto_merge");
     else if (previewShowFilter === "matches")
-      rows = rows.filter((r) => r.match_type != null);
+      rows = rows.filter((r) => r.resolution_tier === "review" || r.resolution_tier === "company_change");
     else if (previewShowFilter === "file_dupes")
-      rows = rows.filter((r) => r.within_file_duplicate);
+      rows = rows.filter((r) => r.resolution_tier === "file_duplicate");
 
     // Text search
     if (previewFilter.trim()) {
@@ -390,6 +480,9 @@ export default function SmartImport() {
     const start = (previewPage - 1) * previewPageSize;
     return filteredPreviewRows.slice(start, start + previewPageSize);
   }, [filteredPreviewRows, previewPage, previewPageSize]);
+
+  // Triage summary from backend (V2)
+  const triage = previewData?.triage_summary ?? null;
 
   // Effective counts with decisions
   const effectiveCounts = useMemo(() => {
@@ -526,8 +619,8 @@ export default function SmartImport() {
             onChange={handleInputChange}
             className="hidden"
           />
-          {/* Drop zone — only when no file is loaded */}
-          {!file && !analyzeMutation.isPending && (
+          {/* Drop zone — only when no file is loaded and not analyzing */}
+          {!file && !analyzeMutation.isPending && !isAnalyzingInBackground && (
             <div
               onDragOver={(e) => {
                 e.preventDefault();
@@ -556,7 +649,7 @@ export default function SmartImport() {
           )}
 
           {/* File loaded, ready to analyze */}
-          {file && !analyzeMutation.isPending && (
+          {file && !analyzeMutation.isPending && !isAnalyzingInBackground && (
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <FileText size={20} className="text-gray-400" />
@@ -591,14 +684,18 @@ export default function SmartImport() {
             </div>
           )}
 
-          {/* Animated progress bar during LLM analysis */}
-          {analyzeMutation.isPending && (
+          {/* Animated progress bar during LLM analysis (upload in flight OR polling background job) */}
+          {(analyzeMutation.isPending || isAnalyzingInBackground) && (
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-4">
               <div className="flex items-center gap-3">
                 <FileText size={20} className="text-gray-400" />
                 <div>
-                  <p className="text-sm font-medium text-gray-900">{file!.name}</p>
-                  <p className="text-xs text-gray-500">{formatBytes(file!.size)}</p>
+                  <p className="text-sm font-medium text-gray-900">
+                    {file?.name ?? jobPollQuery.data?.filename ?? "CSV file"}
+                  </p>
+                  {file && (
+                    <p className="text-xs text-gray-500">{formatBytes(file.size)}</p>
+                  )}
                 </div>
               </div>
               <div className="space-y-2">
@@ -606,12 +703,17 @@ export default function SmartImport() {
                   <div className="h-full bg-gray-900 rounded-full animate-progress-bar" />
                 </div>
                 <AnalysisStatus />
+                {isAnalyzingInBackground && !analyzeMutation.isPending && (
+                  <p className="text-xs text-gray-400">
+                    Analysis running in background — you can navigate away safely
+                  </p>
+                )}
               </div>
             </div>
           )}
 
           {/* Note about AI analysis */}
-          {file && !analyzeMutation.isPending && (
+          {file && !analyzeMutation.isPending && !isAnalyzingInBackground && (
             <p className="text-xs text-gray-400 flex items-center gap-1.5">
               <Info size={12} className="shrink-0" />
               Sample rows are sent to AI for column detection
@@ -701,7 +803,10 @@ export default function SmartImport() {
                       <td className="px-5 py-4 text-sm font-medium text-gray-900">
                         {csvCol}
                       </td>
-                      <td className="px-5 py-4 text-sm text-gray-500 max-w-[200px] truncate">
+                      <td
+                        className="px-5 py-4 text-sm text-gray-500 max-w-[280px] truncate cursor-default"
+                        title={sampleValue || undefined}
+                      >
                         {sampleValue || (
                           <span className="text-gray-300">&mdash;</span>
                         )}
@@ -805,41 +910,49 @@ export default function SmartImport() {
       {/* Step 3: Preview & Confirm */}
       {step === "preview" && previewData && !importResult && (
         <div className="space-y-4">
-          {/* Summary stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-white rounded-lg shadow-sm border-l-4 border-l-blue-400 p-4">
-              <p className="text-sm font-medium text-gray-500">Total contacts</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {previewData.total_contacts}
-              </p>
-            </div>
-            <div className="bg-white rounded-lg shadow-sm border-l-4 border-l-green-400 p-4">
-              <p className="text-sm font-medium text-gray-500">New</p>
-              <p className="text-2xl font-bold text-green-700">
-                {effectiveCounts.toImport}
-              </p>
-            </div>
-            <button
-              onClick={() =>
-                setPreviewShowFilter((f) => (f === "matches" ? "all" : "matches"))
-              }
-              className="bg-white rounded-lg shadow-sm border-l-4 border-l-yellow-400 p-4 text-left hover:bg-yellow-50 transition-colors"
-            >
-              <p className="text-sm font-medium text-gray-500">CRM Matches</p>
-              <p className="text-2xl font-bold text-yellow-700">
-                {effectiveCounts.matches + effectiveCounts.toMerge + effectiveCounts.toEnroll}
-              </p>
-              {(effectiveCounts.matches > 0 || effectiveCounts.toMerge > 0) && (
-                <p className="text-xs text-gray-400 mt-0.5">Click to review</p>
-              )}
-            </button>
-            <div className="bg-white rounded-lg shadow-sm border-l-4 border-l-gray-200 p-4">
-              <p className="text-sm font-medium text-gray-500">Companies</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {previewData.total_companies}
-              </p>
+          {/* Triage tab navigation (merged stats + tabs) */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden" role="tablist">
+            <div className="grid grid-cols-2 md:grid-cols-4">
+              {([
+                { key: "new" as const, label: "Import", count: triage?.new_contacts ?? effectiveCounts.toImport, sub: `+ ${triage?.auto_mergeable ?? 0} auto-merge`, color: "green", activeColor: "ring-green-400" },
+                { key: "matches" as const, label: "Review", count: triage?.needs_review ?? 0, sub: triage?.company_changes ? `${triage.company_changes} moved firms` : "conflicts", color: "amber", activeColor: "ring-amber-400" },
+                { key: "file_dupes" as const, label: "File Dupes", count: triage?.file_duplicates ?? 0, sub: "in CSV", color: "purple", activeColor: "ring-purple-400" },
+                { key: "all" as const, label: "All", count: previewData.total_contacts, sub: `${previewData.total_companies} companies`, color: "blue", activeColor: "ring-blue-400" },
+              ] as const).map((tab) => (
+                <button
+                  key={tab.key}
+                  role="tab"
+                  aria-selected={previewShowFilter === tab.key}
+                  onClick={() => setPreviewShowFilter((f) => f === tab.key ? "all" : tab.key)}
+                  className={`p-4 text-left border-b-2 transition-colors hover:bg-gray-50 ${
+                    previewShowFilter === tab.key
+                      ? `border-${tab.color}-600 bg-${tab.color}-50/50`
+                      : "border-transparent"
+                  }`}
+                >
+                  <p className={`text-2xl font-bold ${previewShowFilter === tab.key ? `text-${tab.color}-700` : "text-gray-900"}`}>
+                    {tab.count}
+                  </p>
+                  <p className="text-sm font-medium text-gray-500">{tab.label}</p>
+                  <p className="text-xs text-gray-400">{tab.sub}</p>
+                </button>
+              ))}
             </div>
           </div>
+
+          {/* Auto-merge summary (shown on Import tab) */}
+          {(previewShowFilter === "new" || previewShowFilter === "all") && triage && triage.auto_mergeable > 0 && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-blue-800">
+                  {triage.auto_mergeable} contacts will be auto-merged (no conflicts)
+                </p>
+                <p className="text-xs text-blue-600 mt-0.5">
+                  Matching LinkedIn + same email + same company — empty fields filled automatically
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Campaign enrollment selector */}
           <div className="flex items-center gap-3 bg-white rounded-lg border border-gray-200 p-4">
@@ -1100,7 +1213,7 @@ export default function SmartImport() {
                   Importing...
                 </>
               ) : (
-                `Import ${effectiveCounts.toImport} New${effectiveCounts.toMerge ? ` + Merge ${effectiveCounts.toMerge}` : ""}${effectiveCounts.toEnroll ? ` + Enroll ${effectiveCounts.toEnroll}` : ""}`
+                `Import ${effectiveCounts.toImport} New${triage?.auto_mergeable ? ` + Auto-merge ${triage.auto_mergeable}` : ""}${effectiveCounts.toMerge ? ` + Merge ${effectiveCounts.toMerge}` : ""}${effectiveCounts.toEnroll ? ` + Enroll ${effectiveCounts.toEnroll}` : ""}`
               )}
             </button>
             <button

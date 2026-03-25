@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, Building2, ExternalLink } from "lucide-react";
 import type {
   PreviewRow,
   RowAction,
@@ -81,21 +81,32 @@ export function MatchStatusBadge({
   return (
     <>
       {row.within_file_duplicate ? (
-        <span className="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-purple-100 text-purple-700">
+        <span
+          className="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-purple-100 text-purple-700 cursor-default"
+          title={`Same contact appears multiple times in this CSV (row ${(row.within_file_duplicate_of ?? 0) + 1} is the first occurrence)`}
+        >
           File duplicate
         </span>
       ) : row.match_type === "exact" ? (
         <button
           onClick={onToggleExpand}
           className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-800 hover:bg-yellow-200 transition-colors"
+          title="This contact already exists in your CRM — email and LinkedIn both match. Click to compare."
         >
           {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-          Exact match
+          Already in CRM
         </button>
       ) : row.match_type ? (
         <button
           onClick={onToggleExpand}
           className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors"
+          title={
+            row.match_type === "email_only"
+              ? "A contact with this email already exists in your CRM. Click to compare."
+              : row.match_type === "linkedin_only"
+                ? "A contact with this LinkedIn URL already exists in your CRM. Click to compare."
+                : "This email and LinkedIn match different contacts in your CRM. Click to compare."
+          }
         >
           {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
           {row.match_type === "email_only"
@@ -105,7 +116,10 @@ export function MatchStatusBadge({
               : "Partial match"}
         </button>
       ) : (
-        <span className="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-green-100 text-green-700">
+        <span
+          className="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-green-100 text-green-700 cursor-default"
+          title="No matching contact found in your CRM — will be imported as new"
+        >
           New
         </span>
       )}
@@ -128,6 +142,28 @@ export function ComparisonPanel({
     <tr className="bg-gray-50">
       <td colSpan={100} className="px-5 py-4">
         <div className="space-y-3">
+          {/* Company change banner */}
+          {row.resolution_tier === "company_change" && row.existing_company_name && (
+            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg p-3">
+              <Building2 size={16} className="text-amber-600 shrink-0" />
+              <span className="text-sm text-amber-800 font-medium">
+                Likely moved: {row.existing_company_name} &rarr; {row.company_name}
+              </span>
+            </div>
+          )}
+          {/* LinkedIn verification link */}
+          {row.linkedin_url && (
+            <a
+              href={row.linkedin_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700"
+              aria-label={`Open LinkedIn profile for ${row.full_name || "contact"}`}
+            >
+              <ExternalLink size={14} />
+              Verify on LinkedIn
+            </a>
+          )}
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
             Side-by-side comparison
           </p>
