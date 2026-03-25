@@ -2,12 +2,13 @@
 
 ## P0 — Daily Outreach System (B+C Plan)
 
-### Phase 3: Reply feedback + template badge
+### Phase 3 Lite: Reply remap + template winning badge
 **Priority:** P0
-**Files:** `src/enums.py`, `src/services/state_machine.py`, `frontend/src/pages/CampaignDetail.tsx`, `frontend/src/pages/Templates.tsx`, migration `022_replied_neutral.sql`
-**What:** Add REPLIED_NEUTRAL status (NOT terminal — no auto-activation). Map reply_detector's "neutral" → REPLIED_NEUTRAL. Reply breakdown (positive/neutral/negative) in analytics. "Winning" template badge reusing `response_analyzer.py:get_template_performance()`.
-**Design decisions:** replied_neutral badge: `bg-purple-100 text-purple-700`. Winning badge: `bg-green-100 text-green-800` with Lucide Trophy icon. Reply breakdown: stacked bar (green/purple/red).
-**Tests needed:** 8 (state machine + metrics).
+**Files:** `src/web/routes/replies.py`, `src/models/campaigns.py`, `src/services/email_sender.py`, `src/web/routes/gmail.py`, `src/services/metrics.py`, `src/services/response_analyzer.py`, `src/web/routes/campaigns.py`, `frontend/src/pages/CampaignDetail.tsx`
+**What:** Remap neutral → positive in confirm flow (domain rule: non-rejection = positive). Wire up `contact_template_history` production write path (INSERT on send, UPDATE outcome on confirm). Binary reply breakdown (green/red) in CampaignDetail analytics. Template performance table with "Winning" badge (5+ sends, highest positive_rate) in CampaignDetail analytics.
+**Design decisions:** No REPLIED_NEUTRAL status. Binary split only. Winning badge: `bg-green-100 text-green-800` with Lucide Trophy icon. Reply breakdown: stacked bar (green/red). Template performance in CampaignDetail only (not Templates page).
+**Design doc:** `~/.gstack/projects/AI-Isaiah-outreach-campaign/helios-mammut-main-design-20260325-173921.md`
+**Tests needed:** 19 (15 backend + 4 frontend).
 
 ### Phase 4: Research-powered messages
 **Priority:** P0
