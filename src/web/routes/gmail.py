@@ -32,7 +32,8 @@ _drafter = GmailDrafter()
 class DraftRequest(BaseModel):
     contact_id: int
     campaign: str = Field(default=DEFAULT_CAMPAIGN, max_length=200)
-    template_id: int
+    template_id: int | None = None  # Optional for AI template steps with no reference
+    step_order: int | None = None
     subject: Optional[str] = Field(default=None, max_length=200)
     body_text: Optional[str] = Field(default=None, max_length=5000)
 
@@ -139,9 +140,9 @@ def create_draft(
     # Store in DB
     with get_cursor(conn) as cur:
         cur.execute(
-            """INSERT INTO gmail_drafts (contact_id, campaign_id, gmail_draft_id, subject, to_email, template_id)
-               VALUES (%s, %s, %s, %s, %s, %s)""",
-            (body.contact_id, campaign_id, draft_id, subject, to_email, body.template_id),
+            """INSERT INTO gmail_drafts (contact_id, campaign_id, gmail_draft_id, subject, to_email, template_id, user_id)
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+            (body.contact_id, campaign_id, draft_id, subject, to_email, body.template_id, user["id"]),
         )
         conn.commit()
 
@@ -225,9 +226,9 @@ def create_batch_drafts(
             with get_cursor(conn) as cur:
                 cur.execute(
                     """INSERT INTO gmail_drafts
-                       (contact_id, campaign_id, gmail_draft_id, subject, to_email, template_id)
-                       VALUES (%s, %s, %s, %s, %s, %s)""",
-                    (item["contact_id"], campaign_id, draft_id, rendered["subject"], rendered["contact_email"], item.get("template_id")),
+                       (contact_id, campaign_id, gmail_draft_id, subject, to_email, template_id, user_id)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                    (item["contact_id"], campaign_id, draft_id, rendered["subject"], rendered["contact_email"], item.get("template_id"), user["id"]),
                 )
                 conn.commit()
             results.append({

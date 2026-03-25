@@ -33,6 +33,20 @@ class DeferRequest(BaseModel):
     campaign: str = Field(default=DEFAULT_CAMPAIGN, max_length=200)
 
 
+class GenerateDraftRequest(BaseModel):
+    campaign_id: int
+    step_order: int
+
+
+class GenerateDraftResponse(BaseModel):
+    draft_subject: Optional[str] = None
+    draft_text: str
+    model: str
+    channel: str
+    generated_at: str
+    has_research: bool
+
+
 # Static routes MUST come before parameterized /queue/{campaign} to avoid capture
 @router.get("/queue/defer/stats")
 def defer_statistics(
@@ -202,6 +216,57 @@ def override_template(
         "template_id": body.template_id,
         "template_name": template["name"],
     }
+
+
+@router.post("/queue/{contact_id}/generate-draft", response_model=GenerateDraftResponse)
+def generate_ai_draft(
+    contact_id: int,
+    body: GenerateDraftRequest,
+    conn=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Generate an AI-personalized draft for a queue item."""
+    from src.models.database import verify_ownership
+    from src.services.message_drafter import generate_draft
+
+    # Verify contact ownership
+    if not verify_ownership(conn, "contacts", contact_id, user_id=user["id"]):
+        raise HTTPException(404, "Contact not found")
+
+    # Verify enrollment
+    with get_cursor(conn) as cur:
+        cur.execute(
+            """SELECT current_step FROM contact_campaign_status
+               WHERE contact_id = %s AND campaign_id = %s""",
+            (contact_id, body.campaign_id),
+        )
+        enrollment = cur.fetchone()
+    if not enrollment:
+        raise HTTPException(400, "Contact is not enrolled in this campaign")
+
+    # Verify step_order matches current_step (safety check)
+    if enrollment["current_step"] != body.step_order:
+        raise HTTPException(
+            400,
+            f"Step mismatch: contact is at step {enrollment['current_step']}, "
+            f"requested step {body.step_order}",
+        )
+
+    try:
+        draft = generate_draft(
+            conn, contact_id, body.campaign_id, body.step_order,
+            user_id=user["id"],
+        )
+        return GenerateDraftResponse(
+            draft_subject=draft["draft_subject"],
+            draft_text=draft["draft_text"],
+            model=draft["model"],
+            channel=draft["channel"],
+            generated_at=draft["generated_at"],
+            has_research=draft["research_id"] is not None,
+        )
+    except Exception as exc:
+        raise HTTPException(500, f"Draft generation failed: {exc}")
 
 
 @router.post("/queue/{contact_id}/defer")

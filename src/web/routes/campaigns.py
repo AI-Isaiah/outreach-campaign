@@ -32,6 +32,7 @@ class SequenceStepInput(BaseModel):
     channel: str = Field(max_length=50)
     delay_days: int = Field(ge=0)
     template_id: int | None = None
+    draft_mode: str = "template"  # "template" or "ai"
 
 
 class LaunchCampaignRequest(BaseModel):
@@ -95,9 +96,9 @@ def launch_campaign(
             for step in body.steps:
                 cur.execute(
                     """INSERT INTO sequence_steps
-                       (campaign_id, step_order, channel, template_id, delay_days)
-                       VALUES (%s, %s, %s, %s, %s)""",
-                    (campaign_id, step.step_order, step.channel, step.template_id, step.delay_days),
+                       (campaign_id, step_order, channel, template_id, delay_days, draft_mode)
+                       VALUES (%s, %s, %s, %s, %s, %s)""",
+                    (campaign_id, step.step_order, step.channel, step.template_id, step.delay_days, step.draft_mode),
                 )
 
             # 3. Enroll contacts if status is active

@@ -264,6 +264,7 @@ def render_campaign_email(
     config: dict,
     *,
     user_id: int = None,
+    pre_fetched_research: dict = None,
 ) -> Optional[dict]:
     """Render a campaign email without sending it.
 
@@ -291,7 +292,7 @@ def render_campaign_email(
     if template_row is None or not template_row["body_template"]:
         return None
 
-    context = get_template_context(conn, contact_id, config, user_id=user_id)
+    context = get_template_context(conn, contact_id, config, user_id=user_id, pre_fetched_research=pre_fetched_research)
     body_text = (
         render_template(template_row["body_template"], context)
         if template_row["body_template"].endswith(".txt")
@@ -327,6 +328,7 @@ def send_campaign_email(
     config: dict,
     *,
     user_id: int = None,
+    pre_fetched_research: dict = None,
 ) -> bool:
     """Send a campaign email to a contact.
 
@@ -385,7 +387,7 @@ def send_campaign_email(
         logger.error("Template %d not found or has no body", template_id)
         return False
 
-    context = get_template_context(conn, contact_id, config, user_id=user_id)
+    context = get_template_context(conn, contact_id, config, user_id=user_id, pre_fetched_research=pre_fetched_research)
     body_text = render_template(
         template_row["body_template"],
         context,
