@@ -7,7 +7,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from src.application.queue_service import get_enriched_queue
+from src.application.queue_service import apply_cross_campaign_email_dedup, get_enriched_queue
 from src.config import DEFAULT_CAMPAIGN
 from src.models.campaigns import get_campaign_by_name
 from src.models.templates import get_template
@@ -96,8 +96,8 @@ def get_all_queues(
         x.get("contact_name") or "",
     ))
 
-    # Apply overall limit
-    merged = merged[:limit]
+    # Cross-campaign email dedup + limit in one pass
+    merged = apply_cross_campaign_email_dedup(merged, limit=limit)
 
     return {"items": merged, "total": len(merged)}
 

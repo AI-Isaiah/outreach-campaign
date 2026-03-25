@@ -15,6 +15,8 @@ from psycopg2.extensions import connection as PgConnection
 
 from src.models.database import get_cursor
 
+_SENTINEL = object()  # distinguishes "not passed" from "passed as None"
+
 # Re-export from split modules for backward compatibility
 from src.models.templates import create_template, get_template, list_templates  # noqa: F401
 from src.models.events import log_event  # noqa: F401
@@ -296,6 +298,7 @@ def update_contact_campaign_status(
     status: Optional[str] = None,
     current_step: Optional[int] = None,
     next_action_date: Optional[str] = None,
+    channel_override=_SENTINEL,
     *,
     user_id: int,
 ) -> None:
@@ -303,6 +306,9 @@ def update_contact_campaign_status(
 
     Only supplied (non-None) fields are updated. updated_at is always refreshed.
     Verifies the campaign belongs to the user before updating.
+
+    channel_override uses a sentinel so that passing None explicitly clears the
+    column (sets it to NULL), while omitting the argument leaves it unchanged.
     """
     fields = []
     params: list = []
@@ -316,6 +322,9 @@ def update_contact_campaign_status(
     if next_action_date is not None:
         fields.append("next_action_date = %s")
         params.append(next_action_date)
+    if channel_override is not _SENTINEL:
+        fields.append("channel_override = %s")
+        params.append(channel_override)
 
     if not fields:
         return

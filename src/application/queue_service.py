@@ -92,6 +92,32 @@ def get_enriched_queue(
     }
 
 
+def apply_cross_campaign_email_dedup(items: list[dict], limit: int = 0) -> list[dict]:
+    """Deduplicate email actions across campaigns in a merged queue.
+
+    If the same contact_id appears with channel='email' more than once,
+    all but the first occurrence get channel overridden to 'linkedin_only'.
+    Items must be pre-sorted (by step_order then contact_name).
+
+    When limit > 0, returns at most that many items (combining dedup + limit
+    in one pass so the dedup window matches the output window).
+    """
+    seen: set[int] = set()
+    result = []
+    for item in items:
+        if item.get("channel") == "email":
+            cid = item["contact_id"]
+            if cid in seen:
+                item["channel"] = "linkedin_only"
+                item["email_dedup_override"] = True
+            else:
+                seen.add(cid)
+        result.append(item)
+        if limit and len(result) >= limit:
+            break
+    return result
+
+
 def _batch_enrich(conn, items: list[dict], campaign_id: int, config: dict, *, user_id: Optional[str] = None) -> list[dict]:
     """Batch-fetch related data and render messages for queue items."""
     if not items:

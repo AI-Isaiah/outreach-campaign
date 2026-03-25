@@ -13,6 +13,7 @@ from src.models.campaigns import (
     update_contact_campaign_status,
     get_sequence_steps,
 )
+from src.application.queue_service import apply_cross_campaign_email_dedup
 from src.services.priority_queue import (
     get_daily_queue,
     get_next_step_for_contact,
@@ -658,3 +659,122 @@ class TestCountStepsForContact:
         assert count_steps_for_contact(conn, c_us, campaign_id) == 2
         # GDPR contact: all 3 steps are available
         assert count_steps_for_contact(conn, c_eu, campaign_id) == 3
+
+
+# ---------------------------------------------------------------------------
+# Tests: email dedup (same-email override)
+# ---------------------------------------------------------------------------
+
+class TestCrossCampaignEmailDedup:
+    """Tests for cross-campaign email dedup.
+
+    When the same contact is enrolled in multiple campaigns and both have
+    email steps due today, only the first (earliest step) keeps the email
+    channel. The cross-campaign dedup happens in the /queue/all route, not
+    in get_daily_queue() (which is per-campaign).
+
+    Note: within a single user, the UNIQUE(user_id, email_normalized) constraint
+    on contacts prevents two different contacts from sharing an email. So the
+    dedup scenario is: the SAME contact enrolled in multiple campaigns.
+    """
+
+    def _setup_simple_email_campaign(self, conn, name):
+        """Create a simple campaign with one email step."""
+        campaign_id = create_campaign(conn, name, user_id=TEST_USER_ID)
+        tmpl = create_template(
+            conn, f"{name}_email", "email", "Hello {{first_name}}",
+            subject=f"{name} subject", user_id=TEST_USER_ID,
+        )
+        add_sequence_step(conn, campaign_id, 1, "email", tmpl, delay_days=0, user_id=TEST_USER_ID)
+        return campaign_id
+
+    def test_same_contact_two_campaigns_deduped(self, conn):
+        """Same contact in two campaigns: only first email item kept, second overridden."""
+        camp_a = self._setup_simple_email_campaign(conn, "campaign_a")
+        camp_b = self._setup_simple_email_campaign(conn, "campaign_b")
+
+        comp = insert_company(conn, "Test Fund", aum_millions=1000)
+        contact_id = insert_contact(
+            conn, comp, first_name="Alice", last_name="Smith",
+            email="alice@testfund.com", email_status="valid",
+        )
+
+        for camp_id in [camp_a, camp_b]:
+            enroll_contact(conn, contact_id, camp_id, next_action_date=_today(), user_id=TEST_USER_ID)
+            update_contact_campaign_status(
+                conn, contact_id, camp_id, status="in_progress", current_step=1,
+                user_id=TEST_USER_ID,
+            )
+
+        items_a = get_daily_queue(conn, camp_a, target_date=_today())
+        items_b = get_daily_queue(conn, camp_b, target_date=_today())
+        assert items_a[0]["channel"] == "email"
+        assert items_b[0]["channel"] == "email"
+
+        merged = sorted(items_a + items_b, key=lambda x: x.get("step_order", 0))
+        result = apply_cross_campaign_email_dedup(merged)
+
+        assert result[0]["channel"] == "email"
+        assert result[1]["channel"] == "linkedin_only"
+        assert result[1].get("email_dedup_override") is True
+
+    def test_different_contacts_no_dedup(self, conn):
+        """Different contacts in two campaigns: no dedup needed."""
+        camp_a = self._setup_simple_email_campaign(conn, "camp_no_dedup_a")
+        camp_b = self._setup_simple_email_campaign(conn, "camp_no_dedup_b")
+
+        comp_a = insert_company(conn, "Fund A Dedup", aum_millions=1000)
+        comp_b = insert_company(conn, "Fund B Dedup", aum_millions=900)
+
+        c_a = insert_contact(conn, comp_a, first_name="Alice", last_name="A",
+                             email="alice@fund-a-dedup.com", email_status="valid")
+        c_b = insert_contact(conn, comp_b, first_name="Bob", last_name="B",
+                             email="bob@fund-b-dedup.com", email_status="valid")
+
+        enroll_contact(conn, c_a, camp_a, next_action_date=_today(), user_id=TEST_USER_ID)
+        update_contact_campaign_status(conn, c_a, camp_a, status="in_progress", current_step=1, user_id=TEST_USER_ID)
+        enroll_contact(conn, c_b, camp_b, next_action_date=_today(), user_id=TEST_USER_ID)
+        update_contact_campaign_status(conn, c_b, camp_b, status="in_progress", current_step=1, user_id=TEST_USER_ID)
+
+        items_a = get_daily_queue(conn, camp_a, target_date=_today())
+        items_b = get_daily_queue(conn, camp_b, target_date=_today())
+        result = apply_cross_campaign_email_dedup(items_a + items_b)
+
+        assert all(item["channel"] == "email" for item in result)
+
+    def test_linkedin_steps_not_deduped(self, conn):
+        """LinkedIn steps are not affected by email dedup."""
+        camp_a = create_campaign(conn, "li_camp_a", user_id=TEST_USER_ID)
+        camp_b = create_campaign(conn, "li_camp_b", user_id=TEST_USER_ID)
+        tmpl = create_template(conn, "li_tmpl_dedup", "linkedin_connect", "Hi", user_id=TEST_USER_ID)
+        add_sequence_step(conn, camp_a, 1, "linkedin_connect", tmpl, delay_days=0, user_id=TEST_USER_ID)
+        add_sequence_step(conn, camp_b, 1, "linkedin_connect", tmpl, delay_days=0, user_id=TEST_USER_ID)
+
+        comp = insert_company(conn, "LI Fund Dedup", aum_millions=500)
+        cid = insert_contact(conn, comp, first_name="LI", last_name="Person")
+
+        for camp_id in [camp_a, camp_b]:
+            enroll_contact(conn, cid, camp_id, next_action_date=_today(), user_id=TEST_USER_ID)
+            update_contact_campaign_status(conn, cid, camp_id, status="in_progress", current_step=1, user_id=TEST_USER_ID)
+
+        items_a = get_daily_queue(conn, camp_a, target_date=_today())
+        items_b = get_daily_queue(conn, camp_b, target_date=_today())
+        result = apply_cross_campaign_email_dedup(items_a + items_b)
+
+        assert all(item["channel"] == "linkedin_connect" for item in result)
+
+    def test_single_campaign_contact_no_dedup(self, conn):
+        """Contact in only one campaign: no dedup applied."""
+        camp = self._setup_simple_email_campaign(conn, "single_camp_dedup")
+        comp = insert_company(conn, "Solo Fund Dedup", aum_millions=500)
+        cid = insert_contact(conn, comp, first_name="Solo", last_name="Contact",
+                             email="solo@unique-dedup.com", email_status="valid")
+        enroll_contact(conn, cid, camp, next_action_date=_today(), user_id=TEST_USER_ID)
+        update_contact_campaign_status(conn, cid, camp, status="in_progress", current_step=1, user_id=TEST_USER_ID)
+
+        items = get_daily_queue(conn, camp, target_date=_today())
+        result = apply_cross_campaign_email_dedup(items)
+
+        assert len(result) == 1
+        assert result[0]["channel"] == "email"
+        assert result[0].get("email_dedup_override") is None

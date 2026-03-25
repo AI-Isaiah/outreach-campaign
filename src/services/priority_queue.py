@@ -58,7 +58,8 @@ def get_daily_queue(
             comp.firm_type,
             ccs.current_step,
             ccs.status AS ccs_status,
-            ccs.next_action_date
+            ccs.next_action_date,
+            ccs.channel_override
         FROM contact_campaign_status ccs
         JOIN contacts c ON c.id = ccs.contact_id
         JOIN companies comp ON comp.id = c.company_id
@@ -87,7 +88,7 @@ def get_daily_queue(
         ac.company_id,
         ac.aum_millions,
         ac.firm_type,
-        ss.channel,
+        COALESCE(ac.channel_override, ss.channel) AS channel,
         ss.step_order,
         ss.template_id,
         ac.contact_is_gdpr AS is_gdpr,
