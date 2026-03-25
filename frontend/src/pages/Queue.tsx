@@ -63,15 +63,24 @@ export default function Queue() {
           </p>
         </div>
         {emailItems.length > 0 && (
-          <Button
-            variant="primary"
-            size="md"
-            onClick={() => batchDraft.mutate()}
-            loading={batchDraft.isPending}
-            leftIcon={<CheckCircle size={16} />}
-          >
-            Create All Drafts
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => batchDraft.mutate()}
+              loading={batchDraft.isPending}
+              disabled={!campaignFilter && campaignNames.length > 1}
+              leftIcon={<CheckCircle size={16} />}
+              title={!campaignFilter && campaignNames.length > 1 ? "Filter to a single campaign first" : undefined}
+            >
+              Create All Drafts
+            </Button>
+            {batchDraft.isError && (
+              <span className="text-red-500 text-sm">
+                {(batchDraft.error as Error).message}
+              </span>
+            )}
+          </div>
         )}
       </div>
 
