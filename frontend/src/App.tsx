@@ -80,8 +80,9 @@ export default function App() {
               <Route path="/" element={<Page><CampaignList /></Page>} />
               <Route path="/queue" element={<Page><Queue /></Page>} />
               <Route path="/campaigns" element={<Navigate to="/" replace />} />
-              <Route path="/campaigns/new" element={<Page><CampaignBuilder /></Page>} />
-              <Route path="/campaigns/wizard" element={<Page><CampaignWizard /></Page>} />
+              <Route path="/campaigns/new" element={<Page><CampaignWizard /></Page>} />
+              <Route path="/campaigns/wizard" element={<Navigate to="/campaigns/new" replace />} />
+              <Route path="/campaigns/builder" element={<Page><CampaignBuilder /></Page>} />
               <Route path="/campaigns/:name" element={<Page><CampaignDetail /></Page>} />
               <Route path="/dashboard" element={<Page><Dashboard /></Page>} />
               <Route path="/contacts" element={<Page><ContactList /></Page>} />
