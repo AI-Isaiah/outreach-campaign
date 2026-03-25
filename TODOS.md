@@ -2,12 +2,6 @@
 
 ## P0 — Campaign Sequence Builder
 
-### Same-email dedup in campaign sequences
-**Priority:** P0
-**Files:** `src/services/priority_queue.py`, `src/services/state_machine.py`
-**What:** When two contacts in the same campaign share an email address, only one should receive email outreach. The other should get LinkedIn-only messages. Currently the priority queue enforces one-contact-per-company but not one-contact-per-email.
-**Implementation:** In `priority_queue.py`, when building the daily queue, group contacts by email. If two contacts share an email, the higher-priority one gets email+LinkedIn, the other gets LinkedIn-only. The sequence step's channel must be overridden for the duplicate-email contact.
-**Why:** Sending the same email template to the same inbox from two different campaign contacts looks spammy and violates CAN-SPAM spirit.
 
 ### Per-field conflict resolution in merge (V2)
 **Priority:** P1
@@ -25,7 +19,7 @@
 
 ### Campaign sequence kanban view
 **Priority:** P1
-**Files:** `frontend/src/pages/CampaignDashboard.tsx` (new tab or component)
+**Files:** `frontend/src/pages/CampaignDetail.tsx` (new "Pipeline" tab)
 **What:** Visual board showing contacts grouped by their current sequence step. Columns = steps (Step 1: Email, Step 2: LinkedIn, Step 3: Follow-up, etc.). Cards = contacts with status badges. Drag-and-drop to manually advance/skip. Shows bottlenecks at a glance.
 **Implementation:** Use existing `contact_campaign_status.current_step` + `sequence_steps` to build columns. Use dnd-kit (already in deps) for drag. Each card shows name, company, status badge, days-since-last-action.
 **Why:** Users need to see the pipeline at a glance — who is at which step, where are things stuck.
@@ -93,3 +87,12 @@
 - Smart Import campaign context (P1) — campaign enrollment selector added
 - Within-file duplicate detection (P1) — flags same email/LinkedIn within CSV
 - Move header detection to services (P2) — parse_csv_with_header_detection() in services
+
+### Cross-campaign email dedup (Phase 1)
+**Completed:** 2026-03-25, branch feat/smart-import
+- Pivoted from per-campaign dedup (prevented by UNIQUE constraint on contacts) to cross-campaign dedup
+- Same contact enrolled in multiple campaigns: only first email kept, others overridden to linkedin_only
+- `apply_cross_campaign_email_dedup()` in queue_service.py, called from `/queue/all` route
+- Migration 021: `channel_override` column on contact_campaign_status
+- COALESCE(channel_override, ss.channel) in get_daily_queue() SQL
+- 4 tests in test_priority_queue.py
