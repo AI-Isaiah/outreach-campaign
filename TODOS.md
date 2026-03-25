@@ -10,13 +10,15 @@
 **Design doc:** `~/.gstack/projects/AI-Isaiah-outreach-campaign/helios-mammut-main-design-20260325-173921.md`
 **Tests needed:** 19 (15 backend + 4 frontend).
 
-### Phase 4: Research-powered messages
+### Phase 4: Research-powered messages (on-demand, generate-then-push)
 **Priority:** P0
-**Files:** new `src/services/message_drafter.py`, `src/services/deep_research_service.py`, `src/application/queue_service.py`, `src/web/routes/queue.py`, `frontend/src/types/index.ts`, migration `023_message_drafts.sql`
-**What:** LLM draft generation at research-completion time (Claude Haiku). Stored in message_drafts table. Batch-queried in _batch_enrich() alongside gmail_drafts. Queue cards show draft_text when available, Jinja2 fallback when null. Error isolation: Haiku failure does NOT affect research completion.
-**Design decisions:** Draft indicator: "AI-drafted from research" label in `text-xs text-purple-600` with Lucide Sparkles icon. Edit button opens inline panel.
-**Schema:** `message_drafts(id, contact_id FK, campaign_id FK, step_order, draft_text, model, generated_at, research_id FK, user_id FK, UNIQUE(contact_id, campaign_id, step_order))`
-**Tests needed:** 8 (drafter + queue integration).
+**Files:** new `src/services/message_drafter.py`, `src/application/queue_service.py`, `src/web/routes/queue.py`, `src/web/routes/gmail.py`, `src/web/routes/campaigns.py`, `src/services/template_engine.py`, `frontend/src/types/index.ts`, `frontend/src/components/QueueEmailCard.tsx`, `frontend/src/components/QueueLinkedInCard.tsx`, `frontend/src/pages/CampaignWizard.tsx`, migration `023_message_drafts.sql`
+**What:** On-demand AI draft generation (Claude Haiku). Two triggers: (1) "Generate AI Draft" button in queue cards, (2) AI template mode in campaign wizard. Generate-then-push flow — user always sees draft before sending. No JIT in Gmail push path. Stored in message_drafts table. Batch-queried in _batch_enrich(). Queue cards show draft when generated, Jinja2 fallback when null. Error isolation: Haiku failure shows toast, user keeps template.
+**Design decisions:** Ghost outline purple button for Generate (`bg-white border border-purple-300 text-purple-700`). AI draft label `text-xs text-purple-600` with Lucide Sparkles. Confirm dialog on Regenerate. Push to Gmail disabled for AI template steps without draft. Channel-aware prompts (email/linkedin_connect/linkedin_message).
+**Schema:** `message_drafts(id, contact_id FK, campaign_id FK, step_order, draft_subject, draft_text, channel, model, generated_at, edited_at, research_id FK, user_id FK, UNIQUE(contact_id, campaign_id, step_order))`. `sequence_steps.draft_mode TEXT DEFAULT 'template'`.
+**Bundled fixes:** Campaign wizard Step 4 template selector (P0 fix), gmail_drafts user_id, template_engine user_id scoping, batch render N+1 optimization.
+**Design doc:** `~/.gstack/projects/AI-Isaiah-outreach-campaign/helios-mammut-feat-phase3-lite-design-20260325-205752.md`
+**Tests:** 15 backend + 2 frontend = 17.
 
 ### Phase 5: Campaign kanban
 **Priority:** P1
@@ -53,11 +55,8 @@
 **What:** Contacts imported via Smart Import should get a tag indicating their source CSV (e.g., "Crypto_Fund_List CSV.csv" or a user-chosen label). After import, the "View Contacts" button should filter by this tag so users can see exactly what was imported. The `source_label` field already exists in import_jobs — use it to auto-tag imported contacts.
 **Why:** After importing 2,600 contacts, users land on the contacts page with no way to find what they just imported.
 
-### Fix: Campaign Wizard template selector is non-functional
-**Priority:** P0
-**Files:** `frontend/src/pages/CampaignWizard.tsx`
-**What:** Step 4 ("Choose message templates") shows "No template selected" for each sequence step but there's no way to actually select a template — no dropdown, no picker, no click action. The template selector UI needs to be implemented: click a step → dropdown of existing templates filtered by channel (LinkedIn templates for LinkedIn steps, email templates for email steps) → select → preview shows inline.
-**Why:** Users can't complete campaign setup without assigning templates to sequence steps. This is a broken step in the wizard.
+### ~~Fix: Campaign Wizard template selector is non-functional~~ → Bundled in Phase 4
+**Status:** Included in Phase 4 implementation (template selector + AI template mode + write manually).
 
 ### Smart Message: LLM-powered sequence generation in campaign wizard
 **Priority:** P1
