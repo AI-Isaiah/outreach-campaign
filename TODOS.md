@@ -2,24 +2,6 @@
 
 ## P0 — Daily Outreach System (B+C Plan)
 
-### Phase 3 Lite: Reply remap + template winning badge
-**Priority:** P0
-**Files:** `src/web/routes/replies.py`, `src/models/campaigns.py`, `src/services/email_sender.py`, `src/web/routes/gmail.py`, `src/services/metrics.py`, `src/services/response_analyzer.py`, `src/web/routes/campaigns.py`, `frontend/src/pages/CampaignDetail.tsx`
-**What:** Remap neutral → positive in confirm flow (domain rule: non-rejection = positive). Wire up `contact_template_history` production write path (INSERT on send, UPDATE outcome on confirm). Binary reply breakdown (green/red) in CampaignDetail analytics. Template performance table with "Winning" badge (5+ sends, highest positive_rate) in CampaignDetail analytics.
-**Design decisions:** No REPLIED_NEUTRAL status. Binary split only. Winning badge: `bg-green-100 text-green-800` with Lucide Trophy icon. Reply breakdown: stacked bar (green/red). Template performance in CampaignDetail only (not Templates page).
-**Design doc:** `~/.gstack/projects/AI-Isaiah-outreach-campaign/helios-mammut-main-design-20260325-173921.md`
-**Tests needed:** 19 (15 backend + 4 frontend).
-
-### Phase 4: Research-powered messages (on-demand, generate-then-push)
-**Priority:** P0
-**Files:** new `src/services/message_drafter.py`, `src/application/queue_service.py`, `src/web/routes/queue.py`, `src/web/routes/gmail.py`, `src/web/routes/campaigns.py`, `src/services/template_engine.py`, `frontend/src/types/index.ts`, `frontend/src/components/QueueEmailCard.tsx`, `frontend/src/components/QueueLinkedInCard.tsx`, `frontend/src/pages/CampaignWizard.tsx`, migration `023_message_drafts.sql`
-**What:** On-demand AI draft generation (Claude Haiku). Two triggers: (1) "Generate AI Draft" button in queue cards, (2) AI template mode in campaign wizard. Generate-then-push flow — user always sees draft before sending. No JIT in Gmail push path. Stored in message_drafts table. Batch-queried in _batch_enrich(). Queue cards show draft when generated, Jinja2 fallback when null. Error isolation: Haiku failure shows toast, user keeps template.
-**Design decisions:** Ghost outline purple button for Generate (`bg-white border border-purple-300 text-purple-700`). AI draft label `text-xs text-purple-600` with Lucide Sparkles. Confirm dialog on Regenerate. Push to Gmail disabled for AI template steps without draft. Channel-aware prompts (email/linkedin_connect/linkedin_message).
-**Schema:** `message_drafts(id, contact_id FK, campaign_id FK, step_order, draft_subject, draft_text, channel, model, generated_at, edited_at, research_id FK, user_id FK, UNIQUE(contact_id, campaign_id, step_order))`. `sequence_steps.draft_mode TEXT DEFAULT 'template'`.
-**Bundled fixes:** Campaign wizard Step 4 template selector (P0 fix), gmail_drafts user_id, template_engine user_id scoping, batch render N+1 optimization.
-**Design doc:** `~/.gstack/projects/AI-Isaiah-outreach-campaign/helios-mammut-feat-phase3-lite-design-20260325-205752.md`
-**Tests:** 15 backend + 2 frontend = 17.
-
 ### Phase 5: Campaign kanban
 **Priority:** P1
 **Files:** `frontend/src/pages/CampaignDetail.tsx`, `src/web/routes/campaigns.py`
@@ -159,6 +141,25 @@
 - **Why:** SmartImport bypasses the design system. Identified by /simplify code reuse review.
 
 ## Completed
+
+### Phase 3 Lite: Reply remap + template winning badge
+**Completed:** 2026-03-26, branch feat/phase3-lite
+- Neutral → positive remap in confirm flow (domain rule: non-rejection = positive)
+- `contact_template_history` production write path (INSERT on send, UPDATE outcome on confirm)
+- Binary reply breakdown (green/red) in CampaignDetail analytics
+- Template performance table with "Winning" badge (5+ sends, highest positive_rate)
+- 13 backend tests (test_phase3_lite.py)
+
+### Phase 4: Research-powered AI message drafts
+**Completed:** 2026-03-26, branch feat/phase3-lite
+- On-demand AI draft generation via Claude Haiku (message_drafter.py)
+- "Generate AI Draft" button on queue cards (email + LinkedIn)
+- AI template mode in campaign wizard Step 4 (template/manual/ai)
+- JIT draft generation in push-to-Gmail path with Jinja2 fallback
+- Migration 023: message_drafts table + sequence_steps.draft_mode column
+- Bundled fixes: wizard Step 4 template selector, gmail_drafts user_id, template_engine user_id
+- CEO review hardening: 8 multi-tenancy queries, specific error handling, structured logging, rate limiting
+- 18 backend tests + 6 frontend tests (3 QueueEmailCard, 3 CampaignWizard)
 
 ### Smart Import Duplicate Redesign (all P0 items)
 **Completed:** v0.19.x (2026-03-25), branch feat/smart-import
