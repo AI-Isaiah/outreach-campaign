@@ -791,17 +791,22 @@ def preview_import(
         email_n = row.get("email_normalized")
         linkedin_n = row.get("linkedin_url_normalized")
         dup_of = None
+        dup_match = None
         if email_n and email_n in seen_emails:
             dup_of = seen_emails[email_n]
+            dup_match = "email"
         elif linkedin_n and linkedin_n in seen_linkedins:
             dup_of = seen_linkedins[linkedin_n]
+            dup_match = "linkedin"
 
         if dup_of is not None:
             row["within_file_duplicate"] = True
             row["within_file_duplicate_of"] = dup_of
+            row["within_file_duplicate_match"] = dup_match
         else:
             row["within_file_duplicate"] = False
             row["within_file_duplicate_of"] = None
+            row["within_file_duplicate_match"] = None
 
         if email_n and email_n not in seen_emails:
             seen_emails[email_n] = idx

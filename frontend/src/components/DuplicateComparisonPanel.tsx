@@ -83,7 +83,7 @@ export function MatchStatusBadge({
       {row.within_file_duplicate ? (
         <span
           className="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-purple-100 text-purple-700 cursor-default"
-          title={`Same contact appears multiple times in this CSV (row ${(row.within_file_duplicate_of ?? 0) + 1} is the first occurrence)`}
+          title={`This contact's ${(row as Record<string, unknown>).within_file_duplicate_match === "linkedin" ? "LinkedIn URL" : "email"} also appears on row ${(row.within_file_duplicate_of ?? 0) + 1} of your CSV. This often means the same person is listed at two companies (they may have moved firms). Only one entry will be imported.`}
         >
           File duplicate
         </span>
@@ -138,91 +138,82 @@ export function ComparisonPanel({
 }) {
   if (!row.existing_contact || !row.field_diffs) return null;
 
+  // Check if there are any actual differences worth showing
+  const hasConflicts = COMPARE_FIELDS.some((f) => row.field_diffs![f] === "conflict");
+  const hasNewData = COMPARE_FIELDS.some((f) => row.field_diffs![f] === "new");
+  const allMatch = !hasConflicts && !hasNewData;
+
   return (
     <tr className="bg-gray-50">
-      <td colSpan={100} className="px-5 py-4">
-        <div className="space-y-3">
+      <td colSpan={100} className="px-5 py-3">
+        <div className="space-y-2">
           {/* Company change banner */}
           {row.resolution_tier === "company_change" && row.existing_company_name && (
-            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg p-3">
-              <Building2 size={16} className="text-amber-600 shrink-0" />
+            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+              <Building2 size={14} className="text-amber-600 shrink-0" />
               <span className="text-sm text-amber-800 font-medium">
                 Likely moved: {row.existing_company_name} &rarr; {row.company_name}
               </span>
+              {row.linkedin_url && (
+                <a href={row.linkedin_url} target="_blank" rel="noopener noreferrer"
+                   className="ml-auto text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
+                  <ExternalLink size={12} /> Verify
+                </a>
+              )}
             </div>
           )}
-          {/* LinkedIn verification link */}
-          {row.linkedin_url && (
-            <a
-              href={row.linkedin_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700"
-              aria-label={`Open LinkedIn profile for ${row.full_name || "contact"}`}
-            >
-              <ExternalLink size={14} />
-              Verify on LinkedIn
-            </a>
-          )}
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-            Side-by-side comparison
-          </p>
-          <div className="border border-gray-200 rounded-lg overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-gray-100">
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 w-28">
-                    Field
-                  </th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
-                    Import Value
-                  </th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
-                    CRM Value
-                  </th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 w-20">
-                    Status
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {COMPARE_FIELDS.map((field) => {
-                  const diff = row.field_diffs![field];
-                  const importVal = row[field] ?? "";
-                  const crmVal = row.existing_contact![field] ?? "";
-                  return (
-                    <tr
-                      key={field}
-                      className={
-                        diff === "new"
-                          ? "bg-green-50"
-                          : diff === "conflict"
-                            ? "bg-amber-50"
-                            : ""
-                      }
-                    >
-                      <td className="px-3 py-2 text-xs font-medium text-gray-500">
-                        {FIELD_LABELS[field]}
-                      </td>
-                      <td className="px-3 py-2 text-gray-900">
-                        {String(importVal) || (
-                          <span className="text-gray-300">&mdash;</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-gray-900">
-                        {String(crmVal) || (
-                          <span className="text-gray-300">&mdash;</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2">
-                        <DiffBadge status={diff} />
-                      </td>
+
+          {/* All fields match — compact message */}
+          {allMatch ? (
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-green-700">
+                All fields match — additional data will be merged automatically
+              </p>
+              {row.linkedin_url && row.resolution_tier !== "company_change" && (
+                <a href={row.linkedin_url} target="_blank" rel="noopener noreferrer"
+                   className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
+                  <ExternalLink size={12} /> LinkedIn
+                </a>
+              )}
+            </div>
+          ) : (
+            <>
+              {/* Only show fields that differ or have new data */}
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-100">
+                      <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 w-24">Field</th>
+                      <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-500">Import</th>
+                      <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-500">CRM</th>
+                      <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 w-16">Status</th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {COMPARE_FIELDS.filter((f) => row.field_diffs![f] !== "same").map((field) => {
+                      const diff = row.field_diffs![field];
+                      const importVal = row[field] ?? "";
+                      const crmVal = row.existing_contact![field] ?? "";
+                      return (
+                        <tr key={field} className={diff === "new" ? "bg-green-50/50" : diff === "conflict" ? "bg-amber-50/50" : ""}>
+                          <td className="px-2 py-1.5 text-xs font-medium text-gray-500">{FIELD_LABELS[field]}</td>
+                          <td className="px-2 py-1.5 text-sm text-gray-900">{String(importVal) || <span className="text-gray-300">&mdash;</span>}</td>
+                          <td className="px-2 py-1.5 text-sm text-gray-900">{String(crmVal) || <span className="text-gray-300">&mdash;</span>}</td>
+                          <td className="px-2 py-1.5"><DiffBadge status={diff} /></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {row.linkedin_url && row.resolution_tier !== "company_change" && (
+                <a href={row.linkedin_url} target="_blank" rel="noopener noreferrer"
+                   className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium">
+                  <ExternalLink size={12} /> Verify on LinkedIn
+                </a>
+              )}
+            </>
+          )}
 
           <div className="flex items-center gap-2 pt-1">
             <button
