@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle, Inbox } from "lucide-react";
+import { CheckCircle, Inbox, Mail, Linkedin } from "lucide-react";
 import { queueApi } from "../api/queue";
 import { api } from "../api/client";
 import type { QueueItem, QueueResponse } from "../types";
@@ -42,6 +42,11 @@ export default function Queue() {
 
   const emailItems = items.filter((i) => i.channel === "email");
   const linkedinItems = items.filter((i) => i.channel.startsWith("linkedin"));
+
+  const handleDeferred = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: ["queue-all"] }),
+    [queryClient],
+  );
 
   // Get unique campaign names from items
   const campaignNames = [...new Set(allItems.map((i) => i.campaign_name).filter((n): n is string => !!n))];
@@ -136,7 +141,8 @@ export default function Queue() {
       {/* Email section */}
       {emailItems.length > 0 && (
         <div>
-          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+          <h2 className="flex items-center gap-1.5 text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+            <Mail size={16} className="text-amber-600" />
             Email ({emailItems.length})
           </h2>
           <div className="space-y-3">
@@ -145,7 +151,7 @@ export default function Queue() {
                 key={`${item.contact_id}-email`}
                 item={item}
                 campaign={item.campaign_name || ""}
-                onDeferred={() => queryClient.invalidateQueries({ queryKey: ["queue-all"] })}
+                onDeferred={handleDeferred}
               />
             ))}
           </div>
@@ -155,7 +161,8 @@ export default function Queue() {
       {/* LinkedIn section */}
       {linkedinItems.length > 0 && (
         <div>
-          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+          <h2 className="flex items-center gap-1.5 text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+            <Linkedin size={16} className="text-blue-600" />
             LinkedIn ({linkedinItems.length})
           </h2>
           <div className="space-y-3">
@@ -164,7 +171,7 @@ export default function Queue() {
                 key={`${item.contact_id}-li`}
                 item={item}
                 campaign={item.campaign_name || ""}
-                onDeferred={() => queryClient.invalidateQueries({ queryKey: ["queue-all"] })}
+                onDeferred={handleDeferred}
               />
             ))}
           </div>
