@@ -9,10 +9,12 @@ from __future__ import annotations
 from src.models.database import get_cursor
 
 
-def get_template_performance(conn, campaign_id: int) -> list[dict]:
+def get_template_performance(conn, campaign_id: int, *, user_id: int = None) -> list[dict]:
     """Positive rate per template with confidence levels.
 
     Confidence: low (<20 sends), medium (20-50), high (50+).
+    ``user_id`` is accepted for multi-tenancy convention but not used in the
+    query (campaign_id already provides isolation via FK).
     """
     with get_cursor(conn) as cursor:
         cursor.execute(
@@ -62,6 +64,29 @@ def get_template_performance(conn, campaign_id: int) -> list[dict]:
             })
 
         return results
+
+
+def annotate_is_winning(results: list[dict], min_sends: int = 5) -> list[dict]:
+    """Annotate each template result with ``is_winning`` flag.
+
+    The template with the highest ``positive_rate`` among those with
+    ``total_sends >= min_sends`` gets ``is_winning=True``.
+    Tiebreaker: highest ``total_sends``.
+    """
+    best_id = None
+    best_rate = -1.0
+    best_sends = -1
+    for r in results:
+        if r["total_sends"] >= min_sends:
+            rate = r["positive_rate"]
+            sends = r["total_sends"]
+            if rate > best_rate or (rate == best_rate and sends > best_sends):
+                best_rate = rate
+                best_sends = sends
+                best_id = r["template_id"]
+    for r in results:
+        r["is_winning"] = r["template_id"] == best_id and best_id is not None
+    return results
 
 
 def get_channel_performance(conn, campaign_id: int) -> list[dict]:

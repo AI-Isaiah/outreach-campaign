@@ -17,7 +17,7 @@ _FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 _limiter = Limiter(key_func=get_remote_address)
 
 from src.config import DEFAULT_CAMPAIGN, load_config
-from src.models.campaigns import get_campaign_by_name, update_contact_campaign_status
+from src.models.campaigns import get_campaign_by_name, record_template_usage, update_contact_campaign_status
 from src.models.events import log_event
 from src.services.email_sender import render_campaign_email
 from src.services.gmail_drafter import GmailDrafter
@@ -139,9 +139,9 @@ def create_draft(
     # Store in DB
     with get_cursor(conn) as cur:
         cur.execute(
-            """INSERT INTO gmail_drafts (contact_id, campaign_id, gmail_draft_id, subject, to_email)
-               VALUES (%s, %s, %s, %s, %s)""",
-            (body.contact_id, campaign_id, draft_id, subject, to_email),
+            """INSERT INTO gmail_drafts (contact_id, campaign_id, gmail_draft_id, subject, to_email, template_id)
+               VALUES (%s, %s, %s, %s, %s, %s)""",
+            (body.contact_id, campaign_id, draft_id, subject, to_email, body.template_id),
         )
         conn.commit()
 
@@ -225,9 +225,9 @@ def create_batch_drafts(
             with get_cursor(conn) as cur:
                 cur.execute(
                     """INSERT INTO gmail_drafts
-                       (contact_id, campaign_id, gmail_draft_id, subject, to_email)
-                       VALUES (%s, %s, %s, %s, %s)""",
-                    (item["contact_id"], campaign_id, draft_id, rendered["subject"], rendered["contact_email"]),
+                       (contact_id, campaign_id, gmail_draft_id, subject, to_email, template_id)
+                       VALUES (%s, %s, %s, %s, %s, %s)""",
+                    (item["contact_id"], campaign_id, draft_id, rendered["subject"], rendered["contact_email"], item.get("template_id")),
                 )
                 conn.commit()
             results.append({
@@ -293,9 +293,17 @@ def check_draft_status(
                     log_event(
                         conn, contact_id, "email_sent",
                         campaign_id=camp["id"],
+                        template_id=draft_row.get("template_id"),
                         metadata=json.dumps({"source": "gmail", "subject": draft_row["subject"]}),
                         user_id=user["id"],
                     )
+
+                    # Record template usage for performance tracking
+                    if draft_row.get("template_id"):
+                        record_template_usage(
+                            conn, contact_id, camp["id"],
+                            draft_row["template_id"], channel="email",
+                        )
 
                     # Advance step
                     cur.execute(

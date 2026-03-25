@@ -19,6 +19,7 @@ from typing import Optional
 from src.models.campaigns import (
     get_template,
     log_event,
+    record_template_usage,
     update_contact_campaign_status,
 )
 from src.services.compliance import (
@@ -439,6 +440,12 @@ def send_campaign_email(
         template_id=template_id,
         metadata=metadata,
         user_id=user_id,
+    )
+
+    # Record template usage for performance tracking
+    record_template_usage(
+        conn, contact_id, campaign_id, template_id,
+        channel=template_row["channel"],
     )
 
     # Advance the contact's current step
