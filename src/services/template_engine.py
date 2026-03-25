@@ -90,8 +90,8 @@ def get_template_context(
                       c.company_id, co.name as company_name
                FROM contacts c
                LEFT JOIN companies co ON co.id = c.company_id
-               WHERE c.id = %s""",
-            (contact_id,),
+               WHERE c.id = %s AND c.user_id = %s""",
+            (contact_id, user_id),
         )
         row = cursor.fetchone()
 

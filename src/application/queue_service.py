@@ -118,7 +118,7 @@ def apply_cross_campaign_email_dedup(items: list[dict], limit: int = 0) -> list[
     return result
 
 
-def _batch_enrich(conn, items: list[dict], campaign_id: int, config: dict, *, user_id: Optional[str] = None) -> list[dict]:
+def _batch_enrich(conn, items: list[dict], campaign_id: int, config: dict, *, user_id: Optional[int] = None) -> list[dict]:
     """Batch-fetch related data and render messages for queue items."""
     if not items:
         return []
@@ -132,9 +132,9 @@ def _batch_enrich(conn, items: list[dict], campaign_id: int, config: dict, *, us
         with get_cursor(conn) as cur:
             cur.execute(
                 """SELECT contact_id, gmail_draft_id, status FROM gmail_drafts
-                   WHERE contact_id = ANY(%s) AND campaign_id = %s
+                   WHERE contact_id = ANY(%s) AND campaign_id = %s AND user_id = %s
                    ORDER BY contact_id, id DESC""",
-                (contact_ids, campaign_id),
+                (contact_ids, campaign_id, user_id),
             )
             for row in cur.fetchall():
                 cid = row["contact_id"]
@@ -150,8 +150,8 @@ def _batch_enrich(conn, items: list[dict], campaign_id: int, config: dict, *, us
                           c.last_name, c.full_name, co.name AS company_name
                    FROM contacts c
                    LEFT JOIN companies co ON co.id = c.company_id
-                   WHERE c.id = ANY(%s)""",
-                (contact_ids,),
+                   WHERE c.id = ANY(%s) AND c.user_id = %s""",
+                (contact_ids, user_id),
             )
             for row in cur.fetchall():
                 contacts_by_id[row["id"]] = row
@@ -160,7 +160,7 @@ def _batch_enrich(conn, items: list[dict], campaign_id: int, config: dict, *, us
     templates_by_id: dict = {}
     if template_ids:
         with get_cursor(conn) as cur:
-            cur.execute("SELECT * FROM templates WHERE id = ANY(%s)", (template_ids,))
+            cur.execute("SELECT * FROM templates WHERE id = ANY(%s) AND user_id = %s", (template_ids, user_id))
             for row in cur.fetchall():
                 templates_by_id[row["id"]] = row
 

@@ -159,8 +159,8 @@ def generate_draft(
     if step["template_id"]:
         with get_cursor(conn) as cur:
             cur.execute(
-                "SELECT name, subject, body_template FROM templates WHERE id = %s",
-                (step["template_id"],),
+                "SELECT name, subject, body_template FROM templates WHERE id = %s AND user_id = %s",
+                (step["template_id"], user_id),
             )
             tpl = cur.fetchone()
             if tpl:
@@ -171,6 +171,14 @@ def generate_draft(
     user_message = _build_user_message(contact, research, template_subject, template_body, prompt_type)
 
     # 6. Call Claude Haiku
+    logger.info("Generating draft: contact=%d campaign=%d step=%d channel=%s",
+                contact_id, campaign_id, step_order, effective_channel)
+    logger.info("Research %s for company_id=%s",
+                "found" if research else "not available",
+                contact.get("company_id"))
+
+    import time as _time
+    _t0 = _time.monotonic()
     system_prompt = SYSTEM_PROMPTS[prompt_type]
     resp = httpx.post(
         "https://api.anthropic.com/v1/messages",
@@ -189,12 +197,18 @@ def generate_draft(
     )
     resp.raise_for_status()
     raw_text = resp.json()["content"][0]["text"]
+    _elapsed = _time.monotonic() - _t0
+    logger.info("Haiku response: %d chars, %.1fs", len(raw_text), _elapsed)
 
     # 7. Parse response
     draft_subject, draft_text = _parse_response(raw_text, prompt_type)
 
     # 8. Enforce channel constraints
     draft_text = _enforce_constraints(draft_text, effective_channel)
+
+    # 8b. Validate draft is non-empty
+    if not draft_text or len(draft_text.strip()) < 20:
+        raise ValueError("AI generated empty or too-short draft — using template fallback")
 
     # 9. UPSERT into message_drafts
     with get_cursor(conn) as cur:

@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from src.application.queue_service import apply_cross_campaign_email_dedup, get_enriched_queue
 from src.config import DEFAULT_CAMPAIGN
@@ -16,6 +20,8 @@ from src.services.priority_queue import defer_contact, get_defer_stats
 from src.web.dependencies import get_current_user, get_db
 from src.models.database import get_cursor
 
+logger = logging.getLogger(__name__)
+_limiter = Limiter(key_func=get_remote_address)
 router = APIRouter(tags=["queue"])
 
 
@@ -219,7 +225,9 @@ def override_template(
 
 
 @router.post("/queue/{contact_id}/generate-draft", response_model=GenerateDraftResponse)
+@_limiter.limit("10/minute")
 def generate_ai_draft(
+    request: Request,
     contact_id: int,
     body: GenerateDraftRequest,
     conn=Depends(get_db),
@@ -237,8 +245,9 @@ def generate_ai_draft(
     with get_cursor(conn) as cur:
         cur.execute(
             """SELECT current_step FROM contact_campaign_status
-               WHERE contact_id = %s AND campaign_id = %s""",
-            (contact_id, body.campaign_id),
+               WHERE contact_id = %s AND campaign_id = %s
+               AND campaign_id IN (SELECT id FROM campaigns WHERE user_id = %s)""",
+            (contact_id, body.campaign_id, user["id"]),
         )
         enrollment = cur.fetchone()
     if not enrollment:
@@ -265,8 +274,23 @@ def generate_ai_draft(
             generated_at=draft["generated_at"],
             has_research=draft["research_id"] is not None,
         )
+    except ValueError as exc:
+        if "empty or too-short" in str(exc):
+            raise HTTPException(422, str(exc))
+        raise HTTPException(404, str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc))
+    except httpx.TimeoutException:
+        raise HTTPException(504, "AI service timeout — try again or use template")
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 429:
+            raise HTTPException(429, "AI service rate limited — try again in a minute")
+        elif exc.response.status_code == 401:
+            raise HTTPException(503, "AI API key invalid — check ANTHROPIC_API_KEY")
+        raise HTTPException(502, f"AI service error: {exc.response.status_code}")
     except Exception as exc:
-        raise HTTPException(500, f"Draft generation failed: {exc}")
+        logger.error("Unexpected draft generation error: %s", exc, exc_info=True)
+        raise HTTPException(500, "Draft generation failed unexpectedly")
 
 
 @router.post("/queue/{contact_id}/defer")

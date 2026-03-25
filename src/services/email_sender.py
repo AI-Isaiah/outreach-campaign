@@ -278,7 +278,7 @@ def render_campaign_email(
     """
     with get_cursor(conn) as cursor:
         cursor.execute(
-            "SELECT * FROM contacts WHERE id = %s", (contact_id,),
+            "SELECT * FROM contacts WHERE id = %s AND user_id = %s", (contact_id, user_id),
         )
         contact = cursor.fetchone()
     if contact is None or contact["unsubscribed"]:
