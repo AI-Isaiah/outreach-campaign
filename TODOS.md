@@ -2,13 +2,6 @@
 
 ## P0 — Daily Outreach System (B+C Plan)
 
-### Phase 2: LinkedIn automation L1
-**Priority:** P0 (next to build)
-**Files:** `frontend/src/pages/Queue.tsx`, `frontend/src/components/QueueLinkedInCard.tsx`
-**What:** Enhanced LinkedIn card with copy-to-clipboard button, expandable message, channel icons (Lucide Mail/Linkedin). LinkedIn templates already exist at `src/templates/linkedin/`.
-**Design decisions:** Copy button: `bg-blue-600 text-white` → "Copied" with check for 2s. `aria-label="Copy message to clipboard"`.
-**Tests needed:** 4 frontend tests.
-
 ### Phase 3: Reply feedback + template badge
 **Priority:** P0
 **Files:** `src/enums.py`, `src/services/state_machine.py`, `frontend/src/pages/CampaignDetail.tsx`, `frontend/src/pages/Templates.tsx`, migration `022_replied_neutral.sql`
@@ -118,6 +111,14 @@
 - Smart Import campaign context (P1) — campaign enrollment selector added
 - Within-file duplicate detection (P1) — flags same email/LinkedIn within CSV
 - Move header detection to services (P2) — parse_csv_with_header_detection() in services
+
+### LinkedIn automation L1 (Phase 2)
+**Completed:** 2026-03-25, branch feat/smart-import
+- Copy-to-clipboard button (primary blue variant), expandable/collapsible message section
+- Channel icons (Mail, Linkedin from Lucide) on cards and section headers
+- Extracted shared useContactEdit hook, ContactEditPanel, SkipMenu components
+- Fixed query key mismatch, CopyButton timer leak, handleSaveEdit error handling
+- 4 frontend tests (QueueLinkedInCard.test.tsx)
 
 ### Cross-campaign email dedup (Phase 1)
 **Completed:** 2026-03-25, branch feat/smart-import
