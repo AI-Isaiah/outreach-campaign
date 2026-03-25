@@ -51,6 +51,13 @@ export interface Campaign {
   created_at: string;
 }
 
+export interface ReplyBreakdown {
+  positive: number;
+  negative: number;
+  total: number;
+  positive_rate: number;
+}
+
 export interface CampaignMetrics {
   total_enrolled: number;
   by_status: Record<string, number>;
@@ -60,6 +67,20 @@ export interface CampaignMetrics {
   calls_booked: number;
   reply_rate: number;
   positive_rate: number;
+  reply_breakdown: ReplyBreakdown;
+}
+
+export interface TemplatePerformanceItem {
+  template_id: number;
+  template_name: string;
+  channel: string;
+  total_sends: number;
+  positive: number;
+  negative: number;
+  pending: number;
+  positive_rate: number;
+  confidence: string;
+  is_winning: boolean;
 }
 
 export interface VariantComparison {
