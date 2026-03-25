@@ -46,6 +46,45 @@
 **What:** When the LLM detects multi-contact columns (Contact 2, Contact 2 Title, etc.), they appear as "Ignore" in the mapping dropdowns. The data IS handled correctly by the multi_contact explosion logic in `transform_rows()`, but the UI doesn't communicate this. Show these columns as "Handled by multi-contact detection" or group them visually under their contact slot (e.g., "Contact 2: Full Name, Title, Email, LinkedIn").
 **Why:** Users think the data will be lost. Misleading UX erodes trust in the import tool.
 
+### Import source tagging
+**Priority:** P1
+**Files:** `src/services/smart_import.py`, `frontend/src/pages/SmartImport.tsx`
+**What:** Contacts imported via Smart Import should get a tag indicating their source CSV (e.g., "Crypto_Fund_List CSV.csv" or a user-chosen label). After import, the "View Contacts" button should filter by this tag so users can see exactly what was imported. The `source_label` field already exists in import_jobs — use it to auto-tag imported contacts.
+**Why:** After importing 2,600 contacts, users land on the contacts page with no way to find what they just imported.
+
+### Fix: Campaign Wizard template selector is non-functional
+**Priority:** P0
+**Files:** `frontend/src/pages/CampaignWizard.tsx`
+**What:** Step 4 ("Choose message templates") shows "No template selected" for each sequence step but there's no way to actually select a template — no dropdown, no picker, no click action. The template selector UI needs to be implemented: click a step → dropdown of existing templates filtered by channel (LinkedIn templates for LinkedIn steps, email templates for email steps) → select → preview shows inline.
+**Why:** Users can't complete campaign setup without assigning templates to sequence steps. This is a broken step in the wizard.
+
+### Smart Message: LLM-powered sequence generation in campaign wizard
+**Priority:** P1
+**Files:** `frontend/src/pages/CampaignWizard.tsx`, new `src/services/message_drafter.py`, `src/web/routes/templates.py`
+**What:** Each sequence step gets three options: (1) **Select existing template**, (2) **Write manually** with channel-aware limits (LinkedIn connect: 300 chars), (3) **Smart Message** — LLM generates the message. Smart Message combines two layers:
+  - **Best practices layer:** Proven cold outreach patterns baked into the system prompt — optimal sequence structure (LinkedIn connect → email → follow-up timing), tone frameworks (AIDA, problem-agitate-solve), channel-specific rules (LinkedIn connect is short/personal, email can be longer/value-driven). Research internet best practices for crypto fund outreach sequences specifically.
+  - **Research layer:** Per-target company research via existing deep research pipeline (Perplexity + Claude) or lighter single-query lookup. User describes what they're selling/their fund thesis. LLM generates the full sequence personalized with company-specific talking points.
+  - **Improve mode:** User pastes their draft, LLM refines it using the best-practice rules and channel constraints. Returns improved version with explanations of what changed and why.
+**Why:** Most users don't have templates. The first campaign is where they need the most help. "Best practice + smart research + LLM text" is the formula — not just generation, but generation informed by what actually works in fund allocator outreach.
+
+### Campaign Wizard: select contacts from CRM database
+**Priority:** P0
+**Files:** `frontend/src/pages/CampaignWizard.tsx`, `src/web/routes/contacts.py`
+**What:** Campaign Wizard step 2 ("Add contacts") currently only allows CSV upload. Add a second option: "Select from existing contacts" with a searchable/filterable contact picker. Filter by company, tag, import source, status. Support select-all with filters applied (e.g., "select all 108 contacts imported today"). This is the primary flow — CSV upload should be secondary ("or import new contacts from CSV").
+**Why:** After importing contacts via Smart Import, the next step is creating a campaign with those contacts. Forcing a second CSV upload defeats the purpose of having a CRM. This is the #1 gap in the campaign creation flow.
+
+### Post-import campaign creation flow
+**Priority:** P1
+**Files:** `frontend/src/pages/SmartImport.tsx`, `frontend/src/pages/CampaignWizard.tsx`
+**What:** After successful import, offer "Create Campaign with Imported Contacts" as the primary action (instead of just "View Contacts"). Pre-populate the campaign wizard with the imported contacts already selected. If the user selected "Enroll in campaign" during import, navigate to that campaign after completion.
+**Why:** Import is step 1 of the outreach workflow. The next step is always creating or enrolling in a campaign. The current flow dumps users on the contacts page with no clear next step.
+
+### Streamlined merge-and-dismiss workflow
+**Priority:** P1
+**Files:** `frontend/src/pages/SmartImport.tsx`, `frontend/src/components/DuplicateComparisonPanel.tsx`
+**What:** Replace dual-checkbox pattern (select + import) with a single "Merge" button per match row. When clicked, the contact is merged and removed from the review list, so the user can work through matches step by step. For "Already in CRM" contacts with no conflicts, auto-merge silently on import (no user action needed). The left checkbox (select for bulk ops) and the IMPORT checkbox should be consolidated into one clear action per row.
+**Why:** Two checkboxes with unclear purpose is confusing. Users need a clear action ("Merge this contact") with visible progress (list gets shorter as they work through it).
+
 ### Per-field conflict resolution in merge (V2)
 **Priority:** P1
 **Files:** `frontend/src/components/DuplicateComparisonPanel.tsx`, `src/services/smart_import.py`
