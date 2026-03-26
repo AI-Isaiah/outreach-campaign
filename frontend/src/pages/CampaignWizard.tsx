@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { useMutation, useQuery, keepPreviousData } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Upload,
   Check,
@@ -18,7 +18,6 @@ import {
   GripVertical,
   Plus,
   Trash2,
-  Search,
   Wand2,
 } from "lucide-react";
 import {
@@ -43,11 +42,11 @@ import Input from "../components/ui/Input";
 import { campaignsApi } from "../api/campaigns";
 import type { GeneratedStep } from "../api/campaigns";
 import { api } from "../api/client";
-import { contactsApi } from "../api/contacts";
 import type { Template } from "../types";
 import { useToast } from "../components/Toast";
 import { CHANNEL_LABELS } from "../constants";
 import { splitCsvLine } from "../utils/parseCsv";
+import CrmContactPicker from "./campaigns/components/CrmContactPicker";
 
 /*
  * Campaign Wizard — 5-step guided flow
@@ -606,7 +605,7 @@ function StepContacts({
       {contactTab === "crm" ? (
         <CrmContactPicker
           selectedIds={crmSelectedIds}
-          setSelectedIds={setCrmSelectedIds}
+          onSelectionChange={setCrmSelectedIds}
         />
       ) : (
         <CsvUploadTab
@@ -622,272 +621,6 @@ function StepContacts({
           onShowFormatHelp={onShowFormatHelp}
           onSmartImport={onSmartImport}
         />
-      )}
-    </div>
-  );
-}
-
-// ─── CRM Contact Picker ────────────────────────────────────────────
-
-type SortCol = "name" | "company" | "aum";
-type SortDir = "asc" | "desc";
-
-function CrmContactPicker({
-  selectedIds,
-  setSelectedIds,
-}: {
-  selectedIds: Set<number>;
-  setSelectedIds: (ids: Set<number>) => void;
-}) {
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(50);
-  const [sortBy, setSortBy] = useState<SortCol>("aum");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
-  const [hasLinkedin, setHasLinkedin] = useState(false);
-  const [hasEmail, setHasEmail] = useState(false);
-  const [onePerCompany, setOnePerCompany] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
-
-  useEffect(() => {
-    clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      setDebouncedSearch(search);
-      setPage(1);
-    }, 300);
-    return () => clearTimeout(debounceRef.current);
-  }, [search]);
-
-  const { data, isLoading } = useQuery({
-    queryKey: ["contacts", "picker", debouncedSearch, page, perPage, sortBy, sortDir, hasLinkedin, hasEmail],
-    queryFn: () =>
-      contactsApi.listContacts(page, debouncedSearch || undefined, {
-        per_page: perPage,
-        sort_by: sortBy,
-        sort_dir: sortDir,
-        has_linkedin: hasLinkedin || undefined,
-        has_email: hasEmail || undefined,
-      }),
-    placeholderData: keepPreviousData,
-  });
-
-  const crmContacts = data?.contacts ?? [];
-  const totalPages = data?.pages ?? 1;
-  const total = data?.total ?? 0;
-
-  const toggleSort = (col: SortCol) => {
-    if (sortBy === col) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setSortBy(col);
-      setSortDir(col === "name" || col === "company" ? "asc" : "desc");
-    }
-    setPage(1);
-  };
-
-  const sortArrow = (col: SortCol) =>
-    sortBy === col ? (sortDir === "asc" ? " \u25B2" : " \u25BC") : "";
-
-  const toggleOne = (id: number) => {
-    const next = new Set(selectedIds);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    setSelectedIds(next);
-  };
-
-  // When onePerCompany is on, "select all" picks only the top-AUM contact per company
-  const selectableOnPage = onePerCompany
-    ? (() => {
-        const seen = new Set<string>();
-        // crmContacts already sorted by AUM desc from API, so first per company is highest
-        return crmContacts.filter((c) => {
-          const key = c.company_name || `__no_company_${c.id}`;
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
-      })()
-    : crmContacts;
-
-  const allOnPageSelected =
-    selectableOnPage.length > 0 && selectableOnPage.every((c) => selectedIds.has(c.id));
-
-  const togglePage = () => {
-    const next = new Set(selectedIds);
-    if (allOnPageSelected) {
-      crmContacts.forEach((c) => next.delete(c.id));
-    } else {
-      selectableOnPage.forEach((c) => next.add(c.id));
-    }
-    setSelectedIds(next);
-  };
-
-  // Check if a contact's company already has someone selected (for visual indicator)
-  const companyHasOtherSelected = (contact: typeof crmContacts[0]) => {
-    if (!onePerCompany || !contact.company_name) return false;
-    return crmContacts.some(
-      (c) => c.id !== contact.id && c.company_name === contact.company_name && selectedIds.has(c.id)
-    );
-  };
-
-  const formatAum = (aum: number | null | undefined) => {
-    if (aum == null) return "-";
-    if (aum >= 1000) return `$${(aum / 1000).toFixed(1)}B`;
-    return `$${aum}M`;
-  };
-
-  return (
-    <div className="space-y-3">
-      <Input
-        placeholder="Search by name, email, or company..."
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        leftIcon={<Search size={16} />}
-      />
-
-      {/* Filters */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-xs text-gray-500 mr-1">Filter:</span>
-        {[
-          { label: "Has LinkedIn", active: hasLinkedin, toggle: () => { setHasLinkedin(!hasLinkedin); setPage(1); } },
-          { label: "Has Email", active: hasEmail, toggle: () => { setHasEmail(!hasEmail); setPage(1); } },
-          { label: "One per company", active: onePerCompany, toggle: () => { setOnePerCompany(!onePerCompany); setPage(1); } },
-        ].map((f) => (
-          <button
-            key={f.label}
-            onClick={f.toggle}
-            className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
-              f.active
-                ? "bg-gray-900 text-white border-gray-900"
-                : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
-            }`}
-          >
-            {f.active && "\u2713 "}{f.label}
-          </button>
-        ))}
-        <span className="ml-auto text-xs text-gray-400">
-          Show:
-          {[50, 100].map((n) => (
-            <button
-              key={n}
-              onClick={() => { setPerPage(n); setPage(1); }}
-              className={`ml-1.5 ${perPage === n ? "text-gray-900 font-medium" : "text-gray-400 hover:text-gray-600"}`}
-            >
-              {n}
-            </button>
-          ))}
-        </span>
-      </div>
-
-      {isLoading && crmContacts.length === 0 ? (
-        <div className="flex items-center justify-center py-12 text-gray-400">
-          <Loader2 size={20} className="animate-spin" />
-        </div>
-      ) : crmContacts.length === 0 ? (
-        <div className="text-center py-8 text-sm text-gray-500">
-          {debouncedSearch
-            ? `No contacts matching "${debouncedSearch}"`
-            : "No contacts in your CRM yet"}
-        </div>
-      ) : (
-        <>
-          <div className="border border-gray-200 rounded-lg overflow-hidden max-h-96 overflow-y-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 sticky top-0">
-                <tr>
-                  <th className="w-10 px-3 py-2">
-                    <input
-                      type="checkbox"
-                      checked={allOnPageSelected}
-                      onChange={togglePage}
-                      className="rounded border-gray-300"
-                      aria-label="Select all on this page"
-                    />
-                  </th>
-                  <th
-                    onClick={() => toggleSort("name")}
-                    className="text-left px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700"
-                  >
-                    Name{sortArrow("name")}
-                  </th>
-                  <th
-                    onClick={() => toggleSort("company")}
-                    className="text-left px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700"
-                  >
-                    Company{sortArrow("company")}
-                  </th>
-                  <th
-                    onClick={() => toggleSort("aum")}
-                    className="text-right px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700"
-                  >
-                    AUM{sortArrow("aum")}
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {crmContacts.map((c) => {
-                  const checked = selectedIds.has(c.id);
-                  const companyConflict = !checked && companyHasOtherSelected(c);
-                  return (
-                    <tr
-                      key={c.id}
-                      className={`hover:bg-gray-50 cursor-pointer transition-colors ${
-                        checked ? "bg-blue-50" : companyConflict ? "opacity-40" : ""
-                      }`}
-                      onClick={() => toggleOne(c.id)}
-                      title={companyConflict ? `Another contact at ${c.company_name} is already selected` : undefined}
-                    >
-                      <td className="px-3 py-2">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleOne(c.id)}
-                          className="rounded border-gray-300"
-                          aria-label={`Select ${c.full_name || c.first_name}`}
-                        />
-                      </td>
-                      <td className="px-3 py-2 font-medium">
-                        {c.full_name || [c.first_name, c.last_name].filter(Boolean).join(" ")}
-                      </td>
-                      <td className="px-3 py-2 text-gray-500">{c.company_name || "-"}</td>
-                      <td className="px-3 py-2 text-right text-gray-500">{formatAum(c.aum_millions)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Footer: selection count + pagination */}
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-gray-500">
-              {selectedIds.size} selected
-              {total > 0 && ` of ${total}`}
-            </span>
-            {totalPages > 1 && (
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page <= 1}
-                  className="px-2 py-1 text-xs font-medium text-gray-600 border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <ChevronLeft size={14} />
-                </button>
-                <span className="text-xs text-gray-500">
-                  Page {page} of {totalPages}
-                </span>
-                <button
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={page >= totalPages}
-                  className="px-2 py-1 text-xs font-medium text-gray-600 border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <ChevronRight size={14} />
-                </button>
-              </div>
-            )}
-          </div>
-        </>
       )}
     </div>
   );
