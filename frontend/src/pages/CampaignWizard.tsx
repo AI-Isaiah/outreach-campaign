@@ -660,7 +660,7 @@ function CrmContactPicker({
   }, [search]);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["contacts", "picker", debouncedSearch, page, perPage, sortBy, sortDir, hasLinkedin, hasEmail, onePerCompany],
+    queryKey: ["contacts", "picker", debouncedSearch, page, perPage, sortBy, sortDir, hasLinkedin, hasEmail],
     queryFn: () =>
       contactsApi.listContacts(page, debouncedSearch || undefined, {
         per_page: perPage,
@@ -668,7 +668,6 @@ function CrmContactPicker({
         sort_dir: sortDir,
         has_linkedin: hasLinkedin || undefined,
         has_email: hasEmail || undefined,
-        one_per_company: onePerCompany || undefined,
       }),
     placeholderData: keepPreviousData,
   });
@@ -697,17 +696,39 @@ function CrmContactPicker({
     setSelectedIds(next);
   };
 
+  // When onePerCompany is on, "select all" picks only the top-AUM contact per company
+  const selectableOnPage = onePerCompany
+    ? (() => {
+        const seen = new Set<string>();
+        // crmContacts already sorted by AUM desc from API, so first per company is highest
+        return crmContacts.filter((c) => {
+          const key = c.company_name || `__no_company_${c.id}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+      })()
+    : crmContacts;
+
   const allOnPageSelected =
-    crmContacts.length > 0 && crmContacts.every((c) => selectedIds.has(c.id));
+    selectableOnPage.length > 0 && selectableOnPage.every((c) => selectedIds.has(c.id));
 
   const togglePage = () => {
     const next = new Set(selectedIds);
     if (allOnPageSelected) {
       crmContacts.forEach((c) => next.delete(c.id));
     } else {
-      crmContacts.forEach((c) => next.add(c.id));
+      selectableOnPage.forEach((c) => next.add(c.id));
     }
     setSelectedIds(next);
+  };
+
+  // Check if a contact's company already has someone selected (for visual indicator)
+  const companyHasOtherSelected = (contact: typeof crmContacts[0]) => {
+    if (!onePerCompany || !contact.company_name) return false;
+    return crmContacts.some(
+      (c) => c.id !== contact.id && c.company_name === contact.company_name && selectedIds.has(c.id)
+    );
   };
 
   const formatAum = (aum: number | null | undefined) => {
@@ -807,11 +828,15 @@ function CrmContactPicker({
               <tbody className="divide-y divide-gray-100">
                 {crmContacts.map((c) => {
                   const checked = selectedIds.has(c.id);
+                  const companyConflict = !checked && companyHasOtherSelected(c);
                   return (
                     <tr
                       key={c.id}
-                      className={`hover:bg-gray-50 cursor-pointer transition-colors ${checked ? "bg-blue-50" : ""}`}
+                      className={`hover:bg-gray-50 cursor-pointer transition-colors ${
+                        checked ? "bg-blue-50" : companyConflict ? "opacity-40" : ""
+                      }`}
                       onClick={() => toggleOne(c.id)}
+                      title={companyConflict ? `Another contact at ${c.company_name} is already selected` : undefined}
                     >
                       <td className="px-3 py-2">
                         <input
@@ -1347,6 +1372,19 @@ function StepSequence({
 
 /** Recalculate step_order (1-indexed) and delay_days after reorder/edit. */
 function recalcSteps(steps: GeneratedStep[]): GeneratedStep[] {
+  // Ensure the first LinkedIn step is always linkedin_connect
+  const hasConnect = steps.some((s) => s.channel === "linkedin_connect");
+  if (!hasConnect) {
+    const firstLinkedInIdx = steps.findIndex((s) =>
+      s.channel === "linkedin_message" || s.channel === "linkedin_engage" || s.channel === "linkedin_insight"
+    );
+    if (firstLinkedInIdx !== -1) {
+      steps = steps.map((s, i) =>
+        i === firstLinkedInIdx ? { ...s, channel: "linkedin_connect" } : s
+      );
+    }
+  }
+
   return steps.map((s, i) => {
     let delay: number;
     if (i === 0) {
