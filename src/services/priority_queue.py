@@ -41,6 +41,12 @@ def get_daily_queue(
     if target_date is None:
         target_date = date.today().isoformat()
 
+    # Guard: verify campaign exists before running the heavy CTE query
+    with get_cursor(conn) as cursor:
+        cursor.execute("SELECT id FROM campaigns WHERE id = %s", (campaign_id,))
+        if not cursor.fetchone():
+            raise ValueError(f"Campaign {campaign_id} not found")
+
     query = """
     WITH eligible AS (
         SELECT

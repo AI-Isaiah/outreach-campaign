@@ -10,12 +10,12 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Optional
 
-from src.models.campaigns import (
+from src.models.enrollment import (
     get_contact_campaign_status,
     get_sequence_steps,
-    log_event,
     update_contact_campaign_status,
 )
+from src.models.events import log_event
 from src.services.sequence_utils import find_next_step
 
 

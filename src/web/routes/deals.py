@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from src.enums import DealStage
 from src.web.dependencies import get_current_user, get_db
+from src.web.query_builder import QueryBuilder
 from src.models.database import get_cursor
 
 router = APIRouter(prefix="/deals", tags=["deals"])
@@ -48,13 +49,10 @@ def get_pipeline(
 ):
     """All deals grouped by stage for kanban view."""
     with get_cursor(conn) as cur:
-        conditions = ["co.user_id = %s"]
-        params: list = [user["id"]]
+        qb = QueryBuilder()
+        qb.add_condition("co.user_id = %s", user["id"])
         if campaign_id is not None:
-            conditions.append("d.campaign_id = %s")
-            params.append(campaign_id)
-
-        where = "WHERE " + " AND ".join(conditions)
+            qb.add_condition("d.campaign_id = %s", campaign_id)
 
         cur.execute(
             f"""SELECT d.*, co.name AS company_name, co.aum_millions,
@@ -62,9 +60,9 @@ def get_pipeline(
                 FROM deals d
                 JOIN companies co ON co.id = d.company_id
                 LEFT JOIN contacts c ON c.id = d.contact_id
-                {where}
+                {qb.where_clause}
                 ORDER BY d.updated_at DESC""",
-            params,
+            qb.params,
         )
         rows = cur.fetchall()
 
@@ -89,20 +87,15 @@ def list_deals(
 ):
     """List deals with optional filters."""
     offset = (page - 1) * per_page
-    conditions: list[str] = ["co.user_id = %s"]
-    params: list = [user["id"]]
+    qb = QueryBuilder()
+    qb.add_condition("co.user_id = %s", user["id"])
 
     if stage:
-        conditions.append("d.stage = %s")
-        params.append(stage)
+        qb.add_condition("d.stage = %s", stage)
     if company_id is not None:
-        conditions.append("d.company_id = %s")
-        params.append(company_id)
+        qb.add_condition("d.company_id = %s", company_id)
     if min_amount is not None:
-        conditions.append("d.amount_millions >= %s")
-        params.append(min_amount)
-
-    where = "WHERE " + " AND ".join(conditions)
+        qb.add_condition("d.amount_millions >= %s", min_amount)
 
     with get_cursor(conn) as cur:
         cur.execute(
@@ -111,18 +104,18 @@ def list_deals(
                 FROM deals d
                 JOIN companies co ON co.id = d.company_id
                 LEFT JOIN contacts c ON c.id = d.contact_id
-                {where}
+                {qb.where_clause}
                 ORDER BY d.updated_at DESC
                 LIMIT %s OFFSET %s""",
-            params + [per_page, offset],
+            qb.params + [per_page, offset],
         )
         rows = cur.fetchall()
 
         cur.execute(
             f"""SELECT COUNT(*) AS cnt FROM deals d
                 JOIN companies co ON co.id = d.company_id
-                {where}""",
-            params,
+                {qb.where_clause}""",
+            qb.params,
         )
         total = cur.fetchone()["cnt"]
 

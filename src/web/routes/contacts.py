@@ -12,17 +12,16 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from src.application.contact_service import transition_contact_status
-from src.models.campaigns import (
-    get_campaign_by_name,
-    get_contact_campaign_status,
-    log_event,
-)
+from src.models.campaigns import get_campaign_by_name
+from src.models.enrollment import get_contact_campaign_status
+from src.models.events import log_event
 from src.config import DEFAULT_CAMPAIGN
 from src.enums import LifecycleStage
 from src.services.normalization_utils import normalize_email as _normalize_email, normalize_linkedin_url as _normalize_linkedin
 from src.services.phone_utils import normalize_phone
 from src.services.state_machine import InvalidTransition
 from src.web.dependencies import get_current_user, get_db
+from src.web.query_builder import QueryBuilder
 from src.models.database import get_cursor
 
 _limiter = Limiter(
@@ -214,23 +213,24 @@ def list_contacts(
     nulls = "NULLS LAST" if sort_dir == "desc" else "NULLS FIRST"
     order_clause = f"{order_col} {sort_dir.upper()} {nulls}"
 
-    where_parts = ["c.user_id = %s"]
-    params: list = [user_id]
+    qb = QueryBuilder()
+    qb.add_condition("c.user_id = %s", user_id)
 
     if search:
         like = f"%{search}%"
-        where_parts.append(
+        qb.add_condition(
             "(c.full_name ILIKE %s OR c.email ILIKE %s"
-            " OR co.name ILIKE %s OR c.first_name ILIKE %s OR c.last_name ILIKE %s)"
+            " OR co.name ILIKE %s OR c.first_name ILIKE %s OR c.last_name ILIKE %s)",
+            like, like, like, like, like,
         )
-        params.extend([like, like, like, like, like])
 
     if has_linkedin:
-        where_parts.append("c.linkedin_url IS NOT NULL AND c.linkedin_url != ''")
+        qb.add_condition("c.linkedin_url IS NOT NULL AND c.linkedin_url != ''")
     if has_email:
-        where_parts.append("c.email IS NOT NULL AND c.email != ''")
+        qb.add_condition("c.email IS NOT NULL AND c.email != ''")
 
-    where_sql = " AND ".join(where_parts)
+    where_sql = qb.where_clause
+    params = qb.params
 
     with get_cursor(conn) as cur:
         if one_per_company:
@@ -243,7 +243,7 @@ def list_contacts(
                        ) AS rn
                 FROM contacts c
                 LEFT JOIN companies co ON co.id = c.company_id
-                WHERE {where_sql}
+                {where_sql}
             )
             SELECT * FROM ranked WHERE rn = 1
             ORDER BY {order_col.split('.')[-1]} {sort_dir.upper()} {nulls}
@@ -258,7 +258,7 @@ def list_contacts(
                        ROW_NUMBER() OVER (PARTITION BY c.company_id ORDER BY co.aum_millions DESC NULLS LAST, c.id) AS rn
                 FROM contacts c
                 LEFT JOIN companies co ON co.id = c.company_id
-                WHERE {where_sql}
+                {where_sql}
             )
             SELECT COUNT(*) AS cnt FROM ranked WHERE rn = 1
             """
@@ -269,7 +269,7 @@ def list_contacts(
             SELECT c.*, co.name AS company_name, co.aum_millions
             FROM contacts c
             LEFT JOIN companies co ON co.id = c.company_id
-            WHERE {where_sql}
+            {where_sql}
             ORDER BY {order_clause}
             LIMIT %s OFFSET %s
             """
@@ -279,7 +279,7 @@ def list_contacts(
             count_query = f"""
             SELECT COUNT(*) AS cnt FROM contacts c
             LEFT JOIN companies co ON co.id = c.company_id
-            WHERE {where_sql}
+            {where_sql}
             """
             cur.execute(count_query, params)
             total = cur.fetchone()["cnt"]

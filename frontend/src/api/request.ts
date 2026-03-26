@@ -32,3 +32,28 @@ export async function request<T>(path: string, options?: RequestInit): Promise<T
   }
   return res.json();
 }
+
+/**
+ * Upload a FormData body (file uploads). Handles auth, 401 redirect,
+ * and error extraction identically to `request()` but omits
+ * Content-Type so the browser sets the multipart boundary.
+ */
+export async function requestUpload<T>(path: string, body: FormData): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers: authHeaders(),
+    body,
+  });
+
+  if (res.status === 401) {
+    localStorage.removeItem("auth_token");
+    window.dispatchEvent(new Event("auth:expired"));
+    throw new Error("Session expired");
+  }
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(error.detail || `HTTP ${res.status}`);
+  }
+  return res.json();
+}

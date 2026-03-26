@@ -182,12 +182,12 @@ def scan_linkedin_acceptances(
     Returns:
         dict with keys: scanned, matched, advanced, already_processed, errors, details
     """
-    from src.models.campaigns import (
+    from src.models.enrollment import (
         get_contact_campaign_status,
         get_sequence_steps,
-        log_event,
         update_contact_campaign_status,
     )
+    from src.models.events import log_event
 
     stats = {
         "scanned": 0,

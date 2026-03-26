@@ -13,6 +13,7 @@ import httpx
 
 from src.constants import ZEROBOUNCE_CHUNK_SIZE as _CHUNK_SIZE
 from src.models.database import get_cursor
+from src.services.retry import retry_on_failure
 
 # ---------------------------------------------------------------------------
 # Status mapping constants
@@ -64,6 +65,20 @@ def verify_email_batch(
 # ---------------------------------------------------------------------------
 
 
+@retry_on_failure(max_retries=3, backoff_base=1.0, exceptions=(httpx.RequestError,))
+def _zerobounce_post(api_key: str, chunk: list[str]) -> httpx.Response:
+    """POST a single chunk to ZeroBounce with retry on network errors."""
+    response = httpx.post(
+        "https://bulkapi.zerobounce.net/v2/validatebatch",
+        json={
+            "api_key": api_key,
+            "email_batch": [{"email_address": e} for e in chunk],
+        },
+    )
+    response.raise_for_status()
+    return response
+
+
 def _verify_zerobounce(emails: list[str], api_key: str) -> dict[str, str]:
     """Verify emails via ZeroBounce batch API.
 
@@ -79,14 +94,7 @@ def _verify_zerobounce(emails: list[str], api_key: str) -> dict[str, str]:
             time.sleep(1)
 
         try:
-            response = httpx.post(
-                "https://bulkapi.zerobounce.net/v2/validatebatch",
-                json={
-                    "api_key": api_key,
-                    "email_batch": [{"email_address": e} for e in chunk],
-                },
-            )
-            response.raise_for_status()
+            response = _zerobounce_post(api_key, chunk)
             data = response.json()
 
             for entry in data.get("email_batch", []):

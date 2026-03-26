@@ -17,7 +17,8 @@ _FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 _limiter = Limiter(key_func=get_remote_address)
 
 from src.config import DEFAULT_CAMPAIGN, load_config_safe
-from src.models.campaigns import get_campaign_by_name, record_template_usage, update_contact_campaign_status
+from src.models.campaigns import get_campaign_by_name
+from src.models.enrollment import record_template_usage, update_contact_campaign_status
 from src.models.events import log_event
 from src.services.email_sender import render_campaign_email
 from src.services.gmail_drafter import GmailDrafter

@@ -10,12 +10,12 @@ from datetime import date
 from typing import Optional
 
 from src.enums import ContactStatus, EventType
-from src.models.campaigns import (
+from src.models.enrollment import (
     enroll_contact,
     get_contact_campaign_status,
-    log_event,
     update_contact_campaign_status,
 )
+from src.models.events import log_event
 from src.models.database import get_cursor
 
 
