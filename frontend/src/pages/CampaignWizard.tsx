@@ -1633,8 +1633,8 @@ function StepMessages({
                         const tpl = templates.find((t) => t.id === stepTemplates[s.step_order]);
                         if (!tpl) return null;
                         return (
-                          <div className="bg-gray-50 rounded-md p-3 text-sm text-gray-600 max-h-32 overflow-y-auto mt-2 whitespace-pre-wrap">
-                            {tpl.subject && <div className="font-medium mb-1">{tpl.subject}</div>}
+                          <div className="bg-gray-50 rounded-md p-3 text-sm text-gray-600 mt-2 whitespace-pre-wrap border border-gray-100">
+                            {tpl.subject && <div className="font-medium text-gray-800 mb-2 pb-2 border-b border-gray-200">Subject: {tpl.subject}</div>}
                             {tpl.body_template}
                           </div>
                         );
@@ -1738,33 +1738,92 @@ function StepMessages({
                   )}
 
                   {mode === "ai" && (
-                    <div className="space-y-2">
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">
-                          Reference template (optional)
-                        </label>
-                        <select
-                          value={refTemplates[s.step_order] ?? ""}
-                          onChange={(e) =>
-                            setRefTemplates({
-                              ...refTemplates,
-                              [s.step_order]: e.target.value ? Number(e.target.value) : null,
-                            })
-                          }
-                          className="bg-white border border-gray-200 rounded-md px-3 py-2 text-sm w-full"
-                        >
-                          <option value="">None</option>
-                          {available.map((t) => (
-                            <option key={t.id} value={t.id}>
-                              {t.name}
-                              {t.variant_label ? ` (${t.variant_label})` : ""}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-1">
-                        AI generates a personalized message using deep research data. You'll review and edit each draft before sending.
-                      </p>
+                    <div className="space-y-3">
+                      {manualBodies[s.step_order] ? (
+                        <>
+                          <div className="bg-purple-50 rounded-md p-3 text-sm text-gray-700 whitespace-pre-wrap border border-purple-100">
+                            {isEmail && manualSubjects[s.step_order] && (
+                              <div className="font-medium text-gray-800 mb-2 pb-2 border-b border-purple-200">
+                                Subject: {manualSubjects[s.step_order]}
+                              </div>
+                            )}
+                            {manualBodies[s.step_order]}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setMode(s.step_order, "manual")}
+                              className="text-xs text-gray-500 hover:text-gray-700"
+                            >
+                              Edit manually
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setManualBodies({ ...manualBodies, [s.step_order]: "" });
+                                if (isEmail) setManualSubjects({ ...manualSubjects, [s.step_order]: "" });
+                              }}
+                              className="text-xs text-red-500 hover:text-red-700"
+                            >
+                              Regenerate
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-xs text-gray-500">
+                            AI generates a personalized message for Step {s.step_order} ({isEmail ? "email" : "LinkedIn"}).
+                            {s.step_order > 1 && ` Context: the contact has already seen Steps 1–${s.step_order - 1}.`}
+                          </p>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              onClick={() => {
+                                sequenceMutation.mutate();
+                              }}
+                              loading={sequenceMutation.isPending}
+                              className="!bg-purple-600 hover:!bg-purple-700"
+                            >
+                              <Sparkles size={14} className="mr-1" />
+                              Generate Generic
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => {
+                                toast("Research-based generation uses deep research data per company. Set up in Settings → API Keys if not configured.", "info");
+                                sequenceMutation.mutate();
+                              }}
+                              loading={sequenceMutation.isPending}
+                            >
+                              Based on Research
+                            </Button>
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">
+                              Reference template (optional)
+                            </label>
+                            <select
+                              value={refTemplates[s.step_order] ?? ""}
+                              onChange={(e) =>
+                                setRefTemplates({
+                                  ...refTemplates,
+                                  [s.step_order]: e.target.value ? Number(e.target.value) : null,
+                                })
+                              }
+                              className="bg-white border border-gray-200 rounded-md px-3 py-2 text-sm w-full"
+                            >
+                              <option value="">None</option>
+                              {available.map((t) => (
+                                <option key={t.id} value={t.id}>
+                                  {t.name}
+                                  {t.variant_label ? ` (${t.variant_label})` : ""}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </>
+                      )}
                     </div>
                   )}
                 </>
