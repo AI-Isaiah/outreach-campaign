@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import React from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Mail, Pencil, Sparkles } from "lucide-react";
+import { Mail, Pencil, Sparkles, CheckCircle } from "lucide-react";
 import { api } from "../api/client";
 import { queueApi } from "../api/queue";
 import AiDraftControls from "./AiDraftControls";
@@ -16,10 +16,14 @@ function QueueEmailCard({
   item,
   campaign,
   onDeferred,
+  isFocused,
+  isApproved,
 }: {
   item: QueueItem;
   campaign: string;
   onDeferred?: () => void;
+  isFocused?: boolean;
+  isApproved?: boolean;
 }) {
   const [subject, setSubject] = useState(
     item.message_draft?.draft_subject || item.rendered_email?.subject || "",
@@ -87,9 +91,15 @@ function QueueEmailCard({
   }
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+    <div
+      className={`bg-white border rounded-lg shadow-sm overflow-hidden ${
+        isFocused ? "ring-2 ring-blue-500 ring-offset-2 border-blue-300" : "border-gray-200"
+      }`}
+      aria-label={`Email: ${item.contact_name}`}
+    >
       <div className="bg-amber-50 px-5 py-3 flex items-center justify-between border-b border-amber-100">
         <div className="flex items-center gap-1.5">
+          {isApproved && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
           <Mail size={16} className="text-amber-600 flex-shrink-0" />
           <span className="font-semibold text-gray-900">
             {item.contact_name}

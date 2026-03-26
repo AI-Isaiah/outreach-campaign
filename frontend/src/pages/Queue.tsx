@@ -1,6 +1,6 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle, Inbox, Mail, Linkedin } from "lucide-react";
+import { CheckCircle, Inbox, Mail, Linkedin, X } from "lucide-react";
 import { queueApi } from "../api/queue";
 import { api } from "../api/client";
 import type { QueueItem, QueueResponse } from "../types";
@@ -10,11 +10,50 @@ import { SkeletonCard } from "../components/Skeleton";
 import ErrorCard from "../components/ui/ErrorCard";
 import Button from "../components/ui/Button";
 
+const HINT_STORAGE_KEY = "queue_keyboard_hint_seen_count";
+const MAX_HINT_VIEWS = 3;
+
+function KeyboardHint({ onDismiss }: { onDismiss: () => void }) {
+  return (
+    <div className="bg-blue-50 border border-blue-100 rounded-lg px-4 py-2 text-sm text-blue-700 flex items-center justify-between">
+      <span>
+        Navigate with{" "}
+        <kbd className="font-mono bg-white border border-blue-200 rounded px-1.5 py-0.5 text-xs">j</kbd>
+        /
+        <kbd className="font-mono bg-white border border-blue-200 rounded px-1.5 py-0.5 text-xs">k</kbd>
+        {" \u00b7 "}
+        <kbd className="font-mono bg-white border border-blue-200 rounded px-1.5 py-0.5 text-xs">Enter</kbd>
+        {" to approve \u00b7 "}
+        <kbd className="font-mono bg-white border border-blue-200 rounded px-1.5 py-0.5 text-xs">s</kbd>
+        {" to skip \u00b7 "}
+        <kbd className="font-mono bg-white border border-blue-200 rounded px-1.5 py-0.5 text-xs">e</kbd>
+        {" to edit \u00b7 "}
+        <kbd className="font-mono bg-white border border-blue-200 rounded px-1.5 py-0.5 text-xs">Tab</kbd>
+        {" to switch sections"}
+      </span>
+      <button
+        onClick={onDismiss}
+        className="text-blue-400 hover:text-blue-600 ml-3 flex-shrink-0"
+        aria-label="Dismiss keyboard hints"
+      >
+        <X size={16} />
+      </button>
+    </div>
+  );
+}
+
 type ChannelFilter = "all" | "email" | "linkedin";
 
 export default function Queue() {
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>("all");
   const [campaignFilter, setCampaignFilter] = useState<string>("");
+  const [focusedIndex, setFocusedIndex] = useState(0);
+  const [approvedIds, setApprovedIds] = useState<Set<number>>(new Set());
+  const [showHint, setShowHint] = useState(() => {
+    const count = parseInt(localStorage.getItem(HINT_STORAGE_KEY) || "0", 10);
+    return count < MAX_HINT_VIEWS;
+  });
+  const cardRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const queryClient = useQueryClient();
 
   const { data, isLoading, isError, error, refetch } = useQuery<QueueResponse>({
@@ -25,6 +64,15 @@ export default function Queue() {
   const batchDraft = useMutation({
     mutationFn: () => api.createBatchDrafts(campaignFilter),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["queue-all"] }),
+  });
+
+  const skipMutation = useMutation({
+    mutationFn: ({ contactId, campaign }: { contactId: number; campaign: string }) =>
+      queueApi.deferContact(contactId, campaign, "skipped_via_keyboard"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["queue-all"] });
+      queryClient.invalidateQueries({ queryKey: ["defer-stats"] });
+    },
   });
 
   const allItems: QueueItem[] = data?.items || [];
@@ -43,6 +91,9 @@ export default function Queue() {
   const emailItems = items.filter((i) => i.channel === "email");
   const linkedinItems = items.filter((i) => i.channel.startsWith("linkedin"));
 
+  // Flat array: emails first, then LinkedIn
+  const flatItems = [...emailItems, ...linkedinItems];
+
   const handleDeferred = useCallback(
     () => queryClient.invalidateQueries({ queryKey: ["queue-all"] }),
     [queryClient],
@@ -51,8 +102,122 @@ export default function Queue() {
   // Get unique campaign names from items
   const campaignNames = [...new Set(allItems.map((i) => i.campaign_name).filter((n): n is string => !!n))];
 
+  // Increment hint view count on mount
+  useEffect(() => {
+    const count = parseInt(localStorage.getItem(HINT_STORAGE_KEY) || "0", 10);
+    if (count < MAX_HINT_VIEWS) {
+      localStorage.setItem(HINT_STORAGE_KEY, String(count + 1));
+    }
+  }, []);
+
+  // Scroll focused card into view
+  useEffect(() => {
+    if (flatItems.length === 0) return;
+    const idx = Math.min(focusedIndex, flatItems.length - 1);
+    const el = cardRefs.current.get(idx);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [focusedIndex, flatItems.length]);
+
+  // Keyboard event handler
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.tagName === "SELECT" ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+
+      if (flatItems.length === 0) return;
+
+      const maxIndex = flatItems.length - 1;
+
+      switch (e.key) {
+        case "j": {
+          e.preventDefault();
+          setFocusedIndex((prev) => Math.min(prev + 1, maxIndex));
+          break;
+        }
+        case "k": {
+          e.preventDefault();
+          setFocusedIndex((prev) => Math.max(prev - 1, 0));
+          break;
+        }
+        case "Enter": {
+          e.preventDefault();
+          const idx = Math.min(focusedIndex, maxIndex);
+          const item = flatItems[idx];
+          if (item) {
+            setApprovedIds((prev) => {
+              const next = new Set(prev);
+              if (next.has(item.contact_id)) {
+                next.delete(item.contact_id);
+              } else {
+                next.add(item.contact_id);
+              }
+              return next;
+            });
+          }
+          break;
+        }
+        case "s": {
+          e.preventDefault();
+          const idx = Math.min(focusedIndex, maxIndex);
+          const item = flatItems[idx];
+          if (item && item.campaign_name) {
+            skipMutation.mutate({ contactId: item.contact_id, campaign: item.campaign_name });
+          }
+          break;
+        }
+        case "e": {
+          e.preventDefault();
+          const idx = Math.min(focusedIndex, maxIndex);
+          const el = cardRefs.current.get(idx);
+          if (el) {
+            const editBtn = el.querySelector<HTMLButtonElement>('button[title="Edit contact details"]');
+            if (editBtn) editBtn.click();
+          }
+          break;
+        }
+        case "Tab": {
+          if (emailItems.length > 0 && linkedinItems.length > 0) {
+            e.preventDefault();
+            const idx = Math.min(focusedIndex, maxIndex);
+            if (idx < emailItems.length) {
+              setFocusedIndex(emailItems.length);
+            } else {
+              setFocusedIndex(0);
+            }
+          }
+          break;
+        }
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [flatItems, focusedIndex, emailItems.length, linkedinItems.length, skipMutation]);
+
+  const dismissHint = useCallback(() => {
+    setShowHint(false);
+    localStorage.setItem(HINT_STORAGE_KEY, String(MAX_HINT_VIEWS));
+  }, []);
+
+  const setCardRef = useCallback((index: number, el: HTMLDivElement | null) => {
+    if (el) {
+      cardRefs.current.set(index, el);
+    } else {
+      cardRefs.current.delete(index);
+    }
+  }, []);
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" role="application" aria-label="Outreach queue">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Today's Queue</h1>
@@ -127,6 +292,8 @@ export default function Queue() {
         )}
       </div>
 
+      {showHint && flatItems.length > 0 && <KeyboardHint onDismiss={dismissHint} />}
+
       {isLoading && (
         <div className="space-y-4">
           <SkeletonCard /><SkeletonCard /><SkeletonCard />
@@ -155,13 +322,16 @@ export default function Queue() {
             Email ({emailItems.length})
           </h2>
           <div className="space-y-3">
-            {emailItems.map((item) => (
-              <QueueEmailCard
-                key={`${item.contact_id}-email`}
-                item={item}
-                campaign={item.campaign_name || ""}
-                onDeferred={handleDeferred}
-              />
+            {emailItems.map((item, i) => (
+              <div key={`${item.contact_id}-email`} ref={(el) => setCardRef(i, el)}>
+                <QueueEmailCard
+                  item={item}
+                  campaign={item.campaign_name || ""}
+                  onDeferred={handleDeferred}
+                  isFocused={focusedIndex === i}
+                  isApproved={approvedIds.has(item.contact_id)}
+                />
+              </div>
             ))}
           </div>
         </div>
@@ -175,14 +345,20 @@ export default function Queue() {
             LinkedIn ({linkedinItems.length})
           </h2>
           <div className="space-y-3">
-            {linkedinItems.map((item) => (
-              <QueueLinkedInCard
-                key={`${item.contact_id}-li`}
-                item={item}
-                campaign={item.campaign_name || ""}
-                onDeferred={handleDeferred}
-              />
-            ))}
+            {linkedinItems.map((item, i) => {
+              const flatIdx = emailItems.length + i;
+              return (
+                <div key={`${item.contact_id}-li`} ref={(el) => setCardRef(flatIdx, el)}>
+                  <QueueLinkedInCard
+                    item={item}
+                    campaign={item.campaign_name || ""}
+                    onDeferred={handleDeferred}
+                    isFocused={focusedIndex === flatIdx}
+                    isApproved={approvedIds.has(item.contact_id)}
+                  />
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
