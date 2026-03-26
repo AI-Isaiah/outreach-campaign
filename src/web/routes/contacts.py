@@ -320,7 +320,8 @@ def get_contact_events(
                FROM events e
                LEFT JOIN templates t ON t.id = e.template_id
                WHERE e.contact_id = %s
-               ORDER BY e.created_at DESC""",
+               ORDER BY e.created_at DESC
+               LIMIT 200""",
             (contact_id,),
         )
         events = cur.fetchall()
@@ -336,25 +337,7 @@ def update_contact_status(
     user=Depends(get_current_user),
 ):
     """Log a response outcome and transition contact status."""
-    # Verify contact belongs to user
-    with get_cursor(conn) as cur:
-        cur.execute(
-            """SELECT c.id FROM contacts c
-               WHERE c.id = %s AND c.user_id = %s""",
-            (contact_id, user["id"]),
-        )
-        if not cur.fetchone():
-            raise HTTPException(404, f"Contact {contact_id} not found")
-
-    # Verify campaign belongs to user
-    with get_cursor(conn) as cur:
-        cur.execute(
-            "SELECT id FROM campaigns WHERE name = %s AND user_id = %s",
-            (body.campaign, user["id"]),
-        )
-        if not cur.fetchone():
-            raise HTTPException(404, f"Campaign '{body.campaign}' not found")
-
+    # transition_contact_status validates both contact and campaign ownership internally
     try:
         return transition_contact_status(
             conn, contact_id, body.campaign, body.new_status, note=body.note,

@@ -94,11 +94,16 @@ def insert_contact(
     return contact_id
 
 
+_ALL_TABLES: list[str] = []
+
+
 @pytest.fixture(scope="session")
 def _pg_instance():
     """Create a single PostgreSQL server for the entire test session."""
     import psycopg2
     import psycopg2.extras
+
+    global _ALL_TABLES
 
     with testing.postgresql.Postgresql() as pg:
         # Run migrations once to create all tables
@@ -115,6 +120,14 @@ def _pg_instance():
             "ON CONFLICT (email) DO NOTHING"
         )
         conn.commit()
+
+        # Cache table names for teardown (avoids querying information_schema per test)
+        cursor.execute(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema = 'public' AND table_type = 'BASE TABLE'"
+        )
+        _ALL_TABLES = [row["table_name"] for row in cursor.fetchall()]
+
         cursor.close()
         conn.close()
 
@@ -130,21 +143,34 @@ def tmp_db(_pg_instance):
     url = _pg_instance.url()
     yield url
 
-    # Truncate all tables except preserved ones to ensure test isolation
+    # Terminate all other connections (prevents deadlock from unclosed test connections)
     conn = psycopg2.connect(url, cursor_factory=psycopg2.extras.RealDictCursor)
     conn.autocommit = True
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT table_name FROM information_schema.tables "
-        "WHERE table_schema = 'public' AND table_type = 'BASE TABLE'"
+        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+        "WHERE datname = current_database() AND pid != pg_backend_pid()"
     )
-    tables = [
-        row["table_name"] for row in cursor.fetchall()
-        if row["table_name"] not in _PRESERVED_TABLES
-    ]
-    if tables:
-        cursor.execute(
-            "TRUNCATE " + ", ".join(tables) + " RESTART IDENTITY CASCADE"
+
+    # Delete from all tables except preserved ones to ensure test isolation.
+    # DELETE + sequence reset is ~100x faster than TRUNCATE for small test
+    # datasets because TRUNCATE acquires AccessExclusiveLock per table.
+    # session_replication_role=replica disables FK trigger checks during delete.
+    tables_to_clean = [t for t in _ALL_TABLES if t not in _PRESERVED_TABLES]
+    if tables_to_clean:
+        stmts = ["SET session_replication_role = 'replica'"]
+        stmts.extend(f"DELETE FROM {t}" for t in tables_to_clean)
+        stmts.append("SET session_replication_role = 'origin'")
+        # Reset sequences for cleaned tables (exclude preserved table sequences)
+        preserved_seq_prefixes = tuple(f"{t}_" for t in _PRESERVED_TABLES)
+        stmts.append(
+            "SELECT setval(c.oid, 1, false) FROM pg_class c "
+            "JOIN pg_namespace n ON n.oid = c.relnamespace "
+            "WHERE c.relkind = 'S' AND n.nspname = 'public' "
+            "AND c.relname NOT LIKE 'users_%%' "
+            "AND c.relname NOT LIKE 'schema_migrations_%%' "
+            "AND c.relname NOT LIKE 'allowed_emails_%%'"
         )
+        cursor.execute("; ".join(stmts))
     cursor.close()
     conn.close()

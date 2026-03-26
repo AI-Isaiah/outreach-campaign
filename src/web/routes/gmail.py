@@ -320,6 +320,7 @@ def check_draft_status(
                             user_id=user["id"],
                         )
 
+                    conn.commit()
                     return {"status": "sent", "draft_id": draft_row["gmail_draft_id"]}
             except Exception:
                 pass  # Can't reach Gmail API — return DB status

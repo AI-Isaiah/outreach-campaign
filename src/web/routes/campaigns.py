@@ -10,6 +10,7 @@ import psycopg2.extras
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from src.models.campaigns import get_campaign_by_name
 from src.services.metrics import (
     get_campaign_metrics,
     get_company_type_breakdown,
@@ -259,16 +260,6 @@ def get_campaign_contacts(
         return [_row_to_dict(r) for r in cur.fetchall()]
 
 
-def _get_campaign_by_name_scoped(conn, name: str, user_id):
-    """Fetch a campaign by name scoped to user_id."""
-    with get_cursor(conn) as cur:
-        cur.execute(
-            "SELECT * FROM campaigns WHERE name = %s AND user_id = %s",
-            (name, user_id),
-        )
-        return cur.fetchone()
-
-
 @router.get("/campaigns/{name}")
 def get_campaign(
     name: str,
@@ -276,7 +267,7 @@ def get_campaign(
     user=Depends(get_current_user),
 ):
     """Get campaign details by name."""
-    camp = _get_campaign_by_name_scoped(conn, name, user["id"])
+    camp = get_campaign_by_name(conn, name, user_id=user["id"])
     if not camp:
         raise HTTPException(404, f"Campaign '{name}' not found")
     return _row_to_dict(camp)
@@ -289,7 +280,7 @@ def get_metrics(
     user=Depends(get_current_user),
 ):
     """Get campaign metrics."""
-    camp = _get_campaign_by_name_scoped(conn, name, user["id"])
+    camp = get_campaign_by_name(conn, name, user_id=user["id"])
     if not camp:
         raise HTTPException(404, f"Campaign '{name}' not found")
 
@@ -316,7 +307,7 @@ def get_campaign_weekly(
     user=Depends(get_current_user),
 ):
     """Get weekly summary for a campaign."""
-    camp = _get_campaign_by_name_scoped(conn, name, user["id"])
+    camp = get_campaign_by_name(conn, name, user_id=user["id"])
     if not camp:
         raise HTTPException(404, f"Campaign '{name}' not found")
 
@@ -331,7 +322,7 @@ def get_campaign_report(
     user=Depends(get_current_user),
 ):
     """Get full campaign report with metrics, variants, and breakdown."""
-    camp = _get_campaign_by_name_scoped(conn, name, user["id"])
+    camp = get_campaign_by_name(conn, name, user_id=user["id"])
     if not camp:
         raise HTTPException(404, f"Campaign '{name}' not found")
 
@@ -352,7 +343,7 @@ def get_campaign_template_performance(
     user=Depends(get_current_user),
 ):
     """Get template performance metrics with winning badge for a campaign."""
-    camp = _get_campaign_by_name_scoped(conn, name, user["id"])
+    camp = get_campaign_by_name(conn, name, user_id=user["id"])
     if not camp:
         raise HTTPException(404, f"Campaign '{name}' not found")
 

@@ -29,10 +29,14 @@ from src.services.compliance import (
     check_gdpr_email_limit,
     is_contact_gdpr,
 )
+from jinja2.sandbox import SandboxedEnvironment
+
 from src.models.database import get_cursor
 from src.services.template_engine import get_template_context, render_template
 
 logger = logging.getLogger(__name__)
+
+_SANDBOX_ENV = SandboxedEnvironment()
 
 _RETRY_MAX_ATTEMPTS = 3
 _RETRY_BACKOFF_SECONDS = 1
@@ -464,6 +468,7 @@ def send_campaign_email(
             user_id=user_id,
         )
 
+    conn.commit()
     logger.info("Campaign email sent to contact %d (campaign %d)", contact_id, campaign_id)
     return True
 
@@ -481,7 +486,5 @@ def _render_inline_template(template_str: str, context: dict) -> str:
     Returns:
         The rendered string.
     """
-    from jinja2.sandbox import SandboxedEnvironment
-    env = SandboxedEnvironment()
-    tmpl = env.from_string(template_str)
+    tmpl = _SANDBOX_ENV.from_string(template_str)
     return tmpl.render(**context)

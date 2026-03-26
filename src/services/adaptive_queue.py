@@ -23,6 +23,8 @@ def get_adaptive_queue(
     target_date: Optional[str] = None,
     limit: int = 20,
     diverse: bool = True,
+    *,
+    user_id: Optional[int] = None,
 ) -> list[dict]:
     """Get the daily queue with adaptive scoring and template recommendations.
 
@@ -44,14 +46,18 @@ def get_adaptive_queue(
 
     # Score all contacts
     contact_ids = [item["contact_id"] for item in items]
-    scores = score_contacts(conn, campaign_id, contact_ids)
+    scores = score_contacts(conn, campaign_id, contact_ids, user_id=user_id)
     score_map = {s["contact_id"]: s for s in scores}
 
     # Get available templates per channel
     with get_cursor(conn) as cursor:
-        cursor.execute(
-            "SELECT * FROM templates WHERE is_active = true ORDER BY id"
-        )
+        templates_query = "SELECT * FROM templates WHERE is_active = true"
+        templates_params: list = []
+        if user_id is not None:
+            templates_query += " AND user_id = %s"
+            templates_params.append(user_id)
+        templates_query += " ORDER BY id"
+        cursor.execute(templates_query, templates_params)
         all_templates = [dict(r) for r in cursor.fetchall()]
 
         templates_by_channel = {}

@@ -674,6 +674,7 @@ def status(
                 user_id=CLI_USER_ID,
             )
 
+        conn.commit()
         contact_name = contact_row["full_name"] or contact_row["email"] or str(contact_id)
         console.print(f"[green]Logged '{outcome}' for {contact_name} -> status: {new_status}[/green]")
     finally:

@@ -27,6 +27,15 @@ def _setup_db(tmp_db):
     return conn
 
 
+def _restore_indexes(conn):
+    """Recreate indexes dropped by _setup_db so subsequent tests aren't affected."""
+    cursor = conn.cursor()
+    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_user_email_norm ON contacts(user_id, email_normalized)")
+    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_user_linkedin_norm ON contacts(user_id, linkedin_url_normalized) WHERE linkedin_url_normalized IS NOT NULL")
+    conn.commit()
+    cursor.close()
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -49,6 +58,7 @@ def test_dedup_exact_email(tmp_db):
     assert c1 in remaining_ids
     assert c2 not in remaining_ids
 
+    _restore_indexes(conn)
     conn.close()
 
 
@@ -70,6 +80,7 @@ def test_dedup_exact_linkedin(tmp_db):
     assert c1 in remaining_ids
     assert c2 not in remaining_ids
 
+    _restore_indexes(conn)
     conn.close()
 
 
@@ -94,6 +105,7 @@ def test_dedup_fuzzy_company_flagged(tmp_db, tmp_path):
         content = f.read()
     assert "Falcon Capital" in content
 
+    _restore_indexes(conn)
     conn.close()
 
 
@@ -129,6 +141,7 @@ def test_dedup_logs_actions(tmp_db):
     assert linkedin_logs[0]["merged_contact_id"] == c4
     assert linkedin_logs[0]["match_score"] == 1.0
 
+    _restore_indexes(conn)
     conn.close()
 
 
@@ -148,6 +161,7 @@ def test_dedup_keeps_first_contact(tmp_db):
     assert c1 in remaining_ids  # lower id kept even though rank is higher
     assert c2 not in remaining_ids
 
+    _restore_indexes(conn)
     conn.close()
 
 
@@ -168,4 +182,5 @@ def test_dedup_no_false_positives(tmp_db):
     remaining = cursor.fetchone()
     assert remaining["cnt"] == 2
 
+    _restore_indexes(conn)
     conn.close()

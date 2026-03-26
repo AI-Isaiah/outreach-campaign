@@ -250,6 +250,7 @@ def test_crm_timeline_with_events(client, db_conn):
 
     from src.models.events import log_event
     log_event(db_conn, contact_id, "email_sent", campaign_id=campaign_id, user_id=1)
+    db_conn.commit()
 
     resp = client.get(f"/api/crm/contacts/{contact_id}/timeline")
     data = resp.json()

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import threading
 import time
@@ -472,10 +473,8 @@ def run_deep_research(
 
         keys = api_keys or {}
         if not keys.get("perplexity"):
-            import os
             keys["perplexity"] = os.getenv("PERPLEXITY_API_KEY", "")
         if not keys.get("anthropic"):
-            import os
             keys["anthropic"] = os.getenv("ANTHROPIC_API_KEY", "")
 
         _execute_deep_research(conn, deep_research_id, keys)

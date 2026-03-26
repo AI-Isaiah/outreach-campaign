@@ -31,5 +31,4 @@ def log_event(
             (contact_id, event_type, campaign_id, template_id, metadata, user_id),
         )
         row = cursor.fetchone()
-        conn.commit()
         return row["id"]

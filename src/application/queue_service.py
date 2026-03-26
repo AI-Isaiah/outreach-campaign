@@ -54,6 +54,7 @@ def get_enriched_queue(
         try:
             items = get_adaptive_queue(
                 conn, campaign_id, target_date=date, limit=limit * 3, diverse=use_diverse,
+                user_id=user_id,
             )
         except (KeyError, ValueError, TypeError):
             items = get_daily_queue(conn, campaign_id, target_date=date, limit=limit * 3)

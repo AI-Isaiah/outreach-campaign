@@ -14,8 +14,6 @@ from src.models.database import get_cursor
 
 logger = logging.getLogger(__name__)
 
-FUZZY_THRESHOLD = FUZZY_DEDUP_THRESHOLD
-
 
 def run_dedup(conn, export_dir: str | None = None, user_id: int | None = None) -> dict:
     """Run the 3-pass deduplication pipeline.
@@ -32,7 +30,7 @@ def run_dedup(conn, export_dir: str | None = None, user_id: int | None = None) -
     try:
         email_dupes = _pass_exact_email(conn, user_id=user_id)
         linkedin_dupes = _pass_exact_linkedin(conn, user_id=user_id)
-        fuzzy_flagged = _pass_fuzzy_company(conn, export_dir)
+        fuzzy_flagged = _pass_fuzzy_company(conn, export_dir, user_id=user_id)
         conn.commit()
     except Exception:
         conn.rollback()
@@ -107,12 +105,18 @@ def _pass_exact_linkedin(conn, user_id: int | None = None) -> int:
     return dupes_removed
 
 
-def _pass_fuzzy_company(conn, export_dir: str | None) -> int:
+def _pass_fuzzy_company(conn, export_dir: str | None, *, user_id: int | None = None) -> int:
     """Pass 3: fuzzy match company names, flag for manual review (no deletes)."""
     with get_cursor(conn) as cursor:
-        cursor.execute(
-            "SELECT id, name, name_normalized FROM companies ORDER BY id"
-        )
+        if user_id is not None:
+            cursor.execute(
+                "SELECT id, name, name_normalized FROM companies WHERE user_id = %s ORDER BY id",
+                (user_id,),
+            )
+        else:
+            cursor.execute(
+                "SELECT id, name, name_normalized FROM companies ORDER BY id"
+            )
         rows = cursor.fetchall()
 
     flagged_pairs: list[dict] = []
@@ -121,7 +125,7 @@ def _pass_fuzzy_company(conn, export_dir: str | None) -> int:
         [(r["id"], r["name"], r["name_normalized"]) for r in rows], 2
     ):
         score = fuzz.token_sort_ratio(norm_a, norm_b)
-        if score >= FUZZY_THRESHOLD:
+        if score >= FUZZY_DEDUP_THRESHOLD:
             flagged_pairs.append(
                 {
                     "company_a_id": id_a,
