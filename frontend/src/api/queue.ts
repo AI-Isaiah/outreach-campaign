@@ -45,4 +45,22 @@ export const queueApi = {
       `/queue/${contactId}/generate-draft`,
       { method: "POST", body: JSON.stringify({ campaign_id: campaignId, step_order: stepOrder }) }
     ),
+
+  batchApprove: (items: { contact_id: number; campaign_id: number }[]) =>
+    request<{ approved: number }>("/queue/batch-approve", {
+      method: "POST",
+      body: JSON.stringify({ items }),
+    }),
+
+  batchSend: () =>
+    request<{ sent: number; failed: number; errors: { contact_id: number; campaign_id: number; error: string }[] }>(
+      "/queue/batch-send",
+      { method: "POST" },
+    ),
+
+  scheduleSend: (items: { contact_id: number; campaign_id: number }[], schedule: string) =>
+    request<{ scheduled: number }>("/queue/schedule", {
+      method: "POST",
+      body: JSON.stringify({ items, schedule }),
+    }),
 };
