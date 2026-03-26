@@ -384,6 +384,33 @@ def send_campaign_email(
             logger.info("GDPR limit reached for contact %d in campaign %d", contact_id, campaign_id)
             return False
 
+    # --- Idempotency guard: prevent double-send ------------------------------
+
+    with get_cursor(conn) as cur:
+        cur.execute(
+            "SELECT current_step FROM contact_campaign_status "
+            "WHERE contact_id = %s AND campaign_id = %s",
+            (contact_id, campaign_id),
+        )
+        status_row = cur.fetchone()
+    if not status_row:
+        logger.error("No campaign status for contact %d campaign %d", contact_id, campaign_id)
+        return False
+    current_step = status_row["current_step"]
+
+    with get_cursor(conn) as cur:
+        cur.execute(
+            "UPDATE contact_campaign_status "
+            "SET sent_at = NOW() "
+            "WHERE contact_id = %s AND campaign_id = %s AND current_step = %s AND sent_at IS NULL "
+            "RETURNING id",
+            (contact_id, campaign_id, current_step),
+        )
+        if not cur.fetchone():
+            logger.info("Skipping already-sent email for contact %s step %s", contact_id, current_step)
+            return False
+    conn.commit()
+
     # --- Render template ------------------------------------------------------
 
     template_row = get_template(conn, template_id, user_id=user_id)
@@ -454,19 +481,11 @@ def send_campaign_email(
         channel=template_row["channel"],
     )
 
-    # Advance the contact's current step
-    with get_cursor(conn) as cursor:
-        cursor.execute(
-            "SELECT current_step FROM contact_campaign_status WHERE contact_id = %s AND campaign_id = %s",
-            (contact_id, campaign_id),
-        )
-        status_row = cursor.fetchone()
-    if status_row:
-        update_contact_campaign_status(
-            conn, contact_id, campaign_id,
-            current_step=status_row["current_step"] + 1,
-            user_id=user_id,
-        )
+    update_contact_campaign_status(
+        conn, contact_id, campaign_id,
+        current_step=current_step + 1,
+        user_id=user_id,
+    )
 
     conn.commit()
     logger.info("Campaign email sent to contact %d (campaign %d)", contact_id, campaign_id)
