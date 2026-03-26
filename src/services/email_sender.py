@@ -362,8 +362,8 @@ def send_campaign_email(
     # Check if contact is unsubscribed
     with get_cursor(conn) as cursor:
         cursor.execute(
-            "SELECT * FROM contacts WHERE id = %s",
-            (contact_id,),
+            "SELECT * FROM contacts WHERE id = %s AND user_id = %s",
+            (contact_id, user_id),
         )
         contact = cursor.fetchone()
     if contact is None:
@@ -384,31 +384,21 @@ def send_campaign_email(
             logger.info("GDPR limit reached for contact %d in campaign %d", contact_id, campaign_id)
             return False
 
-    # --- Idempotency guard: prevent double-send ------------------------------
-
-    with get_cursor(conn) as cur:
-        cur.execute(
-            "SELECT current_step FROM contact_campaign_status "
-            "WHERE contact_id = %s AND campaign_id = %s",
-            (contact_id, campaign_id),
-        )
-        status_row = cur.fetchone()
-    if not status_row:
-        logger.error("No campaign status for contact %d campaign %d", contact_id, campaign_id)
-        return False
-    current_step = status_row["current_step"]
+    # --- Idempotency guard: atomic claim-and-read in one query ----------------
 
     with get_cursor(conn) as cur:
         cur.execute(
             "UPDATE contact_campaign_status "
             "SET sent_at = NOW() "
-            "WHERE contact_id = %s AND campaign_id = %s AND current_step = %s AND sent_at IS NULL "
-            "RETURNING id",
-            (contact_id, campaign_id, current_step),
+            "WHERE contact_id = %s AND campaign_id = %s AND sent_at IS NULL "
+            "RETURNING current_step",
+            (contact_id, campaign_id),
         )
-        if not cur.fetchone():
-            logger.info("Skipping already-sent email for contact %s step %s", contact_id, current_step)
-            return False
+        claimed = cur.fetchone()
+    if not claimed:
+        logger.info("Skipping already-sent or missing enrollment for contact %s", contact_id)
+        return False
+    current_step = claimed["current_step"]
     conn.commit()
 
     # --- Render template ------------------------------------------------------

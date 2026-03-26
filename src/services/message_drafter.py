@@ -320,7 +320,7 @@ def generate_sequence_messages(
         },
         json={
             "model": HAIKU_MODEL,
-            "max_tokens": 4096,
+            "max_tokens": 8192,
             "system": SYSTEM_SEQUENCE,
             "messages": [{"role": "user", "content": user_message}],
         },
@@ -418,17 +418,9 @@ def _parse_sequence_response(raw_text: str, steps: list[dict]) -> list[dict]:
 
     try:
         parsed = json.loads(text)
-    except json.JSONDecodeError:
-        logger.warning("Failed to parse sequence JSON, falling back to step extraction")
-        return [
-            {
-                "step_order": s["step_order"],
-                "channel": s["channel"],
-                "subject": None,
-                "body": "",
-            }
-            for s in steps
-        ]
+    except json.JSONDecodeError as exc:
+        logger.error("Failed to parse sequence JSON: %s\nRaw: %s", exc, text[:500])
+        raise RuntimeError("AI returned invalid response — try again") from exc
 
     if not isinstance(parsed, list):
         parsed = [parsed]
