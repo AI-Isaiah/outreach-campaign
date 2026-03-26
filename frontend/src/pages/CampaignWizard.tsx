@@ -1,6 +1,6 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, keepPreviousData } from "@tanstack/react-query";
 import {
   Upload,
   Check,
@@ -17,6 +17,7 @@ import {
   GripVertical,
   Plus,
   Trash2,
+  Search,
 } from "lucide-react";
 import {
   DndContext,
@@ -40,6 +41,7 @@ import Input from "../components/ui/Input";
 import { campaignsApi } from "../api/campaigns";
 import type { GeneratedStep } from "../api/campaigns";
 import { api } from "../api/client";
+import { contactsApi } from "../api/contacts";
 import type { Template } from "../types";
 import { useToast } from "../components/Toast";
 import { splitCsvLine } from "../utils/parseCsv";
@@ -87,12 +89,14 @@ export default function CampaignWizard() {
   const [description, setDescription] = useState("");
 
   // Step 2: Contacts
+  const [contactTab, setContactTab] = useState<"crm" | "csv">("crm");
   const [contacts, setContacts] = useState<ParsedContact[]>([]);
   const [csvError, setCsvError] = useState("");
   const [csvFileName, setCsvFileName] = useState("");
   const [uploading, setUploading] = useState(false);
   const [showFormatHelp, setShowFormatHelp] = useState(false);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [crmSelectedIds, setCrmSelectedIds] = useState<Set<number>>(new Set());
 
   // Step 3: Sequence
   const [touchpoints, setTouchpoints] = useState(5);
@@ -171,9 +175,13 @@ export default function CampaignWizard() {
   });
 
   const selectedContacts = contacts.filter((c) => c.selected);
-  const selectedContactIds = selectedContacts
+  const csvSelectedIds = selectedContacts
     .filter((c) => c.id != null)
     .map((c) => c.id!);
+  const selectedContactIds =
+    contactTab === "crm" ? Array.from(crmSelectedIds) : csvSelectedIds;
+  const totalSelectedCount =
+    contactTab === "crm" ? crmSelectedIds.size : selectedContacts.length;
 
   // Warn on navigate-away
   useEffect(() => {
@@ -200,13 +208,13 @@ export default function CampaignWizard() {
   const canProceed = useCallback((): boolean => {
     switch (step) {
       case 0: return name.trim().length > 0;
-      case 1: return selectedContacts.length > 0;
+      case 1: return totalSelectedCount > 0;
       case 2: return generatedSteps.length > 0;
       case 3: return true; // templates are optional
       case 4: return true;
       default: return false;
     }
-  }, [step, name, selectedContacts.length, generatedSteps.length]);
+  }, [step, name, totalSelectedCount, generatedSteps.length]);
 
   const handleCsvUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -339,6 +347,8 @@ export default function CampaignWizard() {
         )}
         {step === 1 && (
           <StepContacts
+            contactTab={contactTab}
+            setContactTab={setContactTab}
             contacts={contacts}
             csvError={csvError}
             csvFileName={csvFileName}
@@ -354,6 +364,8 @@ export default function CampaignWizard() {
                 navigate("/import/smart", { state: { file: pendingFile } });
               }
             }}
+            crmSelectedIds={crmSelectedIds}
+            setCrmSelectedIds={setCrmSelectedIds}
           />
         )}
         {step === 2 && (
@@ -385,7 +397,7 @@ export default function CampaignWizard() {
           <StepReview
             name={name}
             description={description}
-            contactCount={selectedContacts.length}
+            contactCount={totalSelectedCount}
             steps={generatedSteps}
             channels={channels}
           />
@@ -504,6 +516,258 @@ function StepName({
 // ─── Step 2: Add Contacts ──────────────────────────────────────────
 
 function StepContacts({
+  contactTab,
+  setContactTab,
+  contacts,
+  csvError,
+  csvFileName,
+  uploading,
+  showFormatHelp,
+  pendingFile,
+  onUpload,
+  onToggle,
+  onToggleAll,
+  onShowFormatHelp,
+  onSmartImport,
+  crmSelectedIds,
+  setCrmSelectedIds,
+}: {
+  contactTab: "crm" | "csv";
+  setContactTab: (t: "crm" | "csv") => void;
+  contacts: ParsedContact[];
+  csvError: string;
+  csvFileName: string;
+  uploading: boolean;
+  showFormatHelp: boolean;
+  pendingFile: File | null;
+  onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onToggle: (i: number) => void;
+  onToggleAll: (selected: boolean) => void;
+  onShowFormatHelp: () => void;
+  onSmartImport: () => void;
+  crmSelectedIds: Set<number>;
+  setCrmSelectedIds: (ids: Set<number>) => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <h2 className="text-lg font-semibold">Add contacts</h2>
+      <p className="text-sm text-gray-500">
+        Pick contacts from your CRM or upload a CSV file.
+      </p>
+
+      {/* Tab group */}
+      <div className="flex border-b border-gray-200">
+        <button
+          className={`px-4 py-2.5 text-sm font-medium ${
+            contactTab === "crm"
+              ? "text-gray-900 border-b-2 border-gray-900"
+              : "text-gray-500 hover:text-gray-700"
+          }`}
+          onClick={() => setContactTab("crm")}
+        >
+          From CRM
+        </button>
+        <button
+          className={`px-4 py-2.5 text-sm font-medium ${
+            contactTab === "csv"
+              ? "text-gray-900 border-b-2 border-gray-900"
+              : "text-gray-500 hover:text-gray-700"
+          }`}
+          onClick={() => setContactTab("csv")}
+        >
+          Upload CSV
+        </button>
+      </div>
+
+      {contactTab === "crm" ? (
+        <CrmContactPicker
+          selectedIds={crmSelectedIds}
+          setSelectedIds={setCrmSelectedIds}
+        />
+      ) : (
+        <CsvUploadTab
+          contacts={contacts}
+          csvError={csvError}
+          csvFileName={csvFileName}
+          uploading={uploading}
+          showFormatHelp={showFormatHelp}
+          pendingFile={pendingFile}
+          onUpload={onUpload}
+          onToggle={onToggle}
+          onToggleAll={onToggleAll}
+          onShowFormatHelp={onShowFormatHelp}
+          onSmartImport={onSmartImport}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── CRM Contact Picker ────────────────────────────────────────────
+
+function CrmContactPicker({
+  selectedIds,
+  setSelectedIds,
+}: {
+  selectedIds: Set<number>;
+  setSelectedIds: (ids: Set<number>) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(debounceRef.current);
+  }, [search]);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["contacts", "picker", debouncedSearch, page],
+    queryFn: () => contactsApi.listContacts(page, debouncedSearch || undefined),
+    placeholderData: keepPreviousData,
+  });
+
+  const crmContacts = data?.contacts ?? [];
+  const totalPages = data?.pages ?? 1;
+  const total = data?.total ?? 0;
+
+  const toggleOne = (id: number) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedIds(next);
+  };
+
+  const allOnPageSelected =
+    crmContacts.length > 0 && crmContacts.every((c) => selectedIds.has(c.id));
+
+  const togglePage = () => {
+    const next = new Set(selectedIds);
+    if (allOnPageSelected) {
+      crmContacts.forEach((c) => next.delete(c.id));
+    } else {
+      crmContacts.forEach((c) => next.add(c.id));
+    }
+    setSelectedIds(next);
+  };
+
+  const formatAum = (aum: number | null | undefined) => {
+    if (aum == null) return "-";
+    if (aum >= 1000) return `$${(aum / 1000).toFixed(1)}B`;
+    return `$${aum}M`;
+  };
+
+  return (
+    <div className="space-y-3">
+      <Input
+        placeholder="Search by name, email, or company..."
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        leftIcon={<Search size={16} />}
+      />
+
+      {isLoading && crmContacts.length === 0 ? (
+        <div className="flex items-center justify-center py-12 text-gray-400">
+          <Loader2 size={20} className="animate-spin" />
+        </div>
+      ) : crmContacts.length === 0 ? (
+        <div className="text-center py-8 text-sm text-gray-500">
+          {debouncedSearch
+            ? `No contacts matching "${debouncedSearch}"`
+            : "No contacts in your CRM yet"}
+        </div>
+      ) : (
+        <>
+          <div className="border border-gray-200 rounded-lg overflow-hidden max-h-72 overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 sticky top-0">
+                <tr>
+                  <th className="w-10 px-3 py-2">
+                    <input
+                      type="checkbox"
+                      checked={allOnPageSelected}
+                      onChange={togglePage}
+                      className="rounded border-gray-300"
+                      aria-label="Select all on this page"
+                    />
+                  </th>
+                  <th className="text-left px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide">Name</th>
+                  <th className="text-left px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide">Company</th>
+                  <th className="text-right px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide">AUM</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {crmContacts.map((c) => {
+                  const checked = selectedIds.has(c.id);
+                  return (
+                    <tr
+                      key={c.id}
+                      className={`hover:bg-gray-50 cursor-pointer transition-colors ${checked ? "" : "opacity-60"}`}
+                      onClick={() => toggleOne(c.id)}
+                    >
+                      <td className="px-3 py-2">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleOne(c.id)}
+                          className="rounded border-gray-300"
+                          aria-label={`Select ${c.full_name || c.first_name}`}
+                        />
+                      </td>
+                      <td className="px-3 py-2 font-medium">
+                        {c.full_name || [c.first_name, c.last_name].filter(Boolean).join(" ")}
+                      </td>
+                      <td className="px-3 py-2 text-gray-500">{c.company_name || "-"}</td>
+                      <td className="px-3 py-2 text-right text-gray-500">{formatAum(c.aum_millions)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Footer: selection count + pagination */}
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-gray-500">
+              {selectedIds.size} selected
+              {total > 0 && ` of ${total}`}
+            </span>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page <= 1}
+                  className="px-2 py-1 text-xs font-medium text-gray-600 border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft size={14} />
+                </button>
+                <span className="text-xs text-gray-500">
+                  Page {page} of {totalPages}
+                </span>
+                <button
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page >= totalPages}
+                  className="px-2 py-1 text-xs font-medium text-gray-600 border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── CSV Upload Tab ────────────────────────────────────────────────
+
+function CsvUploadTab({
   contacts,
   csvError,
   csvFileName,
@@ -532,11 +796,6 @@ function StepContacts({
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold">Add contacts</h2>
-      <p className="text-sm text-gray-500">
-        Upload a CSV file with your contacts. We'll try to auto-detect the columns.
-      </p>
-
       {/* CSV upload zone */}
       <label className="flex flex-col items-center justify-center border-2 border-dashed border-gray-200 rounded-lg p-8 cursor-pointer hover:border-gray-400 transition-colors">
         {uploading ? (
