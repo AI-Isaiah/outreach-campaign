@@ -6,20 +6,18 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from src.application.queue_service import apply_cross_campaign_email_dedup, get_enriched_queue
-from src.config import DEFAULT_CAMPAIGN, load_config
+from src.application.queue_service import apply_cross_campaign_email_dedup, get_enriched_queue, send_email_batch
+from src.config import DEFAULT_CAMPAIGN, load_config_safe
 from src.models.campaigns import get_campaign_by_name
 from src.models.templates import get_template
-from src.services.email_sender import send_campaign_email
 from src.services.linkedin_actions import complete_linkedin_action
 from src.services.priority_queue import defer_contact, get_defer_stats
-from src.web.dependencies import get_current_user, get_db
+from src.web.dependencies import get_current_user, get_db, handle_llm_errors
 from src.models.database import get_cursor
 
 logger = logging.getLogger(__name__)
@@ -128,48 +126,10 @@ def batch_send(
     if not rows:
         return {"sent": 0, "failed": 0, "errors": []}
 
-    try:
-        config = load_config()
-    except FileNotFoundError:
-        config = {}
-
-    sent = 0
-    failed = 0
-    errors: list[dict] = []
-
-    for row in rows:
-        try:
-            ok = send_campaign_email(
-                conn,
-                row["contact_id"],
-                row["campaign_id"],
-                row["template_id"],
-                config,
-                user_id=user_id,
-            )
-            if ok:
-                sent += 1
-            else:
-                failed += 1
-                errors.append({
-                    "contact_id": row["contact_id"],
-                    "campaign_id": row["campaign_id"],
-                    "error": "send_campaign_email returned False",
-                })
-        except Exception as exc:
-            logger.error(
-                "batch_send failed for contact %s campaign %s: %s",
-                row["contact_id"], row["campaign_id"], exc, exc_info=True,
-            )
-            failed += 1
-            errors.append({
-                "contact_id": row["contact_id"],
-                "campaign_id": row["campaign_id"],
-                "error": str(exc),
-            })
-
-    remaining = max(0, total_remaining - sent)
-    return {"sent": sent, "failed": failed, "errors": errors, "remaining": remaining}
+    config = load_config_safe()
+    result = send_email_batch(conn, rows, config, user_id=user_id)
+    result["remaining"] = max(0, total_remaining - result["sent"])
+    return result
 
 
 class ScheduleItem(BaseModel):
@@ -457,32 +417,25 @@ def generate_ai_draft(
         )
 
     try:
-        draft = generate_draft(
-            conn, contact_id, body.campaign_id, body.step_order,
-            user_id=user["id"],
-        )
-        return GenerateDraftResponse(
-            draft_subject=draft["draft_subject"],
-            draft_text=draft["draft_text"],
-            model=draft["model"],
-            channel=draft["channel"],
-            generated_at=draft["generated_at"],
-            has_research=draft["research_id"] is not None,
-        )
+        with handle_llm_errors():
+            draft = generate_draft(
+                conn, contact_id, body.campaign_id, body.step_order,
+                user_id=user["id"],
+            )
+            return GenerateDraftResponse(
+                draft_subject=draft["draft_subject"],
+                draft_text=draft["draft_text"],
+                model=draft["model"],
+                channel=draft["channel"],
+                generated_at=draft["generated_at"],
+                has_research=draft["research_id"] is not None,
+            )
     except ValueError as exc:
         if "empty or too-short" in str(exc):
             raise HTTPException(422, str(exc))
         raise HTTPException(404, str(exc))
-    except RuntimeError as exc:
-        raise HTTPException(503, str(exc))
-    except httpx.TimeoutException:
-        raise HTTPException(504, "AI service timeout — try again or use template")
-    except httpx.HTTPStatusError as exc:
-        if exc.response.status_code == 429:
-            raise HTTPException(429, "AI service rate limited — try again in a minute")
-        elif exc.response.status_code == 401:
-            raise HTTPException(503, "AI API key invalid — check ANTHROPIC_API_KEY")
-        raise HTTPException(502, f"AI service error: {exc.response.status_code}")
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error("Unexpected draft generation error: %s", exc, exc_info=True)
         raise HTTPException(500, "Draft generation failed unexpectedly")

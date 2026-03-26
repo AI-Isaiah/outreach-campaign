@@ -77,6 +77,14 @@ def load_validated_config() -> AppConfig:
     return AppConfig.model_validate(raw)
 
 
+def load_config_safe() -> dict:
+    """Load config, returning empty dict if no config file exists."""
+    try:
+        return load_config()
+    except FileNotFoundError:
+        return {}
+
+
 DB_PATH = os.getenv("DATABASE_PATH", "outreach.db")
 SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL", "")
 

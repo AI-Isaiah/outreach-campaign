@@ -16,7 +16,7 @@ _FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
 _limiter = Limiter(key_func=get_remote_address)
 
-from src.config import DEFAULT_CAMPAIGN, load_config
+from src.config import DEFAULT_CAMPAIGN, load_config_safe
 from src.models.campaigns import get_campaign_by_name, record_template_usage, update_contact_campaign_status
 from src.models.events import log_event
 from src.services.email_sender import render_campaign_email
@@ -93,10 +93,7 @@ def create_draft(
 
     campaign_id = camp["id"]
 
-    try:
-        config = load_config()
-    except FileNotFoundError:
-        config = {}
+    config = load_config_safe()
 
     # Use overrides or render from template
     if body.body_text and body.subject:
@@ -177,10 +174,7 @@ def create_batch_drafts(
 
     campaign_id = camp["id"]
 
-    try:
-        config = load_config()
-    except FileNotFoundError:
-        config = {}
+    config = load_config_safe()
 
     from src.services.priority_queue import get_daily_queue
     items = get_daily_queue(conn, campaign_id, target_date=body.date, limit=body.limit)
