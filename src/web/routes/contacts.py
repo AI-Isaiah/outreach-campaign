@@ -237,7 +237,7 @@ def list_contacts(
                 WHERE {where_sql}
             )
             SELECT * FROM ranked WHERE rn = 1
-            ORDER BY {order_clause}
+            ORDER BY {order_col.split('.')[-1]} {sort_dir.upper()} {nulls}
             LIMIT %s OFFSET %s
             """
             cur.execute(query, params + [per_page, offset])
