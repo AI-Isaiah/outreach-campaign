@@ -16,6 +16,7 @@ export const queryKeys = {
   },
   queue: {
     all: ["queue-all"] as const,
+    campaign: (name: string) => ["queue-campaign", name] as const,
   },
   templates: {
     all: ["templates"] as const,

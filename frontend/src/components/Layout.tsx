@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import {
   Megaphone,
   ListTodo,
@@ -12,14 +13,11 @@ import {
   LogOut,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { campaignsApi } from "../api/campaigns";
+import type { CampaignWithMetrics } from "../api/campaigns";
+import { queryKeys } from "../api/queryKeys";
 import GlobalSearchBar from "./GlobalSearchBar";
 import ImportStatusBanner from "./ImportStatusBanner";
-
-const primaryLinks = [
-  { to: "/", label: "Campaigns", icon: Megaphone },
-  { to: "/queue", label: "Queue", icon: ListTodo },
-  { to: "/contacts", label: "Contacts", icon: Users },
-];
 
 const secondaryLinks = [
   { to: "/templates", label: "Templates", icon: FileText },
@@ -32,7 +30,26 @@ export default function Layout() {
   const location = useLocation();
   const { user, logout } = useAuth();
 
-  // Close sidebar on navigation
+  const { data: campaigns } = useQuery<CampaignWithMetrics[]>({
+    queryKey: queryKeys.campaigns.all,
+    queryFn: () => campaignsApi.listCampaigns(),
+    staleTime: 60_000,
+  });
+
+  const queueLink = useMemo(() => {
+    const active = campaigns?.find((c) => c.status === "active");
+    if (active) return `/campaigns/${active.name}?tab=queue`;
+    return "/queue";
+  }, [campaigns]);
+
+  const isQueueActive = location.pathname.startsWith("/campaigns/") && location.search.includes("tab=queue");
+
+  const primaryLinks = useMemo(() => [
+    { to: "/", label: "Campaigns", icon: Megaphone, end: true },
+    { to: queueLink, label: "Queue", icon: ListTodo, end: false, forceActive: isQueueActive },
+    { to: "/contacts", label: "Contacts", icon: Users, end: false },
+  ], [queueLink, isQueueActive]);
+
   useEffect(() => {
     setSidebarOpen(false);
   }, [location.pathname]);
@@ -54,16 +71,17 @@ export default function Layout() {
             const Icon = l.icon;
             return (
               <NavLink
-                key={l.to}
+                key={l.label}
                 to={l.to}
-                end={l.to === "/"}
-                className={({ isActive }) =>
-                  `flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                    isActive
+                end={l.end}
+                className={({ isActive }) => {
+                  const active = l.forceActive || isActive;
+                  return `flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    active
                       ? "bg-gray-800 text-white"
                       : "hover:bg-gray-800/50 hover:text-white"
-                  }`
-                }
+                  }`;
+                }}
               >
                 <Icon size={18} className="shrink-0" />
                 {l.label}

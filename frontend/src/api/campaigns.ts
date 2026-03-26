@@ -77,6 +77,14 @@ export const campaignsApi = {
       method: "POST", body: JSON.stringify(data),
     }),
 
+  updateCampaignStatus: (name: string, status: "active" | "paused" | "archived") =>
+    request<{ name: string; status: string }>(`/campaigns/${name}/status`, {
+      method: "PATCH", body: JSON.stringify({ status }),
+    }),
+
+  deleteCampaign: (name: string) =>
+    request<{ name: string; deleted: boolean }>(`/campaigns/${name}`, { method: "DELETE" }),
+
   getCampaignContacts: (campaignId: number, options?: { status?: string; sort?: string }) => {
     const params = new URLSearchParams();
     if (options?.status) params.set("status", options.status);
