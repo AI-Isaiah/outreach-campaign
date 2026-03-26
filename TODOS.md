@@ -2,32 +2,32 @@
 
 ## P0 — Friction Sweep (Sprint 1-2)
 
-### CRM contact picker in Campaign Wizard
-**Priority:** P0 | **Sprint:** 1 | **Status:** In Progress
+### ~~CRM contact picker in Campaign Wizard~~
+**Priority:** P0 | **Sprint:** 1 | **Status:** Complete
 **Files:** `frontend/src/pages/CampaignWizard.tsx`, `src/web/routes/contacts.py`, `src/web/routes/campaigns.py`
 **What:** Campaign Wizard Step 2 gets tabbed "From CRM" (default) | "Upload CSV". CRM tab: searchable contact table with checkboxes (name, company, AUM). Extend `/campaigns/launch` to accept `contact_ids` array.
 **Why:** After importing contacts via Smart Import, forcing a second CSV upload defeats the purpose of having a CRM. This is the #1 gap in the campaign creation flow.
 
-### Queue keyboard shortcuts
-**Priority:** P0 | **Sprint:** 1 | **Status:** In Progress
+### ~~Queue keyboard shortcuts~~
+**Priority:** P0 | **Sprint:** 1 | **Status:** Complete
 **Files:** `frontend/src/pages/Queue.tsx`, `frontend/src/components/QueueEmailCard.tsx`, `frontend/src/components/QueueLinkedInCard.tsx`
 **What:** j/k navigate between cards, Enter to approve, s to skip, e to edit. KeyboardHint component (first 3 visits, localStorage). Focus ring on active card. Disable when focused on inputs.
 **Why:** Manual click-through of 10-20 queue items is the daily friction. Keyboard cuts review time in half.
 
-### Campaign health score
-**Priority:** P0 | **Sprint:** 1 | **Status:** In Progress
+### ~~Campaign health score~~
+**Priority:** P0 | **Sprint:** 1 | **Status:** Complete
 **Files:** `frontend/src/pages/CampaignList.tsx`, `frontend/src/pages/CampaignDetail.tsx`, `src/web/routes/campaigns.py`, `src/services/metrics.py`
 **What:** 0-100 score on campaign cards. Formula: (positive_reply_rate×50) + (send_velocity×30) − (bounce_rate×20). Green (70+), amber (40-69), red (<40), N/A (gray). Computed from existing metrics, not stored.
 **Why:** Users need an instant pulse on whether a campaign is working — not just raw numbers.
 
-### Smart Message: sequence-level AI generation
-**Priority:** P0 | **Sprint:** 2
+### ~~Smart Message: sequence-level AI generation~~
+**Priority:** P0 | **Sprint:** 2 | **Status:** Complete
 **Files:** `src/services/message_drafter.py` (extend), `frontend/src/pages/CampaignWizard.tsx`, new route
 **What:** Extends Phase 4 infrastructure (message_drafter.py, AI template mode). Adds: (a) best-practices prompt layer for crypto fund outreach, (b) sequence-level generation (all steps at once in wizard), (c) "Improve mode" — paste draft → LLM refines.
 **Why:** Most users don't have templates. The first campaign is where they need the most help.
 
-### Auto-reply detection + cron infrastructure
-**Priority:** P0 | **Sprint:** 2
+### ~~Auto-reply detection + cron infrastructure~~
+**Priority:** P0 | **Sprint:** 2 | **Status:** Complete
 **Files:** `src/web/routes/replies.py`, cron middleware, `frontend/src/pages/Dashboard.tsx`, `vercel.json`
 **What:** Background Gmail scanning via cron endpoint (every 30 min). CRON_SECRET auth. Iterate users with active Gmail. Batch process max 10 contacts per invocation (Vercel timeout). Track cursor in users table.
 **Prerequisites:** Gmail auth unification (reply_detector → DB tokens). Idempotency guard (sent_at in email_sender).
@@ -147,12 +147,19 @@
 
 ## Completed
 
-### Friction Sweep Sprint 1 (in progress)
-**Started:** 2026-03-26, branch feat/friction-sweep-sprint1
-- CRM contact picker in Campaign Wizard Step 2
-- Queue keyboard shortcuts (j/k/Enter/s)
-- Campaign health score (0-100 badge)
+### Friction Sweep Sprint 1 + Sprint 2
+**Completed:** 2026-03-26, branch feat/friction-sweep-sprint1
+**Sprint 1:**
+- CRM contact picker in Campaign Wizard Step 2 (tabbed "From CRM" | "Upload CSV")
+- Queue keyboard shortcuts (j/k/Enter/s/e/Tab + KeyboardHint + focus ring)
+- Campaign health score (0-100 badge, green/amber/red/N/A)
+- HealthScoreBadge extracted to shared component (/simplify)
 - TODOS.md rewrite with friction sweep roadmap
+**Sprint 2:**
+- Gmail auth unification (GmailDrafter.from_db_tokens for serverless cron)
+- Idempotency guard (sent_at atomic lock in send_campaign_email, migration 024)
+- Smart Message (generate_sequence_messages + improve_message, wizard "Generate All Messages")
+- Auto-reply detection (cron middleware, /cron/scan-replies, Vercel cron config, "Last scanned" badge)
 
 ### Phase 3 Lite: Reply remap + template winning badge
 **Completed:** 2026-03-26, branch feat/phase3-lite
