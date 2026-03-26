@@ -87,6 +87,8 @@ def handle_llm_errors():
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == 429:
             raise HTTPException(429, "AI service rate limited — try again in a minute")
+        if exc.response.status_code == 401:
+            raise HTTPException(503, "AI API key invalid — check ANTHROPIC_API_KEY")
         raise HTTPException(502, f"AI service error: {exc.response.status_code}")
 
 

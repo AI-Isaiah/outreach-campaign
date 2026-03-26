@@ -211,8 +211,8 @@ def list_contacts(
     if search:
         like = f"%{search}%"
         where_parts.append(
-            "(c.full_name LIKE %s OR c.email LIKE %s"
-            " OR co.name LIKE %s OR c.first_name LIKE %s OR c.last_name LIKE %s)"
+            "(c.full_name ILIKE %s OR c.email ILIKE %s"
+            " OR co.name ILIKE %s OR c.first_name ILIKE %s OR c.last_name ILIKE %s)"
         )
         params.extend([like, like, like, like, like])
 

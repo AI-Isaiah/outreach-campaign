@@ -1679,7 +1679,7 @@ function StepMessages({
                         const tpl = templates.find((t) => t.id === stepTemplates[s.step_order]);
                         if (!tpl) return null;
                         return (
-                          <div className="bg-gray-50 rounded-md p-3 text-sm text-gray-600 mt-2 whitespace-pre-wrap border border-gray-100">
+                          <div className="bg-gray-50 rounded-md p-3 text-sm text-gray-600 mt-2 whitespace-pre-wrap border border-gray-100 max-h-64 overflow-y-auto">
                             {tpl.subject && <div className="font-medium text-gray-800 mb-2 pb-2 border-b border-gray-200">Subject: {tpl.subject}</div>}
                             {tpl.body_template}
                           </div>
