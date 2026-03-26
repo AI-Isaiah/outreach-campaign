@@ -7,6 +7,7 @@ import { queueApi } from "../api/queue";
 import AiDraftControls from "./AiDraftControls";
 import type { QueueItem } from "../types";
 import AumTierBadge from "./AumTierBadge";
+import SignalBadge from "./SignalBadge";
 import CopyButton from "./CopyButton";
 import ContactEditPanel from "./ContactEditPanel";
 import SkipMenu from "./SkipMenu";
@@ -146,6 +147,9 @@ function QueueLinkedInCard({
             )}
           </span>
           <AumTierBadge tier={item.aum_tier} />
+          {item.fund_signals && item.fund_signals.length > 0 && (
+            <SignalBadge signals={item.fund_signals} />
+          )}
         </div>
         <div className="flex items-center gap-3">
           <span className="text-sm text-blue-600 font-medium">

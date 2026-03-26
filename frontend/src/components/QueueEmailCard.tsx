@@ -7,6 +7,7 @@ import { queueApi } from "../api/queue";
 import AiDraftControls from "./AiDraftControls";
 import type { QueueItem } from "../types";
 import AumTierBadge from "./AumTierBadge";
+import SignalBadge from "./SignalBadge";
 import StatusBadge from "./StatusBadge";
 import ContactEditPanel from "./ContactEditPanel";
 import SkipMenu from "./SkipMenu";
@@ -120,6 +121,9 @@ function QueueEmailCard({
             )}
           </span>
           <AumTierBadge tier={item.aum_tier} />
+          {item.fund_signals && item.fund_signals.length > 0 && (
+            <SignalBadge signals={item.fund_signals} />
+          )}
         </div>
         <div className="flex items-center gap-3">
           {draftStatus && <StatusBadge status={draftStatus} />}

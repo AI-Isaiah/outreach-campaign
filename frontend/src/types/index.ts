@@ -37,6 +37,13 @@ export interface QueueItem {
   message_draft?: MessageDraft | null;
   has_research?: boolean;
   draft_mode?: 'template' | 'ai';
+  fund_signals?: FundSignal[];
+}
+
+export interface FundSignal {
+  type: string;
+  text: string;
+  recency_score: number;
 }
 
 export interface RenderedEmail {
