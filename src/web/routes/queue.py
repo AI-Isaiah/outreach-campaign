@@ -107,10 +107,23 @@ def batch_send(
                WHERE ccs.approved_at IS NOT NULL
                  AND ccs.sent_at IS NULL
                  AND ccs.status = 'in_progress'
-                 AND ss.channel = 'email'""",
+                 AND ss.channel = 'email'
+               ORDER BY ccs.approved_at
+               LIMIT 10""",
             (user_id,),
         )
         rows = cur.fetchall()
+
+    # Count remaining for frontend
+    with get_cursor(conn) as cur:
+        cur.execute(
+            """SELECT COUNT(*) AS cnt FROM contact_campaign_status ccs
+               JOIN campaigns c ON c.id = ccs.campaign_id AND c.user_id = %s
+               WHERE ccs.approved_at IS NOT NULL AND ccs.sent_at IS NULL
+                 AND ccs.status = 'in_progress'""",
+            (user_id,),
+        )
+        total_remaining = cur.fetchone()["cnt"]
 
     if not rows:
         return {"sent": 0, "failed": 0, "errors": []}
@@ -155,7 +168,8 @@ def batch_send(
                 "error": str(exc),
             })
 
-    return {"sent": sent, "failed": failed, "errors": errors}
+    remaining = max(0, total_remaining - sent)
+    return {"sent": sent, "failed": failed, "errors": errors, "remaining": remaining}
 
 
 class ScheduleItem(BaseModel):

@@ -1071,6 +1071,7 @@ def execute_import(
         "contacts_merged": contacts_merged,
         "contacts_enrolled": contacts_enrolled,
         "contacts_skipped": contacts_skipped,
+        "contact_ids": all_contact_ids,
     }
 
 
