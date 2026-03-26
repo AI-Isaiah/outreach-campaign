@@ -176,9 +176,9 @@ def get_active_contact_for_company(
                JOIN contact_campaign_status ccs
                  ON ccs.contact_id = c.id AND ccs.campaign_id = %s
                WHERE c.company_id = %s
-                 AND ccs.status IN ('queued', 'in_progress')
+                 AND ccs.status IN (%s, %s)
                ORDER BY c.priority_rank ASC
                LIMIT 1""",
-            (campaign_id, company_id),
+            (campaign_id, company_id, ContactStatus.QUEUED, ContactStatus.IN_PROGRESS),
         )
         return cursor.fetchone()

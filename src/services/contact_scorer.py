@@ -1,7 +1,7 @@
 """Contact scoring for the adaptive outreach engine.
 
 Computes composite priority scores for contacts to determine daily queue order.
-Score = 0.4*normalized_aum + 0.3*segment_reply_rate + 0.2*channel_availability + 0.1*waiting_time_decay
+Score = WEIGHT_AUM*normalized_aum + WEIGHT_SEGMENT*segment_reply_rate + WEIGHT_CHANNEL*channel_availability + WEIGHT_RECENCY*waiting_time_decay
 """
 
 from __future__ import annotations
@@ -11,6 +11,12 @@ from typing import Optional
 
 from src.models.database import get_cursor
 from src.services.response_analyzer import get_segment_performance
+
+WEIGHT_AUM = 0.4
+WEIGHT_SEGMENT = 0.3
+WEIGHT_CHANNEL = 0.2
+WEIGHT_RECENCY = 0.1
+RECENCY_CAP_DAYS = 14
 
 
 def score_contacts(
@@ -81,7 +87,7 @@ def score_contacts(
             try:
                 action_date = date.fromisoformat(str(row["next_action_date"])[:10])
                 days_waiting = (today - action_date).days
-                recency_score = min(days_waiting / 14.0, 1.0)  # cap at 14 days
+                recency_score = min(days_waiting / float(RECENCY_CAP_DAYS), 1.0)
             except (ValueError, TypeError):
                 recency_score = 0.5
         else:
@@ -89,10 +95,10 @@ def score_contacts(
 
         # Composite score
         priority_score = (
-            0.4 * aum_score
-            + 0.3 * segment_score
-            + 0.2 * channel_score
-            + 0.1 * recency_score
+            WEIGHT_AUM * aum_score
+            + WEIGHT_SEGMENT * segment_score
+            + WEIGHT_CHANNEL * channel_score
+            + WEIGHT_RECENCY * recency_score
         )
 
         results.append({

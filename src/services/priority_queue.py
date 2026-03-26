@@ -16,6 +16,7 @@ import json
 from datetime import date, timedelta
 from typing import Optional
 
+from src.enums import ContactStatus
 from src.models.database import get_cursor
 
 
@@ -64,7 +65,7 @@ def get_daily_queue(
         JOIN contacts c ON c.id = ccs.contact_id
         JOIN companies comp ON comp.id = c.company_id
         WHERE ccs.campaign_id = %s
-          AND ccs.status IN ('queued', 'in_progress')
+          AND ccs.status IN (%s, %s)
           AND ccs.next_action_date <= %s
           AND c.unsubscribed = false
     ),
@@ -117,7 +118,7 @@ def get_daily_queue(
     """
 
     with get_cursor(conn) as cursor:
-        cursor.execute(query, (campaign_id, target_date, campaign_id, limit))
+        cursor.execute(query, (campaign_id, ContactStatus.QUEUED, ContactStatus.IN_PROGRESS, target_date, campaign_id, limit))
         rows = cursor.fetchall()
 
         if not rows:

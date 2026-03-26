@@ -201,7 +201,7 @@ def _call_llm(prompt: str) -> str:
         resp.raise_for_status()
         data = resp.json()
         return data["content"][0]["text"]
-    except Exception:
+    except (httpx.HTTPError, json.JSONDecodeError, KeyError, IndexError):
         logger.exception("LLM advisor call failed")
         return json.dumps({
             "insights": ["LLM API call failed — check logs for details."],

@@ -5,6 +5,7 @@ import { ChevronRight, Trophy } from "lucide-react";
 import { campaignsApi } from "../api/campaigns";
 import type { CampaignContact } from "../api/campaigns";
 import { api } from "../api/client";
+import { queryKeys } from "../api/queryKeys";
 import type { CampaignMetricsResponse, TemplatePerformanceItem } from "../types";
 import MetricCard from "../components/MetricCard";
 import StatusBadge from "../components/StatusBadge";
@@ -26,7 +27,7 @@ export default function CampaignDetail() {
   const [activeTab, setActiveTab] = useState<Tab>("contacts");
 
   const { data: metricsData, isLoading: metricsLoading, error: metricsError, refetch: refetchMetrics } = useQuery<CampaignMetricsResponse>({
-    queryKey: ["campaign-metrics", name],
+    queryKey: queryKeys.campaigns.detail(name as string),
     queryFn: () => api.getCampaignMetrics(name as string),
     enabled: !!name,
   });

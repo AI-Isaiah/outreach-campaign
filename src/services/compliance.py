@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Optional
 from urllib.parse import quote
 
+from src.constants import GDPR_MAX_EMAILS
 from src.models.database import get_cursor
 
 
@@ -84,7 +85,7 @@ def check_gdpr_email_limit(
     conn,
     contact_id: int,
     campaign_id: int,
-    max_emails: int = 2,
+    max_emails: int = GDPR_MAX_EMAILS,
 ) -> bool:
     """Check if a GDPR-subject contact can still receive emails.
 

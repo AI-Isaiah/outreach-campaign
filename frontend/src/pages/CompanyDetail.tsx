@@ -1,7 +1,7 @@
 import { useParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
-import type { CompanyDetailResponse } from "../types";
+import type { CompanyDetailResponse, Contact } from "../types";
 import StatusBadge from "../components/StatusBadge";
 import TagPicker from "../components/TagPicker";
 import DeepResearchBrief from "../components/DeepResearchBrief";
@@ -105,7 +105,7 @@ export default function CompanyDetail() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {contacts.map((c: any) => (
+            {contacts.map((c: Contact) => (
               <tr key={c.id} className="hover:bg-gray-50">
                 <td className="px-5 py-3">
                   <Link

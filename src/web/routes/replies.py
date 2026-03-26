@@ -13,6 +13,7 @@ from src.services.gmail_drafter import GmailDrafter
 from src.services.linkedin_acceptance_scanner import scan_linkedin_acceptances
 from src.services.reply_detector import scan_gmail_for_replies
 from src.services.state_machine import InvalidTransition, transition_contact
+from cryptography.fernet import InvalidToken
 from src.services.token_encryption import decrypt_token
 from src.web.dependencies import get_current_user, get_db, verify_cron_secret
 from src.models.database import get_cursor
@@ -42,7 +43,7 @@ def _build_drafter_from_db(conn, user_id: int) -> GmailDrafter | None:
     try:
         access_token = decrypt_token(row["gmail_access_token"])
         refresh_token = decrypt_token(row["gmail_refresh_token"]) if row["gmail_refresh_token"] else ""
-    except Exception:
+    except (InvalidToken, ValueError):
         logger.exception("Failed to decrypt Gmail tokens for user %s", user_id)
         return None
 

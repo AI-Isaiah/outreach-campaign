@@ -15,6 +15,8 @@ import ErrorCard from "../components/ui/ErrorCard";
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
 import Select from "../components/ui/Select";
+import { LIFECYCLE_STAGES } from "../constants";
+import { queryKeys } from "../api/queryKeys";
 
 const STATUS_OPTIONS = [
   { value: "", label: "All statuses" },
@@ -41,22 +43,13 @@ const FIRM_TYPES = [
   { value: "Consultant", label: "Consultant" },
 ];
 
+const _stageLabel = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const LIFECYCLE_OPTIONS = [
   { value: "", label: "All stages" },
-  { value: "cold", label: "Cold" },
-  { value: "contacted", label: "Contacted" },
-  { value: "nurturing", label: "Nurturing" },
-  { value: "client", label: "Client" },
-  { value: "churned", label: "Churned" },
+  ...LIFECYCLE_STAGES.map((s) => ({ value: s, label: _stageLabel(s) })),
 ];
 
-const BULK_LIFECYCLE_OPTIONS = [
-  { value: "cold", label: "Cold" },
-  { value: "contacted", label: "Contacted" },
-  { value: "nurturing", label: "Nurturing" },
-  { value: "client", label: "Client" },
-  { value: "churned", label: "Churned" },
-];
+const BULK_LIFECYCLE_OPTIONS = LIFECYCLE_STAGES.map((s) => ({ value: s, label: _stageLabel(s) }));
 
 export default function ContactList() {
   const [search, setSearch] = useState("");
@@ -80,12 +73,12 @@ export default function ContactList() {
   const { toast } = useToast();
 
   const { data: products } = useQuery<Product[]>({
-    queryKey: ["products"],
+    queryKey: queryKeys.products.all,
     queryFn: () => api.listProducts(),
   });
 
   const { data, isLoading, isError, error, refetch } = useQuery<ContactListResponse>({
-    queryKey: ["crm-contacts", page, filters, sortBy, sortDir],
+    queryKey: queryKeys.contacts.all(page, filters, sortBy, sortDir),
     queryFn: () =>
       api.listCrmContacts({
         search: filters.search || undefined,

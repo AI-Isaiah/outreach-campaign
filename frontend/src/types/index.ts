@@ -166,6 +166,7 @@ export interface Contact {
   aum_millions?: number | null;
   firm_type?: string | null;
   country?: string | null;
+  campaign_status?: string | null;
 }
 
 export interface ContactListResponse {

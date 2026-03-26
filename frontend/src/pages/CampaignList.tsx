@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Megaphone, Plus, Rocket } from "lucide-react";
 import { campaignsApi } from "../api/campaigns";
 import type { CampaignWithMetrics } from "../api/campaigns";
+import { queryKeys } from "../api/queryKeys";
 import StatusBadge from "../components/StatusBadge";
 import { SkeletonCard } from "../components/Skeleton";
 import ErrorCard from "../components/ui/ErrorCard";
@@ -11,7 +12,7 @@ import HealthScoreBadge from "../components/HealthScoreBadge";
 
 export default function CampaignList() {
   const { data, isLoading, isError, error, refetch } = useQuery<CampaignWithMetrics[]>({
-    queryKey: ["campaigns"],
+    queryKey: queryKeys.campaigns.all,
     queryFn: campaignsApi.listCampaigns,
   });
 

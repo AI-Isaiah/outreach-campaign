@@ -16,6 +16,7 @@ from email.mime.text import MIMEText
 from pathlib import Path
 from typing import Optional
 
+from src.enums import EventType
 from src.models.campaigns import (
     get_template,
     log_event,
@@ -152,7 +153,7 @@ def send_email(
     except smtplib.SMTPException:
         logger.exception("SMTP error sending email to %s", to_email)
         return False
-    except Exception:
+    except (OSError, ValueError):
         logger.exception("Unexpected error sending email to %s", to_email)
         return False
 
@@ -253,7 +254,7 @@ def send_emails_batch(
         logger.exception("Failed to establish SMTP connection for batch send")
         # Mark remaining as failed
         results.extend([False] * (len(messages) - len(results)))
-    except Exception:
+    except (OSError, ValueError):
         logger.exception("Unexpected error in batch send")
         results.extend([False] * (len(messages) - len(results)))
 
@@ -458,7 +459,7 @@ def send_campaign_email(
     log_event(
         conn,
         contact_id,
-        "email_sent",
+        EventType.EMAIL_SENT,
         campaign_id=campaign_id,
         template_id=template_id,
         metadata=metadata,

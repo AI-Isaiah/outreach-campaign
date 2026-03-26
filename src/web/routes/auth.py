@@ -176,7 +176,7 @@ def forgot_password(body: ForgotPasswordRequest, conn=Depends(get_db)):
     # Send reset email via existing SMTP config
     try:
         _send_reset_email(email, user["name"] or email, token)
-    except Exception:
+    except (smtplib.SMTPException, OSError):
         logger.exception("Failed to send reset email to %s", email)
 
     return {"message": "If that email is registered, a reset link has been sent."}

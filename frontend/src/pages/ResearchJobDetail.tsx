@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Download, Users, RefreshCw, XCircle, CheckCircle, Zap, TrendingUp } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from "recharts";
 import { api } from "../api/client";
-import type { ResearchResult, Campaign } from "../types";
+import type { ResearchResult, ResearchJobDetail as ResearchJobDetailType, Campaign } from "../types";
 import { isTerminalStatus } from "../types";
 import CryptoScoreBadge from "../components/CryptoScoreBadge";
 import ResearchProgressBar from "../components/ResearchProgressBar";
@@ -34,7 +34,7 @@ function CompletionSummary({
   jobData,
   onBatchImport,
 }: {
-  jobData: any;
+  jobData: ResearchJobDetailType;
   onBatchImport: () => void;
 }) {
   const qualified = (jobData.by_category.confirmed_investor || 0) + (jobData.by_category.likely_interested || 0);

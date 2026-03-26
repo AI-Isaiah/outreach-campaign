@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from src.application.contact_service import transition_contact_status
 from src.models.campaigns import (
@@ -22,6 +25,10 @@ from src.services.state_machine import InvalidTransition
 from src.web.dependencies import get_current_user, get_db
 from src.models.database import get_cursor
 
+_limiter = Limiter(
+    key_func=get_remote_address,
+    enabled=os.getenv("RATE_LIMIT_ENABLED", "true").lower() != "false",
+)
 router = APIRouter(tags=["contacts"])
 
 
@@ -76,7 +83,9 @@ class BulkLifecycleRequest(BaseModel):
 
 
 @router.post("/contacts")
+@_limiter.limit("10/minute")
 def create_contact(
+    request: Request,
     body: CreateContactRequest,
     conn=Depends(get_db),
     user=Depends(get_current_user),

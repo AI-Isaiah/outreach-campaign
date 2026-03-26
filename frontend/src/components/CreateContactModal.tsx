@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import type { Company } from "../types";
 import { LIFECYCLE_STAGES } from "../constants";
 
 const LIFECYCLE_OPTIONS = LIFECYCLE_STAGES.map((s) => ({
@@ -149,7 +150,7 @@ export default function CreateContactModal({ open, onClose }: Props) {
               className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white"
             >
               <option value="">No company</option>
-              {companies?.companies?.map((c: any) => (
+              {companies?.companies?.map((c: Company) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
                 </option>

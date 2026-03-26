@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import httpx
+
 from src.models.campaigns import create_campaign
 from src.models.database import get_connection, run_migrations
 from tests.conftest import TEST_USER_ID
@@ -152,7 +154,7 @@ def test_classify_reply_positive(mock_post):
 @patch("src.services.reply_detector.httpx.post")
 def test_classify_reply_api_error(mock_post):
     """Should return neutral on API error."""
-    mock_post.side_effect = Exception("API unreachable")
+    mock_post.side_effect = httpx.ConnectError("API unreachable")
     classification, confidence = _classify_reply("Some reply text")
     assert classification == "neutral"
     assert confidence == 0.5

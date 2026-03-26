@@ -19,6 +19,7 @@ import re
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
+from src.enums import ContactStatus
 from src.services.gmail_drafter import GmailDrafter
 from src.services.normalization_utils import normalize_linkedin_url
 from src.models.database import get_cursor
@@ -306,8 +307,8 @@ def scan_linkedin_acceptances(
             cur.execute(
                 """SELECT ccs.campaign_id, ccs.current_step, ccs.status
                    FROM contact_campaign_status ccs
-                   WHERE ccs.contact_id = %s AND ccs.status IN ('queued', 'in_progress')""",
-                (contact_id,),
+                   WHERE ccs.contact_id = %s AND ccs.status IN (%s, %s)""",
+                (contact_id, ContactStatus.QUEUED, ContactStatus.IN_PROGRESS),
             )
             enrollments = cur.fetchall()
 
