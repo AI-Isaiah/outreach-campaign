@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Calendar, CheckCircle, ChevronDown, Clock, Inbox, Mail, Linkedin, Send, X } from "lucide-react";
 import { queueApi } from "../api/queue";
+import { SCHEDULE_PRESETS } from "../constants";
 import { api } from "../api/client";
 import type { QueueItem, QueueResponse } from "../types";
 import QueueEmailCard from "../components/QueueEmailCard";
@@ -487,30 +488,20 @@ export default function Queue() {
                 </button>
                 {scheduleOpen && (
                   <div className="absolute bottom-full right-0 mb-2 w-64 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-50">
-                    <button
-                      type="button"
-                      onClick={() => { scheduleMutation.mutate("now"); }}
-                      className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                    >
-                      <Send size={14} className="text-gray-400" />
-                      Send now
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { scheduleMutation.mutate("tomorrow_9am"); }}
-                      className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                    >
-                      <Clock size={14} className="text-gray-400" />
-                      Tomorrow 9am
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { scheduleMutation.mutate("spread_3_days"); }}
-                      className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                    >
-                      <Calendar size={14} className="text-gray-400" />
-                      Spread: 5/day for 3 days
-                    </button>
+                    {SCHEDULE_PRESETS.map((preset) => {
+                      const Icon = preset.value === "now" ? Send : preset.value === "tomorrow_9am" ? Clock : Calendar;
+                      return (
+                        <button
+                          key={preset.value}
+                          type="button"
+                          onClick={() => { scheduleMutation.mutate(preset.value); }}
+                          className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                        >
+                          <Icon size={14} className="text-gray-400" />
+                          {preset.label}
+                        </button>
+                      );
+                    })}
                     <div className="border-t border-gray-100 mt-1 pt-1 px-4 py-2">
                       <label className="text-xs font-medium text-gray-500 block mb-1.5">
                         Custom date & time

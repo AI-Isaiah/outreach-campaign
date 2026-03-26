@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 
 import httpx
 
+from src.enums import Channel
 from src.models.database import get_cursor
 
 logger = logging.getLogger(__name__)
@@ -24,12 +25,18 @@ SEQUENCE_TIMEOUT = 30  # seconds — longer for multi-step generation
 
 # Channel → prompt type mapping (niche LinkedIn types fall back to message)
 CHANNEL_PROMPT_MAP = {
-    "email": "email",
-    "linkedin_connect": "linkedin_connect",
-    "linkedin_message": "linkedin_message",
-    "linkedin_engage": "linkedin_message",
-    "linkedin_insight": "linkedin_message",
-    "linkedin_final": "linkedin_message",
+    Channel.EMAIL: "email",
+    Channel.LINKEDIN_CONNECT: "linkedin_connect",
+    Channel.LINKEDIN_MESSAGE: "linkedin_message",
+    Channel.LINKEDIN_ENGAGE: "linkedin_message",
+    Channel.LINKEDIN_INSIGHT: "linkedin_message",
+    Channel.LINKEDIN_FINAL: "linkedin_message",
+}
+
+CHANNEL_DISPLAY_NAMES = {
+    Channel.EMAIL: "email",
+    Channel.LINKEDIN_CONNECT: "LinkedIn connection note",
+    Channel.LINKEDIN_MESSAGE: "LinkedIn direct message",
 }
 
 # ── System prompts per channel ────────────────────────────────────────────
@@ -76,9 +83,9 @@ Output format:
 MESSAGE: <message text>"""
 
 SYSTEM_PROMPTS = {
-    "email": SYSTEM_EMAIL,
-    "linkedin_connect": SYSTEM_LINKEDIN_CONNECT,
-    "linkedin_message": SYSTEM_LINKEDIN_MESSAGE,
+    Channel.EMAIL: SYSTEM_EMAIL,
+    Channel.LINKEDIN_CONNECT: SYSTEM_LINKEDIN_CONNECT,
+    Channel.LINKEDIN_MESSAGE: SYSTEM_LINKEDIN_MESSAGE,
 }
 
 
@@ -358,11 +365,7 @@ def improve_message(
         raise RuntimeError("ANTHROPIC_API_KEY not configured")
 
     prompt_type = CHANNEL_PROMPT_MAP.get(channel, "linkedin_message")
-    channel_label = {
-        "email": "email",
-        "linkedin_connect": "LinkedIn connection note",
-        "linkedin_message": "LinkedIn direct message",
-    }.get(prompt_type, "message")
+    channel_label = CHANNEL_DISPLAY_NAMES.get(prompt_type, "message")
 
     parts = [f"CHANNEL: {channel_label}"]
     if subject:
@@ -507,11 +510,7 @@ def _build_user_message(
             tpl_section += f"\nBody: {template_body[:1000]}"
         parts.append(tpl_section)
 
-    channel_label = {
-        "email": "email",
-        "linkedin_connect": "LinkedIn connection note",
-        "linkedin_message": "LinkedIn direct message",
-    }.get(prompt_type, "message")
+    channel_label = CHANNEL_DISPLAY_NAMES.get(prompt_type, "message")
     parts.append(f"Generate a personalized {channel_label} for this contact.")
 
     return "\n\n".join(parts)

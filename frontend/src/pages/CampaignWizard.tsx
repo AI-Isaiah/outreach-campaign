@@ -46,6 +46,7 @@ import { api } from "../api/client";
 import { contactsApi } from "../api/contacts";
 import type { Template } from "../types";
 import { useToast } from "../components/Toast";
+import { CHANNEL_LABELS } from "../constants";
 import { splitCsvLine } from "../utils/parseCsv";
 
 /*
@@ -992,11 +993,11 @@ const TOUCHPOINT_OPTIONS = [
   { value: 7, label: "Thorough", desc: "7 touchpoints" },
 ];
 
-const CHANNEL_OPTIONS = [
-  { value: "email", label: "Email" },
-  { value: "linkedin_connect", label: "LinkedIn Connect" },
-  { value: "linkedin_message", label: "LinkedIn Message" },
-] as const;
+const WIZARD_CHANNELS = ["email", "linkedin_connect", "linkedin_message"] as const;
+const CHANNEL_OPTIONS = WIZARD_CHANNELS.map((ch) => ({
+  value: ch,
+  label: CHANNEL_LABELS[ch] ?? ch,
+}));
 
 function channelBadgeClass(ch: string): string {
   return ch === "email" ? "bg-blue-100 text-blue-700" : "bg-indigo-100 text-indigo-700";
