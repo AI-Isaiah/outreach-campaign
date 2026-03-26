@@ -59,8 +59,8 @@ function NewJobModal({ onClose }: { onClose: () => void }) {
       const p = await api.previewResearchCsv(f);
       setPreview(p);
       setStep("preview");
-    } catch (err: any) {
-      setPreviewError(err.message || "Failed to parse CSV");
+    } catch (err: unknown) {
+      setPreviewError(err instanceof Error ? err.message : "Failed to parse CSV");
     } finally {
       setPreviewLoading(false);
     }

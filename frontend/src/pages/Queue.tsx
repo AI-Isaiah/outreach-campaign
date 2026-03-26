@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Calendar, CheckCircle, ChevronDown, Clock, Inbox, Mail, Linkedin, Send, X } from "lucide-react";
 import { queueApi } from "../api/queue";
+import { queryKeys } from "../api/queryKeys";
 import { SCHEDULE_PRESETS } from "../constants";
 import { api } from "../api/client";
 import type { QueueItem, QueueResponse } from "../types";
@@ -58,20 +59,20 @@ export default function Queue() {
   const queryClient = useQueryClient();
 
   const { data, isLoading, isError, error, refetch } = useQuery<QueueResponse>({
-    queryKey: ["queue-all"],
+    queryKey: queryKeys.queue.all,
     queryFn: () => queueApi.getAllQueues({ limit: 50 }),
   });
 
   const batchDraft = useMutation({
     mutationFn: () => api.createBatchDrafts(campaignFilter),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["queue-all"] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.queue.all }),
   });
 
   const skipMutation = useMutation({
     mutationFn: ({ contactId, campaign }: { contactId: number; campaign: string }) =>
       queueApi.deferContact(contactId, campaign, "skipped_via_keyboard"),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["queue-all"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.queue.all });
       queryClient.invalidateQueries({ queryKey: ["defer-stats"] });
     },
   });
@@ -93,7 +94,7 @@ export default function Queue() {
       setSendProgress(null);
       setSendResult(result);
       setApprovedIds(new Set());
-      queryClient.invalidateQueries({ queryKey: ["queue-all"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.queue.all });
       setTimeout(() => setSendResult(null), 8000);
     },
     onError: () => {
@@ -117,7 +118,7 @@ export default function Queue() {
       setScheduleOpen(false);
       setCustomDateTime("");
       setSendResult({ sent: result.scheduled, failed: 0, errors: [] });
-      queryClient.invalidateQueries({ queryKey: ["queue-all"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.queue.all });
       setTimeout(() => setSendResult(null), 8000);
     },
   });
@@ -156,7 +157,7 @@ export default function Queue() {
   );
 
   const handleDeferred = useCallback(
-    () => queryClient.invalidateQueries({ queryKey: ["queue-all"] }),
+    () => queryClient.invalidateQueries({ queryKey: queryKeys.queue.all }),
     [queryClient],
   );
 

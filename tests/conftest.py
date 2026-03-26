@@ -1,4 +1,7 @@
 import itertools
+import os
+
+os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 
 import pytest
 import testing.postgresql

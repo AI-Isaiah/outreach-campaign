@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
+import psycopg2
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from slowapi import Limiter
@@ -367,7 +368,7 @@ def override_template(
                 (key, str(body.template_id), user["id"]),
             )
             conn.commit()
-        except Exception:
+        except psycopg2.Error:
             conn.rollback()
             raise
 

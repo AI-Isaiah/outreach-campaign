@@ -8,11 +8,9 @@ from __future__ import annotations
 import json
 from typing import Optional
 
-from src.models.campaigns import (
-    get_campaign_by_name,
-    get_contact_campaign_status,
-    log_event,
-)
+from src.models.campaigns import get_campaign_by_name
+from src.models.enrollment import get_contact_campaign_status
+from src.models.events import log_event
 from src.services.state_machine import InvalidTransition, transition_contact
 from src.models.database import get_cursor
 

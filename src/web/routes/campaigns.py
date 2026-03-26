@@ -134,7 +134,7 @@ def launch_campaign(
     except HTTPException:
         conn.rollback()
         raise
-    except Exception:
+    except psycopg2.Error:
         conn.rollback()
         raise HTTPException(500, "Failed to launch campaign")
 

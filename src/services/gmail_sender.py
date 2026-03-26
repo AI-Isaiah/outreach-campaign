@@ -8,6 +8,8 @@ from email.mime.text import MIMEText
 
 import httpx
 
+from src.services.retry import retry_on_failure
+
 logger = logging.getLogger(__name__)
 
 
@@ -85,6 +87,7 @@ class GmailSender:
             "expires_in": data.get("expires_in", 3600),
         }
 
+    @retry_on_failure(max_retries=3, backoff_base=1.0, exceptions=(GmailSendError, httpx.RequestError))
     def send(self, to: str, subject: str, html_body: str, from_name: str = "", from_email: str = "") -> dict:
         """Send an email via Gmail API.
 

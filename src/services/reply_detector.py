@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 
 import httpx
 
+from src.enums import ContactStatus
 from src.services.gmail_drafter import GmailDrafter
 from src.models.database import get_cursor
 
@@ -48,9 +49,9 @@ def scan_gmail_for_replies(
                FROM contact_campaign_status ccs
                JOIN contacts c ON c.id = ccs.contact_id
                WHERE c.email IS NOT NULL
-                 AND ccs.status IN ('in_progress', 'queued')
+                 AND ccs.status IN (%s, %s)
                  AND c.user_id = %s""",
-            (user_id,),
+            (ContactStatus.IN_PROGRESS, ContactStatus.QUEUED, user_id),
         )
         contacts = cur.fetchall()
 
@@ -215,7 +216,7 @@ def _classify_reply(reply_text: str) -> tuple[str, float]:
         text = data["content"][0]["text"]
         parsed = json.loads(text)
         return parsed.get("classification", "neutral"), parsed.get("confidence", 0.5)
-    except Exception:
+    except (httpx.HTTPError, json.JSONDecodeError, KeyError, IndexError):
         logger.exception("LLM classification failed")
         return "neutral", 0.5
 

@@ -42,7 +42,7 @@ export function useContactEdit(item: QueueItem): ContactEditState {
   });
 
   const handleSaveEdit = async () => {
-    const promises: Promise<any>[] = [];
+    const promises: Promise<unknown>[] = [];
     const currentName = item.contact_name;
     const newName = `${editFirst} ${editLast}`.trim();
     if (newName !== currentName) {

@@ -7,6 +7,7 @@ import logging
 import os
 from itertools import combinations
 
+import psycopg2
 from thefuzz import fuzz
 
 from src.constants import FUZZY_DEDUP_THRESHOLD
@@ -32,7 +33,7 @@ def run_dedup(conn, export_dir: str | None = None, user_id: int | None = None) -
         linkedin_dupes = _pass_exact_linkedin(conn, user_id=user_id)
         fuzzy_flagged = _pass_fuzzy_company(conn, export_dir, user_id=user_id)
         conn.commit()
-    except Exception:
+    except psycopg2.Error:
         conn.rollback()
         raise
 

@@ -2,18 +2,13 @@ import type {
   CsvPreview, CreateResearchJobResponse, ResearchJobsResponse,
   ResearchJobDetail, ResearchResultsResponse, ResearchResult, BatchImportResponse,
 } from "../types";
-import { BASE, authHeaders, request } from "./request";
+import { request, requestUpload } from "./request";
 
 export const researchApi = {
   previewResearchCsv: async (file: File) => {
     const formData = new FormData();
     formData.append("file", file);
-    const res = await fetch(`${BASE}/research/preview-csv`, { method: "POST", body: formData, headers: authHeaders() });
-    if (!res.ok) {
-      const error = await res.json().catch(() => ({ detail: res.statusText }));
-      throw new Error(error.detail || `HTTP ${res.status}`);
-    }
-    return res.json() as Promise<CsvPreview>;
+    return requestUpload<CsvPreview>("/research/preview-csv", formData);
   },
 
   createResearchJob: async (file: File, name: string, method = "hybrid", skipDuplicates = true) => {
@@ -22,12 +17,7 @@ export const researchApi = {
     formData.append("name", name);
     formData.append("method", method);
     formData.append("skip_duplicates", String(skipDuplicates));
-    const res = await fetch(`${BASE}/research/jobs`, { method: "POST", body: formData, headers: authHeaders() });
-    if (!res.ok) {
-      const error = await res.json().catch(() => ({ detail: res.statusText }));
-      throw new Error(error.detail || `HTTP ${res.status}`);
-    }
-    return res.json() as Promise<CreateResearchJobResponse>;
+    return requestUpload<CreateResearchJobResponse>("/research/jobs", formData);
   },
 
   listResearchJobs: (status?: string, page = 1) => {

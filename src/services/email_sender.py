@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import smtplib
 import time
 from email.mime.application import MIMEApplication
@@ -16,12 +17,10 @@ from email.mime.text import MIMEText
 from pathlib import Path
 from typing import Optional
 
-from src.models.campaigns import (
-    get_template,
-    log_event,
-    record_template_usage,
-    update_contact_campaign_status,
-)
+from src.enums import EventType
+from src.models.enrollment import record_template_usage, update_contact_campaign_status
+from src.models.events import log_event
+from src.models.templates import get_template
 from src.services.compliance import (
     add_compliance_footer,
     add_compliance_footer_html,
@@ -37,6 +36,9 @@ from src.services.template_engine import get_template_context, render_template
 logger = logging.getLogger(__name__)
 
 _SANDBOX_ENV = SandboxedEnvironment()
+
+# Simple RFC-style email regex — enough to catch obvious bad data before SMTP.
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 _RETRY_MAX_ATTEMPTS = 3
 _RETRY_BACKOFF_SECONDS = 1
@@ -152,7 +154,7 @@ def send_email(
     except smtplib.SMTPException:
         logger.exception("SMTP error sending email to %s", to_email)
         return False
-    except Exception:
+    except (OSError, ValueError):
         logger.exception("Unexpected error sending email to %s", to_email)
         return False
 
@@ -253,11 +255,55 @@ def send_emails_batch(
         logger.exception("Failed to establish SMTP connection for batch send")
         # Mark remaining as failed
         results.extend([False] * (len(messages) - len(results)))
-    except Exception:
+    except (OSError, ValueError):
         logger.exception("Unexpected error in batch send")
         results.extend([False] * (len(messages) - len(results)))
 
     return results
+
+
+def render_template_with_compliance(
+    template_row: dict,
+    context: dict,
+    config: dict,
+) -> dict:
+    """Render a template and apply compliance footers.
+
+    Pure rendering function with no database access. Takes a template row,
+    a Jinja2 context, and the app config. Returns subject, body_text,
+    and body_html with CAN-SPAM footer injected.
+
+    Args:
+        template_row: row from the templates table (needs ``body_template``, ``subject``)
+        context: template context variables
+        config: app config dict (needs ``smtp.username``, ``physical_address``)
+
+    Returns:
+        Dict with keys: subject, body_text, body_html.
+    """
+    body_text = (
+        render_template(template_row["body_template"], context)
+        if template_row["body_template"].endswith(".txt")
+        else _render_inline_template(template_row["body_template"], context)
+    )
+
+    subject = template_row["subject"] or "Reaching out"
+
+    smtp_config = config.get("smtp", {})
+    from_email = smtp_config.get("username", "")
+    physical_address = config.get("physical_address", "")
+    unsubscribe_url = build_unsubscribe_url(from_email)
+
+    # Generate HTML from clean body BEFORE adding footers to avoid double footer
+    body_html = _text_to_clean_html(body_text)
+    body_text = add_compliance_footer(body_text, physical_address, unsubscribe_url)
+    body_html = add_compliance_footer_html(body_html, physical_address, unsubscribe_url)
+
+    return {
+        "subject": subject,
+        "body_text": body_text,
+        "body_html": body_html,
+    }
 
 
 def render_campaign_email(
@@ -297,28 +343,10 @@ def render_campaign_email(
         return None
 
     context = get_template_context(conn, contact_id, config, user_id=user_id, pre_fetched_research=pre_fetched_research)
-    body_text = (
-        render_template(template_row["body_template"], context)
-        if template_row["body_template"].endswith(".txt")
-        else _render_inline_template(template_row["body_template"], context)
-    )
-
-    subject = template_row["subject"] or "Reaching out"
-
-    smtp_config = config.get("smtp", {})
-    from_email = smtp_config.get("username", "")
-    physical_address = config.get("physical_address", "")
-    unsubscribe_url = build_unsubscribe_url(from_email)
-
-    # Generate HTML from clean body BEFORE adding footers to avoid double footer
-    body_html = _text_to_clean_html(body_text)
-    body_text = add_compliance_footer(body_text, physical_address, unsubscribe_url)
-    body_html = add_compliance_footer_html(body_html, physical_address, unsubscribe_url)
+    rendered = render_template_with_compliance(template_row, context, config)
 
     return {
-        "subject": subject,
-        "body_text": body_text,
-        "body_html": body_html,
+        **rendered,
         "contact_email": contact["email"],
         "template_id": template_id,
     }
@@ -374,7 +402,7 @@ def send_campaign_email(
         return False
 
     email = contact.get("email_normalized") or contact.get("email")
-    if not email or "@" not in email:
+    if not email or not _EMAIL_RE.match(email):
         logger.error("Contact %d has no valid email address", contact_id)
         return False
 
@@ -409,36 +437,20 @@ def send_campaign_email(
         return False
 
     context = get_template_context(conn, contact_id, config, user_id=user_id, pre_fetched_research=pre_fetched_research)
-    body_text = render_template(
-        template_row["body_template"],
-        context,
-    ) if template_row["body_template"].endswith(".txt") else _render_inline_template(
-        template_row["body_template"],
-        context,
-    )
-
-    subject = template_row["subject"] or "Reaching out"
-
-    # --- Add compliance footer ------------------------------------------------
-
-    smtp_config = config.get("smtp", {})
-    from_email = smtp_config.get("username", "")
-    physical_address = config.get("physical_address", "")
-    unsubscribe_url = build_unsubscribe_url(from_email)
-
-    # Generate HTML from clean body BEFORE adding footers to avoid double footer
-    body_html = _text_to_clean_html(body_text)
-    body_text = add_compliance_footer(body_text, physical_address, unsubscribe_url)
-    body_html = add_compliance_footer_html(body_html, physical_address, unsubscribe_url)
+    rendered = render_template_with_compliance(template_row, context, config)
+    subject = rendered["subject"]
+    body_text = rendered["body_text"]
+    body_html = rendered["body_html"]
 
     # --- Send -----------------------------------------------------------------
 
+    smtp_config = config.get("smtp", {})
     success = send_email(
         smtp_host=smtp_config.get("host", "smtp.gmail.com"),
         smtp_port=smtp_config.get("port", 587),
         smtp_username=smtp_config.get("username", ""),
         smtp_password=config.get("smtp_password", ""),
-        from_email=from_email,
+        from_email=smtp_config.get("username", ""),
         to_email=contact["email"],
         subject=subject,
         body_text=body_text,
@@ -458,7 +470,7 @@ def send_campaign_email(
     log_event(
         conn,
         contact_id,
-        "email_sent",
+        EventType.EMAIL_SENT,
         campaign_id=campaign_id,
         template_id=template_id,
         metadata=metadata,

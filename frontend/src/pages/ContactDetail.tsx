@@ -13,8 +13,7 @@ import { SkeletonCard, SkeletonMetricCard } from "../components/Skeleton";
 import ErrorCard from "../components/ui/ErrorCard";
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
-
-const LIFECYCLE_STAGES = ["cold", "contacted", "nurturing", "client", "churned"];
+import { LIFECYCLE_STAGES } from "../constants";
 const CONVERSATION_CHANNELS = [
   "conference", "phone", "telegram", "whatsapp", "email", "linkedin", "in_person", "video_call",
 ];

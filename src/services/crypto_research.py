@@ -10,7 +10,12 @@ Architecture:
   - run_research_job: background orchestrator with cancellation, progress, error recovery
   - cancel/retry: job lifecycle management
   - check_duplicates: prevent re-researching known companies
-  - batch_import_and_enroll: complete the Research → CRM loop
+  - batch_import_and_enroll: complete the Research -> CRM loop
+
+Extracted modules:
+  - crypto_scoring.py: classify_crypto_interest, estimate_job_cost
+  - crypto_web_scraper.py: research_company_web_search, crawl_company_website,
+                           discover_contacts_at_company
 """
 
 from __future__ import annotations
@@ -20,7 +25,6 @@ import io
 import json
 import logging
 import os
-import re
 import time
 import threading
 
@@ -29,16 +33,28 @@ import httpx
 from src.models.database import get_cursor
 from src.services.normalization_utils import normalize_company_name, split_name
 
+# Re-export extracted functions so callers that import from this module still work
+from src.services.crypto_scoring import (  # noqa: F401
+    classify_crypto_interest,
+    estimate_job_cost,
+)
+from src.services.crypto_web_scraper import (  # noqa: F401
+    crawl_company_website,
+    discover_contacts_at_company,
+    research_company_web_search,
+)
+from src.services.crypto_web_scraper import (
+    COST_WEB_SEARCH,
+    COST_CRAWL,
+)
+from src.services.crypto_scoring import COST_LLM
+
 logger = logging.getLogger(__name__)
 
 PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-CLASSIFIER_MODEL = "claude-haiku-4-5-20251001"
 
 # Cost estimates per operation
-COST_WEB_SEARCH = 0.005
-COST_CRAWL = 0.0
-COST_LLM = 0.001
 COST_CONTACT_DISCOVERY = 0.005
 
 
@@ -142,27 +158,6 @@ def preview_research_csv(csv_content: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Cost Estimation
-# ---------------------------------------------------------------------------
-
-def estimate_job_cost(company_count: int, method: str) -> dict:
-    """Estimate cost for a research job."""
-    web_search_cost = company_count * COST_WEB_SEARCH if method in ("web_search", "hybrid") else 0
-    crawl_cost = company_count * COST_CRAWL if method in ("website_crawl", "hybrid") else 0
-    llm_cost = company_count * COST_LLM
-    contact_discovery_cost = company_count * COST_CONTACT_DISCOVERY
-    total = web_search_cost + crawl_cost + llm_cost + contact_discovery_cost
-
-    return {
-        "web_search_cost": round(web_search_cost, 4),
-        "crawl_cost": round(crawl_cost, 4),
-        "llm_cost": round(llm_cost, 4),
-        "contact_discovery_cost": round(contact_discovery_cost, 4),
-        "total": round(total, 4),
-    }
-
-
-# ---------------------------------------------------------------------------
 # Duplicate Detection
 # ---------------------------------------------------------------------------
 
@@ -198,202 +193,8 @@ def check_duplicate_companies(conn, company_names: list[str], user_id: int | Non
 
 
 # ---------------------------------------------------------------------------
-# API Operations
+# Warm Intros
 # ---------------------------------------------------------------------------
-
-def research_company_web_search(company_name: str, website: str | None) -> str:
-    """Research a company's crypto interest via Perplexity sonar."""
-    if not PERPLEXITY_API_KEY:
-        return json.dumps({"error": "PERPLEXITY_API_KEY not configured"})
-
-    site_info = f"({website})" if website else "(no website)"
-    prompt = (
-        f"Research whether {company_name} {site_info} invests in or has interest in "
-        f"cryptocurrency, digital assets, blockchain, or related technologies. "
-        f"Look for: public statements, portfolio investments in crypto, participation "
-        f"in fund raises, team members with crypto backgrounds, conference presence, "
-        f"regulatory filings. Provide specific evidence with sources."
-    )
-
-    try:
-        resp = httpx.post(
-            "https://api.perplexity.ai/chat/completions",
-            headers={
-                "Authorization": f"Bearer {PERPLEXITY_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": "sonar",
-                "messages": [{"role": "user", "content": prompt}],
-            },
-            timeout=60,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        return data["choices"][0]["message"]["content"]
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code == 429:
-            raise  # Let caller handle rate limiting
-        logger.exception("Perplexity API error for %s", company_name)
-        return json.dumps({"error": f"API error: {e.response.status_code}"})
-    except Exception:
-        logger.exception("Perplexity research failed for %s", company_name)
-        return json.dumps({"error": "Research request failed"})
-
-
-def crawl_company_website(website: str, max_pages: int = 5) -> str:
-    """Crawl a company website for crypto-related content."""
-    if not website:
-        return ""
-
-    base = website.rstrip("/")
-    if not base.startswith("http"):
-        base = f"https://{base}"
-
-    paths = ["", "/about", "/team", "/investments", "/portfolio"][:max_pages]
-    texts = []
-
-    for path in paths:
-        url = f"{base}{path}"
-        try:
-            resp = httpx.get(
-                url,
-                timeout=10,
-                follow_redirects=True,
-                headers={"User-Agent": "Mozilla/5.0 (research bot)"},
-            )
-            if resp.status_code == 200:
-                text = re.sub(r"<script[^>]*>.*?</script>", "", resp.text, flags=re.DOTALL)
-                text = re.sub(r"<style[^>]*>.*?</style>", "", text, flags=re.DOTALL)
-                text = re.sub(r"<[^>]+>", " ", text)
-                text = re.sub(r"\s+", " ", text).strip()
-                if text:
-                    texts.append(f"[{path or '/'}] {text[:2000]}")
-        except Exception:
-            continue
-
-    return "\n\n".join(texts)[:10000]
-
-
-def classify_crypto_interest(
-    company_name: str, web_data: str, crawl_data: str
-) -> dict:
-    """Classify a company's crypto interest using Claude Haiku."""
-    if not ANTHROPIC_API_KEY:
-        return {
-            "crypto_score": 0,
-            "category": "no_signal",
-            "evidence_summary": "ANTHROPIC_API_KEY not configured",
-            "evidence": [],
-            "reasoning": "Cannot classify without API key",
-        }
-
-    research = f"Web search results:\n{web_data}" if web_data else ""
-    if crawl_data:
-        research += f"\n\nWebsite content:\n{crawl_data}"
-
-    prompt = (
-        f"Given the following research about {company_name}, score their crypto/digital asset "
-        f"investment interest from 0-100 and categorize them.\n\n"
-        f"Scoring guide:\n"
-        f"- 80-100: confirmed_investor (clear evidence of crypto investments)\n"
-        f"- 60-79: likely_interested (strong signals like crypto hires, conference presence)\n"
-        f"- 40-59: possible (some indirect signals)\n"
-        f"- 20-39: no_signal (no relevant evidence found)\n"
-        f"- 0-19: unlikely (traditional-only fund, anti-crypto statements)\n\n"
-        f"Research:\n{research}\n\n"
-        f"Return valid JSON only with these keys:\n"
-        f'{{"crypto_score": <0-100>, "category": "<category>", '
-        f'"evidence_summary": "<2-3 sentence summary>", '
-        f'"evidence": [{{"source": "<source>", "quote": "<quote>", "relevance": "<high/medium/low>"}}], '
-        f'"reasoning": "<your reasoning>"}}'
-    )
-
-    try:
-        resp = httpx.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model": CLASSIFIER_MODEL,
-                "max_tokens": 1000,
-                "messages": [{"role": "user", "content": prompt}],
-            },
-            timeout=60,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        text = data["content"][0]["text"]
-        return json.loads(text)
-    except (json.JSONDecodeError, KeyError):
-        logger.warning("Failed to parse classification for %s", company_name)
-        return {
-            "crypto_score": 20,
-            "category": "no_signal",
-            "evidence_summary": "Classification parsing failed",
-            "evidence": [],
-            "reasoning": "Could not parse LLM response",
-        }
-    except Exception:
-        logger.exception("Classification failed for %s", company_name)
-        return {
-            "crypto_score": 0,
-            "category": "no_signal",
-            "evidence_summary": "Classification request failed",
-            "evidence": [],
-            "reasoning": "API call failed",
-        }
-
-
-def discover_contacts_at_company(
-    company_name: str, website: str | None
-) -> list[dict]:
-    """Find decision-makers at a company via Perplexity."""
-    if not PERPLEXITY_API_KEY:
-        return []
-
-    site_info = f"({website})" if website else ""
-    prompt = (
-        f"Find key decision-makers at {company_name} {site_info} involved in investment "
-        f"decisions. Look for CIO, Head of Digital Assets, Head of Alternative Investments, "
-        f"Portfolio Manager, Partner, Managing Director. Provide: full name, title, email if "
-        f"public, LinkedIn URL if available. List up to 5. Return valid JSON array: "
-        f'[{{"name": "...", "title": "...", "email": null, "linkedin": null, "source": "..."}}]'
-    )
-
-    try:
-        resp = httpx.post(
-            "https://api.perplexity.ai/chat/completions",
-            headers={
-                "Authorization": f"Bearer {PERPLEXITY_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": "sonar",
-                "messages": [{"role": "user", "content": prompt}],
-            },
-            timeout=60,
-        )
-        resp.raise_for_status()
-        text = resp.json()["choices"][0]["message"]["content"]
-
-        match = re.search(r"\[.*\]", text, re.DOTALL)
-        if match:
-            contacts = json.loads(match.group())
-            return contacts[:5]
-        return []
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code == 429:
-            raise
-        logger.exception("Contact discovery API error for %s", company_name)
-        return []
-    except Exception:
-        logger.exception("Contact discovery failed for %s", company_name)
-        return []
-
 
 def find_warm_intros(conn, company_name: str, company_id: int | None) -> dict:
     """Find existing contacts at the same or related company."""
@@ -520,7 +321,7 @@ def import_single_contact(cur, contact: dict, company_id: int, user_id: int | No
     row = cur.fetchone()
     if row:
         return row["id"]
-    # Conflict — look up the existing contact so we can still enroll them
+    # Conflict -- look up the existing contact so we can still enroll them
     if email_norm:
         cur.execute("SELECT id FROM contacts WHERE email_normalized = %s", (email_norm,))
         existing = cur.fetchone()
@@ -547,7 +348,7 @@ def batch_import_and_enroll(
 ) -> dict:
     """Import discovered contacts, optionally create deals and enroll in campaign.
 
-    This completes the Research → CRM loop in one operation.
+    This completes the Research -> CRM loop in one operation.
     """
     from src.models.campaigns import enroll_contact, get_campaign_by_name
     from datetime import date
