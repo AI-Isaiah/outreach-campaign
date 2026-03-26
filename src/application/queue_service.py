@@ -5,19 +5,73 @@ Extracted from routes/queue.py to keep the route layer thin.
 
 from __future__ import annotations
 
+import logging
 from collections import Counter
 from typing import Optional
 
-from src.config import load_config
+from src.config import load_config_safe
 from src.models.campaigns import get_campaign_by_name
 from src.models.templates import get_template
 from src.services.adaptive_queue import get_adaptive_queue
 from src.services.contact_scorer import aum_to_tier
 from src.services.compliance import build_unsubscribe_url
-from src.services.email_sender import render_campaign_email, _render_inline_template
+from src.services.email_sender import render_campaign_email, send_campaign_email, _render_inline_template
 from src.services.priority_queue import get_daily_queue
 from src.services.template_engine import render_template
 from src.models.database import get_cursor
+
+logger = logging.getLogger(__name__)
+
+
+def send_email_batch(
+    conn,
+    rows: list[dict],
+    config: dict,
+    *,
+    user_id: Optional[int] = None,
+) -> dict:
+    """Send a batch of campaign emails and return result counters.
+
+    Each row must have contact_id, campaign_id, and template_id.
+    user_id is taken from the keyword arg if provided, otherwise
+    from each row's ``user_id`` key (multi-tenant cron path).
+
+    Returns:
+        {"sent": int, "failed": int, "errors": list[str]}
+    """
+    sent = 0
+    failed = 0
+    errors: list[str] = []
+
+    for row in rows:
+        uid = user_id if user_id is not None else row["user_id"]
+        try:
+            ok = send_campaign_email(
+                conn,
+                row["contact_id"],
+                row["campaign_id"],
+                row["template_id"],
+                config,
+                user_id=uid,
+            )
+            if ok:
+                sent += 1
+            else:
+                failed += 1
+                errors.append(
+                    f"contact {row['contact_id']}/campaign {row['campaign_id']}: send returned false"
+                )
+        except Exception as exc:
+            logger.error(
+                "send_email_batch failed for contact %s campaign %s: %s",
+                row["contact_id"], row["campaign_id"], exc, exc_info=True,
+            )
+            failed += 1
+            errors.append(
+                f"contact {row['contact_id']}/campaign {row['campaign_id']}: {exc}"
+            )
+
+    return {"sent": sent, "failed": failed, "errors": errors}
 
 
 def get_enriched_queue(
@@ -76,10 +130,7 @@ def get_enriched_queue(
 
     items = items[:limit]
 
-    try:
-        config = load_config()
-    except FileNotFoundError:
-        config = {}
+    config = load_config_safe()
 
     enriched = _batch_enrich(conn, items, campaign_id, config, user_id=user_id)
 

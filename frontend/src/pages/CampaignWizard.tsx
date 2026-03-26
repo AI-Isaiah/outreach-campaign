@@ -46,6 +46,7 @@ import { api } from "../api/client";
 import { contactsApi } from "../api/contacts";
 import type { Template } from "../types";
 import { useToast } from "../components/Toast";
+import { CHANNEL_LABELS } from "../constants";
 import { splitCsvLine } from "../utils/parseCsv";
 
 /*
@@ -628,6 +629,9 @@ function StepContacts({
 
 // ─── CRM Contact Picker ────────────────────────────────────────────
 
+type SortCol = "name" | "company" | "aum";
+type SortDir = "asc" | "desc";
+
 function CrmContactPicker({
   selectedIds,
   setSelectedIds,
@@ -638,6 +642,12 @@ function CrmContactPicker({
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(50);
+  const [sortBy, setSortBy] = useState<SortCol>("aum");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [hasLinkedin, setHasLinkedin] = useState(false);
+  const [hasEmail, setHasEmail] = useState(false);
+  const [onePerCompany, setOnePerCompany] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
   useEffect(() => {
@@ -650,14 +660,34 @@ function CrmContactPicker({
   }, [search]);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["contacts", "picker", debouncedSearch, page],
-    queryFn: () => contactsApi.listContacts(page, debouncedSearch || undefined),
+    queryKey: ["contacts", "picker", debouncedSearch, page, perPage, sortBy, sortDir, hasLinkedin, hasEmail],
+    queryFn: () =>
+      contactsApi.listContacts(page, debouncedSearch || undefined, {
+        per_page: perPage,
+        sort_by: sortBy,
+        sort_dir: sortDir,
+        has_linkedin: hasLinkedin || undefined,
+        has_email: hasEmail || undefined,
+      }),
     placeholderData: keepPreviousData,
   });
 
   const crmContacts = data?.contacts ?? [];
   const totalPages = data?.pages ?? 1;
   const total = data?.total ?? 0;
+
+  const toggleSort = (col: SortCol) => {
+    if (sortBy === col) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(col);
+      setSortDir(col === "name" || col === "company" ? "asc" : "desc");
+    }
+    setPage(1);
+  };
+
+  const sortArrow = (col: SortCol) =>
+    sortBy === col ? (sortDir === "asc" ? " \u25B2" : " \u25BC") : "";
 
   const toggleOne = (id: number) => {
     const next = new Set(selectedIds);
@@ -666,17 +696,39 @@ function CrmContactPicker({
     setSelectedIds(next);
   };
 
+  // When onePerCompany is on, "select all" picks only the top-AUM contact per company
+  const selectableOnPage = onePerCompany
+    ? (() => {
+        const seen = new Set<string>();
+        // crmContacts already sorted by AUM desc from API, so first per company is highest
+        return crmContacts.filter((c) => {
+          const key = c.company_name || `__no_company_${c.id}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+      })()
+    : crmContacts;
+
   const allOnPageSelected =
-    crmContacts.length > 0 && crmContacts.every((c) => selectedIds.has(c.id));
+    selectableOnPage.length > 0 && selectableOnPage.every((c) => selectedIds.has(c.id));
 
   const togglePage = () => {
     const next = new Set(selectedIds);
     if (allOnPageSelected) {
       crmContacts.forEach((c) => next.delete(c.id));
     } else {
-      crmContacts.forEach((c) => next.add(c.id));
+      selectableOnPage.forEach((c) => next.add(c.id));
     }
     setSelectedIds(next);
+  };
+
+  // Check if a contact's company already has someone selected (for visual indicator)
+  const companyHasOtherSelected = (contact: typeof crmContacts[0]) => {
+    if (!onePerCompany || !contact.company_name) return false;
+    return crmContacts.some(
+      (c) => c.id !== contact.id && c.company_name === contact.company_name && selectedIds.has(c.id)
+    );
   };
 
   const formatAum = (aum: number | null | undefined) => {
@@ -694,6 +746,40 @@ function CrmContactPicker({
         leftIcon={<Search size={16} />}
       />
 
+      {/* Filters */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-xs text-gray-500 mr-1">Filter:</span>
+        {[
+          { label: "Has LinkedIn", active: hasLinkedin, toggle: () => { setHasLinkedin(!hasLinkedin); setPage(1); } },
+          { label: "Has Email", active: hasEmail, toggle: () => { setHasEmail(!hasEmail); setPage(1); } },
+          { label: "One per company", active: onePerCompany, toggle: () => { setOnePerCompany(!onePerCompany); setPage(1); } },
+        ].map((f) => (
+          <button
+            key={f.label}
+            onClick={f.toggle}
+            className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+              f.active
+                ? "bg-gray-900 text-white border-gray-900"
+                : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
+            }`}
+          >
+            {f.active && "\u2713 "}{f.label}
+          </button>
+        ))}
+        <span className="ml-auto text-xs text-gray-400">
+          Show:
+          {[50, 100].map((n) => (
+            <button
+              key={n}
+              onClick={() => { setPerPage(n); setPage(1); }}
+              className={`ml-1.5 ${perPage === n ? "text-gray-900 font-medium" : "text-gray-400 hover:text-gray-600"}`}
+            >
+              {n}
+            </button>
+          ))}
+        </span>
+      </div>
+
       {isLoading && crmContacts.length === 0 ? (
         <div className="flex items-center justify-center py-12 text-gray-400">
           <Loader2 size={20} className="animate-spin" />
@@ -706,7 +792,7 @@ function CrmContactPicker({
         </div>
       ) : (
         <>
-          <div className="border border-gray-200 rounded-lg overflow-hidden max-h-72 overflow-y-auto">
+          <div className="border border-gray-200 rounded-lg overflow-hidden max-h-96 overflow-y-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 sticky top-0">
                 <tr>
@@ -719,19 +805,38 @@ function CrmContactPicker({
                       aria-label="Select all on this page"
                     />
                   </th>
-                  <th className="text-left px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide">Name</th>
-                  <th className="text-left px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide">Company</th>
-                  <th className="text-right px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide">AUM</th>
+                  <th
+                    onClick={() => toggleSort("name")}
+                    className="text-left px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700"
+                  >
+                    Name{sortArrow("name")}
+                  </th>
+                  <th
+                    onClick={() => toggleSort("company")}
+                    className="text-left px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700"
+                  >
+                    Company{sortArrow("company")}
+                  </th>
+                  <th
+                    onClick={() => toggleSort("aum")}
+                    className="text-right px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700"
+                  >
+                    AUM{sortArrow("aum")}
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {crmContacts.map((c) => {
                   const checked = selectedIds.has(c.id);
+                  const companyConflict = !checked && companyHasOtherSelected(c);
                   return (
                     <tr
                       key={c.id}
-                      className={`hover:bg-gray-50 cursor-pointer transition-colors ${checked ? "bg-blue-50" : ""}`}
+                      className={`hover:bg-gray-50 cursor-pointer transition-colors ${
+                        checked ? "bg-blue-50" : companyConflict ? "opacity-40" : ""
+                      }`}
                       onClick={() => toggleOne(c.id)}
+                      title={companyConflict ? `Another contact at ${c.company_name} is already selected` : undefined}
                     >
                       <td className="px-3 py-2">
                         <input
@@ -992,11 +1097,11 @@ const TOUCHPOINT_OPTIONS = [
   { value: 7, label: "Thorough", desc: "7 touchpoints" },
 ];
 
-const CHANNEL_OPTIONS = [
-  { value: "email", label: "Email" },
-  { value: "linkedin_connect", label: "LinkedIn Connect" },
-  { value: "linkedin_message", label: "LinkedIn Message" },
-] as const;
+const WIZARD_CHANNELS = ["email", "linkedin_connect", "linkedin_message"] as const;
+const CHANNEL_OPTIONS = WIZARD_CHANNELS.map((ch) => ({
+  value: ch,
+  label: CHANNEL_LABELS[ch] ?? ch,
+}));
 
 function channelBadgeClass(ch: string): string {
   return ch === "email" ? "bg-blue-100 text-blue-700" : "bg-indigo-100 text-indigo-700";
@@ -1062,18 +1167,11 @@ function SortableStep({
         onChange={(e) => onChangeChannel(e.target.value)}
         className={`text-xs font-medium px-2 py-1 rounded border-0 cursor-pointer ${channelBadgeClass(step.channel)}`}
       >
-        {CHANNEL_OPTIONS.map((opt) => {
-          // Disable linkedin_connect if already used by another step
-          const disabled =
-            opt.value === "linkedin_connect" &&
-            hasLinkedInConnect &&
-            step.channel !== "linkedin_connect";
-          return (
-            <option key={opt.value} value={opt.value} disabled={disabled}>
-              {opt.label}
-            </option>
-          );
-        })}
+        {CHANNEL_OPTIONS.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
       </select>
 
       {/* Step number */}
@@ -1131,9 +1229,24 @@ function StepSequence({
   };
 
   const handleChangeChannel = (index: number, channel: string) => {
-    const updated = steps.map((s, i) =>
-      i === index ? { ...s, channel } : s,
-    );
+    let updated = [...steps];
+
+    if (channel === "linkedin_connect") {
+      const existingIdx = updated.findIndex(
+        (s, i) => i !== index && s.channel === "linkedin_connect"
+      );
+      if (existingIdx !== -1) {
+        // Swap the existing linkedin_connect:
+        // If new position is BEFORE old → old becomes linkedin_message (connect already happened)
+        // If new position is AFTER old → old becomes email (connect hasn't happened yet at that point)
+        updated[existingIdx] = {
+          ...updated[existingIdx],
+          channel: index < existingIdx ? "linkedin_message" : "email",
+        };
+      }
+    }
+
+    updated[index] = { ...updated[index], channel };
     onStepsChange(recalcSteps(updated));
   };
 
@@ -1259,6 +1372,19 @@ function StepSequence({
 
 /** Recalculate step_order (1-indexed) and delay_days after reorder/edit. */
 function recalcSteps(steps: GeneratedStep[]): GeneratedStep[] {
+  // Ensure the first LinkedIn step is always linkedin_connect
+  const hasConnect = steps.some((s) => s.channel === "linkedin_connect");
+  if (!hasConnect) {
+    const firstLinkedInIdx = steps.findIndex((s) =>
+      s.channel === "linkedin_message" || s.channel === "linkedin_engage" || s.channel === "linkedin_insight"
+    );
+    if (firstLinkedInIdx !== -1) {
+      steps = steps.map((s, i) =>
+        i === firstLinkedInIdx ? { ...s, channel: "linkedin_connect" } : s
+      );
+    }
+  }
+
   return steps.map((s, i) => {
     let delay: number;
     if (i === 0) {
@@ -1319,6 +1445,8 @@ function StepMessages({
 
   const [productDescription, setProductDescription] = useState("");
   const [showSmartInput, setShowSmartInput] = useState(false);
+  const [descriptionPrompt, setDescriptionPrompt] = useState("");
+  const descriptionRef = useRef<HTMLTextAreaElement>(null);
   const [improveStep, setImproveStep] = useState<number | null>(null);
   const [improveInstruction, setImproveInstruction] = useState("");
 
@@ -1405,9 +1533,15 @@ function StepMessages({
           <label className="block text-sm font-medium text-gray-700">
             Describe what you're selling / your fund thesis
           </label>
+          {descriptionPrompt && (
+            <p className="text-sm text-purple-700 bg-purple-100 rounded-md px-3 py-2">
+              {descriptionPrompt}
+            </p>
+          )}
           <textarea
+            ref={descriptionRef}
             value={productDescription}
-            onChange={(e) => setProductDescription(e.target.value)}
+            onChange={(e) => { setProductDescription(e.target.value); setDescriptionPrompt(""); }}
             placeholder="e.g., We run a $200M crypto-native fund focused on DePIN infrastructure. Looking to connect with allocators exploring digital asset exposure..."
             className="w-full h-20 p-3 border border-gray-200 rounded-md text-sm resize-y focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
           />
@@ -1545,8 +1679,8 @@ function StepMessages({
                         const tpl = templates.find((t) => t.id === stepTemplates[s.step_order]);
                         if (!tpl) return null;
                         return (
-                          <div className="bg-gray-50 rounded-md p-3 text-sm text-gray-600 max-h-32 overflow-y-auto mt-2 whitespace-pre-wrap">
-                            {tpl.subject && <div className="font-medium mb-1">{tpl.subject}</div>}
+                          <div className="bg-gray-50 rounded-md p-3 text-sm text-gray-600 mt-2 whitespace-pre-wrap border border-gray-100 max-h-64 overflow-y-auto">
+                            {tpl.subject && <div className="font-medium text-gray-800 mb-2 pb-2 border-b border-gray-200">Subject: {tpl.subject}</div>}
                             {tpl.body_template}
                           </div>
                         );
@@ -1650,33 +1784,104 @@ function StepMessages({
                   )}
 
                   {mode === "ai" && (
-                    <div className="space-y-2">
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">
-                          Reference template (optional)
-                        </label>
-                        <select
-                          value={refTemplates[s.step_order] ?? ""}
-                          onChange={(e) =>
-                            setRefTemplates({
-                              ...refTemplates,
-                              [s.step_order]: e.target.value ? Number(e.target.value) : null,
-                            })
-                          }
-                          className="bg-white border border-gray-200 rounded-md px-3 py-2 text-sm w-full"
-                        >
-                          <option value="">None</option>
-                          {available.map((t) => (
-                            <option key={t.id} value={t.id}>
-                              {t.name}
-                              {t.variant_label ? ` (${t.variant_label})` : ""}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-1">
-                        AI generates a personalized message using deep research data. You'll review and edit each draft before sending.
-                      </p>
+                    <div className="space-y-3">
+                      {manualBodies[s.step_order] ? (
+                        <>
+                          <div className="bg-purple-50 rounded-md p-3 text-sm text-gray-700 whitespace-pre-wrap border border-purple-100">
+                            {isEmail && manualSubjects[s.step_order] && (
+                              <div className="font-medium text-gray-800 mb-2 pb-2 border-b border-purple-200">
+                                Subject: {manualSubjects[s.step_order]}
+                              </div>
+                            )}
+                            {manualBodies[s.step_order]}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setMode(s.step_order, "manual")}
+                              className="text-xs text-gray-500 hover:text-gray-700"
+                            >
+                              Edit manually
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setManualBodies({ ...manualBodies, [s.step_order]: "" });
+                                if (isEmail) setManualSubjects({ ...manualSubjects, [s.step_order]: "" });
+                              }}
+                              className="text-xs text-red-500 hover:text-red-700"
+                            >
+                              Regenerate
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-xs text-gray-500">
+                            AI generates a personalized message for Step {s.step_order} ({isEmail ? "email" : "LinkedIn"}).
+                            {s.step_order > 1 && ` Context: the contact has already seen Steps 1–${s.step_order - 1}.`}
+                          </p>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              onClick={() => {
+                                if (!productDescription.trim()) {
+                                  setShowSmartInput(true);
+                                  setDescriptionPrompt("Please describe what you\u2019re selling, so AI can prepare your message drafts.");
+                                  setTimeout(() => descriptionRef.current?.focus(), 100);
+                                  return;
+                                }
+                                sequenceMutation.mutate();
+                              }}
+                              loading={sequenceMutation.isPending}
+                              className="!bg-purple-600 hover:!bg-purple-700"
+                            >
+                              <Sparkles size={14} className="mr-1" />
+                              Generate Generic
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => {
+                                if (!productDescription.trim()) {
+                                  setShowSmartInput(true);
+                                  setDescriptionPrompt("Please describe what you\u2019re selling, so AI can prepare research-based drafts.");
+                                  setTimeout(() => descriptionRef.current?.focus(), 100);
+                                  return;
+                                }
+                                toast("Research-based generation uses deep research data per company. Set up in Settings \u2192 API Keys if not configured.", "info");
+                                sequenceMutation.mutate();
+                              }}
+                              loading={sequenceMutation.isPending}
+                            >
+                              Based on Research
+                            </Button>
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">
+                              Reference template (optional)
+                            </label>
+                            <select
+                              value={refTemplates[s.step_order] ?? ""}
+                              onChange={(e) =>
+                                setRefTemplates({
+                                  ...refTemplates,
+                                  [s.step_order]: e.target.value ? Number(e.target.value) : null,
+                                })
+                              }
+                              className="bg-white border border-gray-200 rounded-md px-3 py-2 text-sm w-full"
+                            >
+                              <option value="">None</option>
+                              {available.map((t) => (
+                                <option key={t.id} value={t.id}>
+                                  {t.name}
+                                  {t.variant_label ? ` (${t.variant_label})` : ""}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </>
+                      )}
                     </div>
                   )}
                 </>

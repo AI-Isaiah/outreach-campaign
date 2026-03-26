@@ -291,8 +291,8 @@ SCHEDULED_SEND_BATCH_SIZE = 10
 @cron_router.post("/cron/send-scheduled")
 def cron_send_scheduled(conn=Depends(get_db), _=Depends(verify_cron_secret)):
     """Send emails whose scheduled_for time has arrived (called by Vercel cron)."""
-    from src.config import load_config
-    from src.services.email_sender import send_campaign_email
+    from src.application.queue_service import send_email_batch
+    from src.config import load_config_safe
 
     with get_cursor(conn) as cur:
         cur.execute(
@@ -317,40 +317,5 @@ def cron_send_scheduled(conn=Depends(get_db), _=Depends(verify_cron_secret)):
     if not rows:
         return {"sent": 0, "failed": 0, "errors": []}
 
-    try:
-        config = load_config()
-    except FileNotFoundError:
-        config = {}
-
-    sent = 0
-    failed = 0
-    errors: list[str] = []
-
-    for row in rows:
-        try:
-            ok = send_campaign_email(
-                conn,
-                row["contact_id"],
-                row["campaign_id"],
-                row["template_id"],
-                config,
-                user_id=row["user_id"],
-            )
-            if ok:
-                sent += 1
-            else:
-                failed += 1
-                errors.append(
-                    f"contact {row['contact_id']}/campaign {row['campaign_id']}: send returned false"
-                )
-        except Exception as exc:
-            logger.exception(
-                "cron_send_scheduled failed for contact %s campaign %s",
-                row["contact_id"], row["campaign_id"],
-            )
-            failed += 1
-            errors.append(
-                f"contact {row['contact_id']}/campaign {row['campaign_id']}: {exc}"
-            )
-
-    return {"sent": sent, "failed": failed, "errors": errors}
+    config = load_config_safe()
+    return send_email_batch(conn, rows, config)

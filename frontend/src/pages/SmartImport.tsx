@@ -58,6 +58,8 @@ const STEPS: { key: Step; label: string }[] = [
   { key: "preview", label: "Preview & Import" },
 ];
 
+const CAMPAIGN_STEPS = ["Sequence", "Messages", "Review"];
+
 const PREVIEW_COLUMNS = [
   { key: "company_name", label: "Company" },
   { key: "full_name", label: "Name" },
@@ -135,14 +137,6 @@ function PreviewTableRow({
           row.is_duplicate ? "bg-yellow-50/50" : ""
         }`}
       >
-        <td className="px-3 py-3">
-          <input
-            type="checkbox"
-            checked={isSelected}
-            onChange={onToggleSelect}
-            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-          />
-        </td>
         <td className="px-3 py-3 text-center">
           <input
             type="checkbox"
@@ -222,7 +216,7 @@ function PreviewTableRow({
         if (!hasDiffs) return null;
         return (
           <tr className="bg-gray-50/80">
-            <td colSpan={3} />
+            <td colSpan={2} />
             <td colSpan={columns.length} className="px-4 py-1 pb-2">
               <a
                 href={row.linkedin_url}
@@ -382,6 +376,15 @@ export default function SmartImport() {
       ...prev,
       [index]: { action, existing_contact_id: existingContactId },
     }));
+    // Auto-advance: collapse current row, expand next match
+    const matchRows = paginatedPreviewRows.filter(
+      (r) => r.existing_contact_id && r._index !== index && !rowDecisions[r._index]
+    );
+    if (matchRows.length > 0) {
+      setExpandedDuplicate(matchRows[0]._index);
+    } else {
+      setExpandedDuplicate(null);
+    }
   };
 
   // Mutations
@@ -638,31 +641,46 @@ export default function SmartImport() {
         </p>
       </div>
 
-      {/* Step indicator */}
-      <div className="flex items-center gap-4 text-sm">
-        {STEPS.map((s, i) => (
-          <div key={s.key} className="flex items-center gap-2">
-            <span
-              className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${
-                step === s.key
-                  ? "bg-gray-900 text-white"
-                  : i < stepIndex
-                    ? "bg-green-600 text-white"
-                    : "bg-gray-200 text-gray-500"
-              }`}
-            >
-              {i < stepIndex ? "\u2713" : i + 1}
+      {/* Step indicator — import + campaign flow */}
+      <div className="flex items-center gap-3 text-sm flex-wrap">
+        {STEPS.map((s, i) => {
+          const isCompleted = i < stepIndex;
+          const isCurrent = step === s.key;
+          const canNavigate = isCompleted && !importResult;
+          return (
+            <div key={s.key} className="flex items-center gap-2">
+              <button
+                disabled={!canNavigate}
+                onClick={() => canNavigate && setStep(s.key)}
+                className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium transition-colors ${
+                  isCurrent
+                    ? "bg-gray-900 text-white"
+                    : isCompleted
+                      ? "bg-green-600 text-white hover:bg-green-700 cursor-pointer"
+                      : "bg-gray-200 text-gray-500"
+                } ${canNavigate ? "" : "cursor-default"}`}
+              >
+                {isCompleted ? "\u2713" : i + 1}
+              </button>
+              <span
+                className={`${
+                  isCurrent ? "font-medium text-gray-900" : "text-gray-500"
+                } ${canNavigate ? "cursor-pointer hover:text-gray-700" : ""}`}
+                onClick={() => canNavigate && setStep(s.key)}
+              >
+                {s.label}
+              </span>
+              <span className="text-gray-300 mx-1">/</span>
+            </div>
+          );
+        })}
+        {CAMPAIGN_STEPS.map((label, i) => (
+          <div key={label} className="flex items-center gap-2">
+            <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium bg-gray-100 text-gray-400">
+              {STEPS.length + i + 1}
             </span>
-            <span
-              className={
-                step === s.key
-                  ? "font-medium text-gray-900"
-                  : "text-gray-500"
-              }
-            >
-              {s.label}
-            </span>
-            {i < STEPS.length - 1 && (
+            <span className="text-gray-400">{label}</span>
+            {i < CAMPAIGN_STEPS.length - 1 && (
               <span className="text-gray-300 mx-1">/</span>
             )}
           </div>
@@ -1104,33 +1122,6 @@ export default function SmartImport() {
               })}
             </div>
 
-            {/* Bulk operations */}
-            {selectedIndices.size > 0 && (
-              <div className="flex items-center gap-2 text-sm">
-                <span className="text-gray-500">
-                  {selectedIndices.size} selected
-                </span>
-                <button
-                  onClick={bulkExclude}
-                  className="px-2.5 py-1.5 bg-red-50 text-red-700 border border-red-200 rounded-md hover:bg-red-100 transition-colors"
-                >
-                  Exclude
-                </button>
-                <button
-                  onClick={bulkInclude}
-                  className="px-2.5 py-1.5 bg-green-50 text-green-700 border border-green-200 rounded-md hover:bg-green-100 transition-colors"
-                >
-                  Include
-                </button>
-                <button
-                  onClick={() => setSelectedIndices(new Set())}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X size={14} />
-                </button>
-              </div>
-            )}
-
             {/* Bulk match actions */}
             {(effectiveCounts.matches + effectiveCounts.toMerge + effectiveCounts.toEnroll) > 0 && (
               <div className="flex items-center gap-2 text-sm">
@@ -1172,17 +1163,6 @@ export default function SmartImport() {
             <table className="w-full">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="px-3 py-3 w-10">
-                    <input
-                      type="checkbox"
-                      checked={
-                        paginatedPreviewRows.length > 0 &&
-                        selectedIndices.size === paginatedPreviewRows.length
-                      }
-                      onChange={toggleSelectAll}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
-                  </th>
                   <th className="px-3 py-3 w-10 text-xs font-medium text-gray-500 uppercase tracking-wide">
                     Import
                   </th>
@@ -1236,7 +1216,7 @@ export default function SmartImport() {
                 {paginatedPreviewRows.length === 0 && (
                   <tr>
                     <td
-                      colSpan={PREVIEW_COLUMNS.length + 3}
+                      colSpan={PREVIEW_COLUMNS.length + 2}
                       className="px-5 py-8 text-center text-sm text-gray-400"
                     >
                       No contacts match your filters
@@ -1362,17 +1342,26 @@ export default function SmartImport() {
           <div className="flex gap-3 pt-2">
             <button
               onClick={() => {
-                const totalImported = importResult.contacts_created + (importResult.contacts_merged || 0);
-                navigate("/campaigns/wizard", {
+                const allContactIds = importResult.contact_ids ?? [];
+                const totalForCampaign = importResult.contacts_created
+                  + (importResult.contacts_merged || 0)
+                  + (importResult.contacts_enrolled || 0)
+                  + (importResult.duplicates_skipped || 0);
+                navigate("/campaigns/new", {
                   state: {
-                    importedContactIds: importResult.contact_ids ?? [],
-                    importedCount: totalImported,
+                    importedContactIds: allContactIds,
+                    importedCount: totalForCampaign,
                   },
                 });
               }}
               className="px-6 py-2.5 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors"
             >
-              Create Campaign with {importResult.contacts_created + (importResult.contacts_merged || 0)} Contacts
+              Create Campaign with All {
+                importResult.contacts_created
+                + (importResult.contacts_merged || 0)
+                + (importResult.contacts_enrolled || 0)
+                + (importResult.duplicates_skipped || 0)
+              } Contacts
             </button>
             <button
               onClick={() => navigate("/contacts")}
@@ -1385,6 +1374,12 @@ export default function SmartImport() {
               className="px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
             >
               Import More
+            </button>
+            <button
+              onClick={() => navigate(-1)}
+              className="px-4 py-2.5 text-gray-500 text-sm font-medium hover:text-gray-700 transition-colors"
+            >
+              &larr; Back
             </button>
           </div>
         </div>

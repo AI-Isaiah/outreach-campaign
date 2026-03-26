@@ -2,9 +2,28 @@ import type { ContactListResponse, ContactDetailResponse, ContactEvent, Conversa
 import { request } from "./request";
 
 export const contactsApi = {
-  listContacts: (page = 1, search?: string) => {
-    const params = new URLSearchParams({ page: String(page), per_page: "50" });
+  listContacts: (
+    page = 1,
+    search?: string,
+    options?: {
+      per_page?: number;
+      sort_by?: "name" | "company" | "aum";
+      sort_dir?: "asc" | "desc";
+      has_linkedin?: boolean;
+      has_email?: boolean;
+      one_per_company?: boolean;
+    },
+  ) => {
+    const params = new URLSearchParams({
+      page: String(page),
+      per_page: String(options?.per_page ?? 50),
+    });
     if (search) params.set("search", search);
+    if (options?.sort_by) params.set("sort_by", options.sort_by);
+    if (options?.sort_dir) params.set("sort_dir", options.sort_dir);
+    if (options?.has_linkedin) params.set("has_linkedin", "true");
+    if (options?.has_email) params.set("has_email", "true");
+    if (options?.one_per_company) params.set("one_per_company", "true");
     return request<ContactListResponse>(`/contacts?${params}`);
   },
   getContact: (id: number) => request<ContactDetailResponse>(`/contacts/${id}`),

@@ -23,7 +23,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from typing import Optional
 
-from src.config import load_config
+from src.config import load_config_safe
 from src.models.database import get_cursor, get_pool_connection, put_pool_connection
 from src.web.dependencies import get_current_user, get_db
 
@@ -41,11 +41,7 @@ router = APIRouter(tags=["smart-import"])
 
 def _get_gdpr_countries() -> list[str]:
     """Load GDPR country list from config, returning empty list on missing config."""
-    try:
-        config = load_config()
-        return config.get("gdpr_countries", [])
-    except FileNotFoundError:
-        return []
+    return load_config_safe().get("gdpr_countries", [])
 
 
 def _parse_json(val: Any) -> Any:

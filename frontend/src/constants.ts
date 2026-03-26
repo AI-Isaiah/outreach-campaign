@@ -49,6 +49,13 @@ export const DEAL_STAGES = [
   "lost",
 ] as const;
 
+/** Schedule preset options for the queue send scheduler */
+export const SCHEDULE_PRESETS = [
+  { value: "now", label: "Send now" },
+  { value: "tomorrow_9am", label: "Tomorrow 9am" },
+  { value: "spread_3_days", label: "Spread: 5/day for 3 days" },
+] as const;
+
 /** Channel labels for display */
 export const CHANNEL_LABELS: Record<string, string> = {
   email: "Email",
