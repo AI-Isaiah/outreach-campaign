@@ -14,12 +14,13 @@ from src.services.linkedin_acceptance_scanner import scan_linkedin_acceptances
 from src.services.reply_detector import scan_gmail_for_replies
 from src.services.state_machine import InvalidTransition, transition_contact
 from src.services.token_encryption import decrypt_token
-from src.web.dependencies import get_current_user, get_db
+from src.web.dependencies import get_current_user, get_db, verify_cron_secret
 from src.models.database import get_cursor
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["replies"])
+cron_router = APIRouter(tags=["cron"])
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
@@ -80,7 +81,19 @@ def list_pending_replies(
                ORDER BY pr.detected_at DESC""",
             (user["id"],),
         )
-        return [dict(r) for r in cur.fetchall()]
+        replies = [dict(r) for r in cur.fetchall()]
+
+        cur.execute(
+            "SELECT last_reply_scan_at FROM users WHERE id = %s",
+            (user["id"],),
+        )
+        user_row = cur.fetchone()
+        last_scan = user_row["last_reply_scan_at"] if user_row else None
+
+    return {
+        "replies": replies,
+        "last_auto_scan_at": last_scan.isoformat() if last_scan else None,
+    }
 
 
 @router.post("/replies/{reply_id}/confirm")
@@ -200,3 +213,73 @@ def trigger_linkedin_scan(
         return {"status": "ok", **result}
     except RuntimeError as e:
         raise HTTPException(400, str(e))
+
+
+CRON_BATCH_SIZE = 10
+
+
+@cron_router.post("/cron/scan-replies")
+def cron_scan_replies(conn=Depends(get_db), _=Depends(verify_cron_secret)):
+    """Batch-scan replies for all Gmail-connected users (called by Vercel cron)."""
+    errors: list[str] = []
+
+    with get_cursor(conn) as cur:
+        cur.execute("SELECT COALESCE(MAX(last_scan_cursor), 0) AS cursor FROM users")
+        cursor_row = cur.fetchone()
+        cursor_pos = cursor_row["cursor"] if cursor_row else 0
+
+        cur.execute(
+            """SELECT id FROM users
+               WHERE gmail_connected = true AND gmail_access_token IS NOT NULL
+                     AND id > %s
+               ORDER BY id LIMIT %s""",
+            (cursor_pos, CRON_BATCH_SIZE),
+        )
+        batch = [r["id"] for r in cur.fetchall()]
+
+        cur.execute(
+            """SELECT COUNT(*) AS cnt FROM users
+               WHERE gmail_connected = true AND gmail_access_token IS NOT NULL
+                     AND id > %s""",
+            (cursor_pos,),
+        )
+        total_remaining = cur.fetchone()["cnt"]
+
+    processed = 0
+    for user_id in batch:
+        try:
+            drafter = _build_drafter_from_db(conn, user_id)
+            if drafter is None:
+                logger.info("Skipping user %d — drafter unavailable", user_id)
+                continue
+
+            scan_gmail_for_replies(conn, drafter=drafter, user_id=user_id)
+
+            with get_cursor(conn) as cur:
+                cur.execute(
+                    "UPDATE users SET last_reply_scan_at = NOW() WHERE id = %s",
+                    (user_id,),
+                )
+                conn.commit()
+            processed += 1
+        except Exception as exc:
+            logger.exception("Cron scan failed for user %d", user_id)
+            errors.append(f"user {user_id}: {exc}")
+
+    new_cursor = batch[-1] if batch else 0
+    remaining = total_remaining - len(batch)
+    if remaining <= 0:
+        new_cursor = 0
+
+    with get_cursor(conn) as cur:
+        cur.execute(
+            "UPDATE users SET last_scan_cursor = %s WHERE id = (SELECT MIN(id) FROM users)",
+            (new_cursor,),
+        )
+        conn.commit()
+
+    return {
+        "processed": processed,
+        "remaining": max(remaining, 0),
+        "errors": errors,
+    }

@@ -156,7 +156,9 @@ def test_deactivate_template(client, db_conn):
 def test_list_pending_replies_empty(client):
     resp = client.get("/api/replies/pending")
     assert resp.status_code == 200
-    assert resp.json() == []
+    data = resp.json()
+    assert data["replies"] == []
+    assert "last_auto_scan_at" in data
 
 
 def test_confirm_reply(client, db_conn):

@@ -6,7 +6,7 @@ import os
 from typing import Generator
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from src.config import SUPABASE_DB_URL, load_config
@@ -62,6 +62,16 @@ def get_current_user(
 
 # Backward-compat alias — app.py uses this name for _auth_deps
 require_auth = get_current_user
+
+
+def verify_cron_secret(request: Request):
+    """Verify CRON_SECRET header for automated cron endpoints."""
+    expected = os.getenv("CRON_SECRET")
+    if not expected:
+        raise HTTPException(503, "Cron not configured")
+    auth = request.headers.get("Authorization", "")
+    if auth != f"Bearer {expected}":
+        raise HTTPException(401, "Invalid cron secret")
 
 
 def get_db() -> Generator:

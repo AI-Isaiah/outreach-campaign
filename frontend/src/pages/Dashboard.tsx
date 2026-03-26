@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { Inbox, ListTodo, Users, FileText, AlertTriangle } from "lucide-react";
 import { api } from "../api/client";
 import { getEmailConfig } from "../api/settings";
-import type { StatsResponse, Campaign, PendingReply, ReplyScanResponse, LinkedInScanResponse } from "../types";
+import type { StatsResponse, Campaign, PendingRepliesResponse, ReplyScanResponse, LinkedInScanResponse } from "../types";
 import MetricCard from "../components/MetricCard";
 import PendingReplyCard from "../components/PendingReplyCard";
 import { SkeletonMetricCard, SkeletonCard } from "../components/Skeleton";
@@ -21,7 +21,7 @@ export default function Dashboard() {
     queryKey: ["campaigns"],
     queryFn: api.listCampaigns,
   });
-  const pendingReplies = useQuery<PendingReply[]>({
+  const pendingReplies = useQuery<PendingRepliesResponse>({
     queryKey: ["pending-replies"],
     queryFn: api.listPendingReplies,
   });
@@ -46,6 +46,22 @@ export default function Dashboard() {
 
   // F006: Reset scan mutations on unmount to prevent stale data on re-navigation
   useEffect(() => () => { scanReplies.reset(); scanLinkedIn.reset(); }, []);
+
+  const replies = pendingReplies.data?.replies ?? [];
+  const lastAutoScanAt = pendingReplies.data?.last_auto_scan_at ?? null;
+
+  function formatAutoScanAge(isoDate: string | null): { text: string; color: string } {
+    if (!isoDate) return { text: "Auto-scan not configured", color: "text-gray-400" };
+    const diffMs = Date.now() - new Date(isoDate).getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 60) {
+      return { text: `Auto-scanned ${diffMin} min ago`, color: "text-green-600" };
+    }
+    const diffHrs = Math.floor(diffMin / 60);
+    return { text: `Last scan: ${diffHrs}h ago`, color: "text-amber-600" };
+  }
+
+  const autoScanBadge = formatAutoScanAge(lastAutoScanAt);
 
   const showDisconnectedBanner =
     emailConfig.data &&
@@ -141,20 +157,27 @@ export default function Dashboard() {
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-gray-900">
             Pending Replies
-            {pendingReplies.data && pendingReplies.data.length > 0 && (
+            {replies.length > 0 && (
               <span className="ml-2 text-sm font-normal text-gray-500">
-                ({pendingReplies.data.length})
+                ({replies.length})
               </span>
             )}
           </h2>
-          <Button
-            variant="accent"
-            size="sm"
-            onClick={() => scanReplies.mutate()}
-            loading={scanReplies.isPending}
-          >
-            Scan for Replies
-          </Button>
+          <div className="flex items-center gap-3">
+            {pendingReplies.data && (
+              <span className={`text-xs ${autoScanBadge.color}`}>
+                {autoScanBadge.text}
+              </span>
+            )}
+            <Button
+              variant="accent"
+              size="sm"
+              onClick={() => scanReplies.mutate()}
+              loading={scanReplies.isPending}
+            >
+              Scan for Replies
+            </Button>
+          </div>
         </div>
 
         {scanReplies.isError && (
@@ -182,20 +205,20 @@ export default function Dashboard() {
           />
         )}
 
-        {pendingReplies.data && pendingReplies.data.length > 0 && (
+        {pendingReplies.data && replies.length > 0 && (
           <div className="space-y-3">
-            {pendingReplies.data.slice(0, 5).map((reply) => (
+            {replies.slice(0, 5).map((reply) => (
               <PendingReplyCard key={reply.id} reply={reply} />
             ))}
-            {pendingReplies.data.length > 5 && (
+            {replies.length > 5 && (
               <p className="text-sm text-gray-400 text-center">
-                +{pendingReplies.data.length - 5} more pending replies
+                +{replies.length - 5} more pending replies
               </p>
             )}
           </div>
         )}
 
-        {pendingReplies.data && pendingReplies.data.length === 0 && (
+        {pendingReplies.data && replies.length === 0 && (
           <EmptyState
             icon={<Inbox size={40} />}
             title="All caught up"

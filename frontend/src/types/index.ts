@@ -418,6 +418,11 @@ export interface ReplyScanResponse {
   new_replies: number;
 }
 
+export interface PendingRepliesResponse {
+  replies: PendingReply[];
+  last_auto_scan_at: string | null;
+}
+
 export interface ImportResponse {
   message: string;
   deduped: number;
