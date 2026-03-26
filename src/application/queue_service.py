@@ -133,9 +133,9 @@ def _batch_enrich(conn, items: list[dict], campaign_id: int, config: dict, *, us
         with get_cursor(conn) as cur:
             cur.execute(
                 """SELECT contact_id, gmail_draft_id, status FROM gmail_drafts
-                   WHERE contact_id = ANY(%s) AND campaign_id = %s AND user_id = %s
+                   WHERE contact_id = ANY(%s) AND campaign_id = %s
                    ORDER BY contact_id, id DESC""",
-                (contact_ids, campaign_id, user_id),
+                (contact_ids, campaign_id),
             )
             for row in cur.fetchall():
                 cid = row["contact_id"]
