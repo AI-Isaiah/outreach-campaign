@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
 from typing import Optional
 
 import psycopg2
-import psycopg2.extras
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from src.models.campaigns import get_campaign_by_name
+from src.application.campaign_service import launch_campaign as _launch_campaign
+from src.models.campaigns import delete_campaign, get_campaign_by_name, update_campaign_status
 from src.services.metrics import (
     compute_health_score,
     get_campaign_metrics,
@@ -45,6 +44,10 @@ class LaunchCampaignRequest(BaseModel):
     status: str = Field(default="active")
 
 
+class UpdateCampaignStatusRequest(BaseModel):
+    status: str = Field(pattern="^(active|paused|archived)$")
+
+
 def _row_to_dict(row) -> dict:
     """Convert a database row to a plain dict."""
     return dict(row) if row else {}
@@ -61,90 +64,58 @@ def launch_campaign(
     user=Depends(get_current_user),
 ):
     """Create a campaign with sequence steps and enroll contacts in one transaction."""
-    user_id = user["id"]
-
-    if body.status not in ("active", "draft"):
-        raise HTTPException(400, "status must be 'active' or 'draft'")
-
-    if not body.steps:
-        raise HTTPException(400, "At least one sequence step is required")
-
-    # Verify all contacts belong to this user before starting the transaction
-    if body.contact_ids:
-        with get_cursor(conn) as cur:
-            cur.execute(
-                "SELECT id FROM contacts WHERE id = ANY(%s) AND user_id = %s",
-                (body.contact_ids, user_id),
-            )
-            owned_ids = {row["id"] for row in cur.fetchall()}
-            missing = set(body.contact_ids) - owned_ids
-            if missing:
-                raise HTTPException(
-                    400,
-                    f"Contacts not found or not owned by user: {sorted(missing)}",
-                )
-
     try:
-        with get_cursor(conn) as cur:
-            # 1. Create the campaign
-            cur.execute(
-                "INSERT INTO campaigns (name, description, status, user_id) "
-                "VALUES (%s, %s, %s, %s) RETURNING id",
-                (body.name, body.description, body.status, user_id),
-            )
-            campaign_id = cur.fetchone()["id"]
-
-            # 2. Insert sequence steps
-            for step in body.steps:
-                cur.execute(
-                    """INSERT INTO sequence_steps
-                       (campaign_id, step_order, channel, template_id, delay_days, draft_mode)
-                       VALUES (%s, %s, %s, %s, %s, %s)""",
-                    (campaign_id, step.step_order, step.channel, step.template_id, step.delay_days, step.draft_mode),
-                )
-
-            # 3. Enroll contacts if status is active
-            contacts_enrolled = 0
-            if body.status == "active" and body.contact_ids:
-                # Find step 1 delay_days for next_action_date
-                step_1 = next((s for s in body.steps if s.step_order == 1), None)
-                delay = step_1.delay_days if step_1 else 0
-                next_action = date.today() + timedelta(days=delay)
-
-                rows = [
-                    (cid, campaign_id, 1, "queued", next_action)
-                    for cid in body.contact_ids
-                ]
-                psycopg2.extras.execute_values(
-                    cur,
-                    """INSERT INTO contact_campaign_status
-                       (contact_id, campaign_id, current_step, status, next_action_date)
-                       VALUES %s""",
-                    rows,
-                )
-                contacts_enrolled = len(rows)
-
-        conn.commit()
+        return _launch_campaign(
+            conn,
+            name=body.name,
+            description=body.description,
+            steps=[s.model_dump() for s in body.steps],
+            contact_ids=body.contact_ids,
+            status=body.status,
+            user_id=user["id"],
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
     except psycopg2.IntegrityError as exc:
         conn.rollback()
         msg = str(exc)
         if "campaigns_user_name_unique" in msg or "campaigns_name_key" in msg:
             raise HTTPException(409, f"Campaign '{body.name}' already exists")
         raise HTTPException(400, f"Integrity error: {msg}")
-    except HTTPException:
-        conn.rollback()
-        raise
     except psycopg2.Error:
         conn.rollback()
         raise HTTPException(500, "Failed to launch campaign")
 
-    return {
-        "campaign_id": campaign_id,
-        "name": body.name,
-        "status": body.status,
-        "contacts_enrolled": contacts_enrolled,
-        "steps_created": len(body.steps),
-    }
+
+@router.patch("/campaigns/{name}/status")
+def patch_campaign_status(
+    name: str,
+    body: UpdateCampaignStatusRequest,
+    conn=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Update campaign status (active, paused, archived)."""
+    camp = get_campaign_by_name(conn, name, user_id=user["id"])
+    if not camp:
+        raise HTTPException(404, f"Campaign '{name}' not found")
+    update_campaign_status(conn, camp["id"], body.status, user_id=user["id"])
+    return {"name": name, "status": body.status}
+
+
+@router.delete("/campaigns/{name}")
+def remove_campaign(
+    name: str,
+    conn=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Delete a campaign and all its enrollments and sequence steps."""
+    camp = get_campaign_by_name(conn, name, user_id=user["id"])
+    if not camp:
+        raise HTTPException(404, f"Campaign '{name}' not found")
+    deleted = delete_campaign(conn, camp["id"], user_id=user["id"])
+    if not deleted:
+        raise HTTPException(500, "Failed to delete campaign")
+    return {"name": name, "deleted": True}
 
 
 @router.get("/campaigns")

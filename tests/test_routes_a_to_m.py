@@ -240,11 +240,13 @@ class TestAuthRegister:
 
 
 class TestAuthForgotPassword:
-    def test_forgot_password_known_email(self, client, db_conn):
+    @patch("src.web.routes.auth._send_reset_email")
+    def test_forgot_password_known_email(self, mock_send, client, db_conn):
         _seed_user_with_password(db_conn, email="forgot@test.com")
         resp = client.post("/api/auth/forgot-password", json={"email": "forgot@test.com"})
         assert resp.status_code == 200
         assert "message" in resp.json()
+        mock_send.assert_called_once()
 
     def test_forgot_password_unknown_email(self, client):
         resp = client.post("/api/auth/forgot-password", json={"email": "unknown@test.com"})

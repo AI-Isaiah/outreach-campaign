@@ -106,3 +106,33 @@ def update_campaign_status(
             (status, campaign_id, user_id),
         )
         conn.commit()
+
+
+def delete_campaign(
+    conn: PgConnection,
+    campaign_id: int,
+    *,
+    user_id: int,
+) -> bool:
+    """Delete a campaign and its enrollments. Returns True if deleted."""
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            "SELECT id FROM campaigns WHERE id = %s AND user_id = %s",
+            (campaign_id, user_id),
+        )
+        if not cursor.fetchone():
+            return False
+        cursor.execute(
+            "DELETE FROM contact_campaign_status WHERE campaign_id = %s",
+            (campaign_id,),
+        )
+        cursor.execute(
+            "DELETE FROM sequence_steps WHERE campaign_id = %s",
+            (campaign_id,),
+        )
+        cursor.execute(
+            "DELETE FROM campaigns WHERE id = %s AND user_id = %s",
+            (campaign_id, user_id),
+        )
+        conn.commit()
+        return True
