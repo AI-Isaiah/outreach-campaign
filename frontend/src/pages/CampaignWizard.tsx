@@ -1445,6 +1445,8 @@ function StepMessages({
 
   const [productDescription, setProductDescription] = useState("");
   const [showSmartInput, setShowSmartInput] = useState(false);
+  const [descriptionPrompt, setDescriptionPrompt] = useState("");
+  const descriptionRef = useRef<HTMLTextAreaElement>(null);
   const [improveStep, setImproveStep] = useState<number | null>(null);
   const [improveInstruction, setImproveInstruction] = useState("");
 
@@ -1531,9 +1533,15 @@ function StepMessages({
           <label className="block text-sm font-medium text-gray-700">
             Describe what you're selling / your fund thesis
           </label>
+          {descriptionPrompt && (
+            <p className="text-sm text-purple-700 bg-purple-100 rounded-md px-3 py-2">
+              {descriptionPrompt}
+            </p>
+          )}
           <textarea
+            ref={descriptionRef}
             value={productDescription}
-            onChange={(e) => setProductDescription(e.target.value)}
+            onChange={(e) => { setProductDescription(e.target.value); setDescriptionPrompt(""); }}
             placeholder="e.g., We run a $200M crypto-native fund focused on DePIN infrastructure. Looking to connect with allocators exploring digital asset exposure..."
             className="w-full h-20 p-3 border border-gray-200 rounded-md text-sm resize-y focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
           />
@@ -1817,6 +1825,12 @@ function StepMessages({
                             <Button
                               size="sm"
                               onClick={() => {
+                                if (!productDescription.trim()) {
+                                  setShowSmartInput(true);
+                                  setDescriptionPrompt("Please describe what you\u2019re selling, so AI can prepare your message drafts.");
+                                  setTimeout(() => descriptionRef.current?.focus(), 100);
+                                  return;
+                                }
                                 sequenceMutation.mutate();
                               }}
                               loading={sequenceMutation.isPending}
@@ -1829,7 +1843,13 @@ function StepMessages({
                               variant="secondary"
                               size="sm"
                               onClick={() => {
-                                toast("Research-based generation uses deep research data per company. Set up in Settings → API Keys if not configured.", "info");
+                                if (!productDescription.trim()) {
+                                  setShowSmartInput(true);
+                                  setDescriptionPrompt("Please describe what you\u2019re selling, so AI can prepare research-based drafts.");
+                                  setTimeout(() => descriptionRef.current?.focus(), 100);
+                                  return;
+                                }
+                                toast("Research-based generation uses deep research data per company. Set up in Settings \u2192 API Keys if not configured.", "info");
                                 sequenceMutation.mutate();
                               }}
                               loading={sequenceMutation.isPending}
