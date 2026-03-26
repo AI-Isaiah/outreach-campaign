@@ -629,6 +629,9 @@ function StepContacts({
 
 // ─── CRM Contact Picker ────────────────────────────────────────────
 
+type SortCol = "name" | "company" | "aum";
+type SortDir = "asc" | "desc";
+
 function CrmContactPicker({
   selectedIds,
   setSelectedIds,
@@ -639,6 +642,12 @@ function CrmContactPicker({
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(50);
+  const [sortBy, setSortBy] = useState<SortCol>("aum");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [hasLinkedin, setHasLinkedin] = useState(false);
+  const [hasEmail, setHasEmail] = useState(false);
+  const [onePerCompany, setOnePerCompany] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
   useEffect(() => {
@@ -651,14 +660,35 @@ function CrmContactPicker({
   }, [search]);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["contacts", "picker", debouncedSearch, page],
-    queryFn: () => contactsApi.listContacts(page, debouncedSearch || undefined),
+    queryKey: ["contacts", "picker", debouncedSearch, page, perPage, sortBy, sortDir, hasLinkedin, hasEmail, onePerCompany],
+    queryFn: () =>
+      contactsApi.listContacts(page, debouncedSearch || undefined, {
+        per_page: perPage,
+        sort_by: sortBy,
+        sort_dir: sortDir,
+        has_linkedin: hasLinkedin || undefined,
+        has_email: hasEmail || undefined,
+        one_per_company: onePerCompany || undefined,
+      }),
     placeholderData: keepPreviousData,
   });
 
   const crmContacts = data?.contacts ?? [];
   const totalPages = data?.pages ?? 1;
   const total = data?.total ?? 0;
+
+  const toggleSort = (col: SortCol) => {
+    if (sortBy === col) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(col);
+      setSortDir(col === "name" || col === "company" ? "asc" : "desc");
+    }
+    setPage(1);
+  };
+
+  const sortArrow = (col: SortCol) =>
+    sortBy === col ? (sortDir === "asc" ? " \u25B2" : " \u25BC") : "";
 
   const toggleOne = (id: number) => {
     const next = new Set(selectedIds);
@@ -695,6 +725,40 @@ function CrmContactPicker({
         leftIcon={<Search size={16} />}
       />
 
+      {/* Filters */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-xs text-gray-500 mr-1">Filter:</span>
+        {[
+          { label: "Has LinkedIn", active: hasLinkedin, toggle: () => { setHasLinkedin(!hasLinkedin); setPage(1); } },
+          { label: "Has Email", active: hasEmail, toggle: () => { setHasEmail(!hasEmail); setPage(1); } },
+          { label: "One per company", active: onePerCompany, toggle: () => { setOnePerCompany(!onePerCompany); setPage(1); } },
+        ].map((f) => (
+          <button
+            key={f.label}
+            onClick={f.toggle}
+            className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+              f.active
+                ? "bg-gray-900 text-white border-gray-900"
+                : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
+            }`}
+          >
+            {f.active && "\u2713 "}{f.label}
+          </button>
+        ))}
+        <span className="ml-auto text-xs text-gray-400">
+          Show:
+          {[50, 100].map((n) => (
+            <button
+              key={n}
+              onClick={() => { setPerPage(n); setPage(1); }}
+              className={`ml-1.5 ${perPage === n ? "text-gray-900 font-medium" : "text-gray-400 hover:text-gray-600"}`}
+            >
+              {n}
+            </button>
+          ))}
+        </span>
+      </div>
+
       {isLoading && crmContacts.length === 0 ? (
         <div className="flex items-center justify-center py-12 text-gray-400">
           <Loader2 size={20} className="animate-spin" />
@@ -707,7 +771,7 @@ function CrmContactPicker({
         </div>
       ) : (
         <>
-          <div className="border border-gray-200 rounded-lg overflow-hidden max-h-72 overflow-y-auto">
+          <div className="border border-gray-200 rounded-lg overflow-hidden max-h-96 overflow-y-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 sticky top-0">
                 <tr>
@@ -720,9 +784,24 @@ function CrmContactPicker({
                       aria-label="Select all on this page"
                     />
                   </th>
-                  <th className="text-left px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide">Name</th>
-                  <th className="text-left px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide">Company</th>
-                  <th className="text-right px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide">AUM</th>
+                  <th
+                    onClick={() => toggleSort("name")}
+                    className="text-left px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700"
+                  >
+                    Name{sortArrow("name")}
+                  </th>
+                  <th
+                    onClick={() => toggleSort("company")}
+                    className="text-left px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700"
+                  >
+                    Company{sortArrow("company")}
+                  </th>
+                  <th
+                    onClick={() => toggleSort("aum")}
+                    className="text-right px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700"
+                  >
+                    AUM{sortArrow("aum")}
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -1063,18 +1142,11 @@ function SortableStep({
         onChange={(e) => onChangeChannel(e.target.value)}
         className={`text-xs font-medium px-2 py-1 rounded border-0 cursor-pointer ${channelBadgeClass(step.channel)}`}
       >
-        {CHANNEL_OPTIONS.map((opt) => {
-          // Disable linkedin_connect if already used by another step
-          const disabled =
-            opt.value === "linkedin_connect" &&
-            hasLinkedInConnect &&
-            step.channel !== "linkedin_connect";
-          return (
-            <option key={opt.value} value={opt.value} disabled={disabled}>
-              {opt.label}
-            </option>
-          );
-        })}
+        {CHANNEL_OPTIONS.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
       </select>
 
       {/* Step number */}
@@ -1132,9 +1204,24 @@ function StepSequence({
   };
 
   const handleChangeChannel = (index: number, channel: string) => {
-    const updated = steps.map((s, i) =>
-      i === index ? { ...s, channel } : s,
-    );
+    let updated = [...steps];
+
+    if (channel === "linkedin_connect") {
+      const existingIdx = updated.findIndex(
+        (s, i) => i !== index && s.channel === "linkedin_connect"
+      );
+      if (existingIdx !== -1) {
+        // Swap the existing linkedin_connect:
+        // If new position is BEFORE old → old becomes linkedin_message (connect already happened)
+        // If new position is AFTER old → old becomes email (connect hasn't happened yet at that point)
+        updated[existingIdx] = {
+          ...updated[existingIdx],
+          channel: index < existingIdx ? "linkedin_message" : "email",
+        };
+      }
+    }
+
+    updated[index] = { ...updated[index], channel };
     onStepsChange(recalcSteps(updated));
   };
 

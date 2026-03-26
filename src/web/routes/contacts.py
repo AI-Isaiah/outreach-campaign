@@ -184,52 +184,95 @@ def list_contacts(
     search: Optional[str] = None,
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=50, ge=1, le=200),
+    sort_by: str = Query(default="aum", regex="^(name|company|aum)$"),
+    sort_dir: str = Query(default="desc", regex="^(asc|desc)$"),
+    has_linkedin: Optional[bool] = None,
+    has_email: Optional[bool] = None,
+    one_per_company: bool = Query(default=False),
     conn=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    """List contacts with optional search."""
+    """List contacts with search, sort, filter, and one-per-company dedup."""
     offset = (page - 1) * per_page
+    user_id = user["id"]
+
+    sort_map = {
+        "name": "c.full_name",
+        "company": "co.name",
+        "aum": "co.aum_millions",
+    }
+    order_col = sort_map.get(sort_by, "co.aum_millions")
+    nulls = "NULLS LAST" if sort_dir == "desc" else "NULLS FIRST"
+    order_clause = f"{order_col} {sort_dir.upper()} {nulls}"
+
+    where_parts = ["c.user_id = %s"]
+    params: list = [user_id]
+
+    if search:
+        like = f"%{search}%"
+        where_parts.append(
+            "(c.full_name LIKE %s OR c.email LIKE %s"
+            " OR co.name LIKE %s OR c.first_name LIKE %s OR c.last_name LIKE %s)"
+        )
+        params.extend([like, like, like, like, like])
+
+    if has_linkedin:
+        where_parts.append("c.linkedin_url IS NOT NULL AND c.linkedin_url != ''")
+    if has_email:
+        where_parts.append("c.email IS NOT NULL AND c.email != ''")
+
+    where_sql = " AND ".join(where_parts)
+
     with get_cursor(conn) as cur:
-        if search:
-            query = """
-            SELECT c.*, co.name AS company_name, co.aum_millions
-            FROM contacts c
-            LEFT JOIN companies co ON co.id = c.company_id
-            WHERE c.user_id = %s
-              AND (c.full_name LIKE %s OR c.email LIKE %s
-               OR co.name LIKE %s OR c.first_name LIKE %s OR c.last_name LIKE %s)
-            ORDER BY co.aum_millions DESC NULLS LAST
+        if one_per_company:
+            query = f"""
+            WITH ranked AS (
+                SELECT c.*, co.name AS company_name, co.aum_millions,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY c.company_id
+                           ORDER BY co.aum_millions DESC NULLS LAST, c.id
+                       ) AS rn
+                FROM contacts c
+                LEFT JOIN companies co ON co.id = c.company_id
+                WHERE {where_sql}
+            )
+            SELECT * FROM ranked WHERE rn = 1
+            ORDER BY {order_clause}
             LIMIT %s OFFSET %s
             """
-            like = f"%{search}%"
-            cur.execute(query, (user["id"], like, like, like, like, like, per_page, offset))
+            cur.execute(query, params + [per_page, offset])
             rows = cur.fetchall()
 
-            count_query = """
-            SELECT COUNT(*) AS cnt FROM contacts c
-            LEFT JOIN companies co ON co.id = c.company_id
-            WHERE c.user_id = %s
-              AND (c.full_name LIKE %s OR c.email LIKE %s
-               OR co.name LIKE %s OR c.first_name LIKE %s OR c.last_name LIKE %s)
+            count_query = f"""
+            WITH ranked AS (
+                SELECT c.id, c.company_id,
+                       ROW_NUMBER() OVER (PARTITION BY c.company_id ORDER BY co.aum_millions DESC NULLS LAST, c.id) AS rn
+                FROM contacts c
+                LEFT JOIN companies co ON co.id = c.company_id
+                WHERE {where_sql}
+            )
+            SELECT COUNT(*) AS cnt FROM ranked WHERE rn = 1
             """
-            cur.execute(count_query, (user["id"], like, like, like, like, like))
+            cur.execute(count_query, params)
             total = cur.fetchone()["cnt"]
         else:
-            query = """
+            query = f"""
             SELECT c.*, co.name AS company_name, co.aum_millions
             FROM contacts c
             LEFT JOIN companies co ON co.id = c.company_id
-            WHERE c.user_id = %s
-            ORDER BY co.aum_millions DESC NULLS LAST
+            WHERE {where_sql}
+            ORDER BY {order_clause}
             LIMIT %s OFFSET %s
             """
-            cur.execute(query, (user["id"], per_page, offset))
+            cur.execute(query, params + [per_page, offset])
             rows = cur.fetchall()
-            cur.execute(
-                """SELECT COUNT(*) AS cnt FROM contacts c
-                   WHERE c.user_id = %s""",
-                (user["id"],),
-            )
+
+            count_query = f"""
+            SELECT COUNT(*) AS cnt FROM contacts c
+            LEFT JOIN companies co ON co.id = c.company_id
+            WHERE {where_sql}
+            """
+            cur.execute(count_query, params)
             total = cur.fetchone()["cnt"]
 
         return {
@@ -237,7 +280,7 @@ def list_contacts(
             "total": total,
             "page": page,
             "per_page": per_page,
-            "pages": (total + per_page - 1) // per_page,
+            "pages": max(1, (total + per_page - 1) // per_page),
         }
 
 
