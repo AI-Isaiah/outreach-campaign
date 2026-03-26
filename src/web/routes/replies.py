@@ -283,3 +283,74 @@ def cron_scan_replies(conn=Depends(get_db), _=Depends(verify_cron_secret)):
         "remaining": max(remaining, 0),
         "errors": errors,
     }
+
+
+SCHEDULED_SEND_BATCH_SIZE = 10
+
+
+@cron_router.post("/cron/send-scheduled")
+def cron_send_scheduled(conn=Depends(get_db), _=Depends(verify_cron_secret)):
+    """Send emails whose scheduled_for time has arrived (called by Vercel cron)."""
+    from src.config import load_config
+    from src.services.email_sender import send_campaign_email
+
+    with get_cursor(conn) as cur:
+        cur.execute(
+            """SELECT ccs.contact_id, ccs.campaign_id,
+                      ss.template_id, c.user_id
+               FROM contact_campaign_status ccs
+               JOIN campaigns c ON c.id = ccs.campaign_id
+               JOIN sequence_steps ss
+                 ON ss.campaign_id = ccs.campaign_id AND ss.step_order = ccs.current_step
+               WHERE ccs.approved_at IS NOT NULL
+                 AND ccs.scheduled_for IS NOT NULL
+                 AND ccs.scheduled_for <= NOW()
+                 AND ccs.sent_at IS NULL
+                 AND ccs.status = 'in_progress'
+                 AND ss.channel = 'email'
+               ORDER BY ccs.scheduled_for
+               LIMIT %s""",
+            (SCHEDULED_SEND_BATCH_SIZE,),
+        )
+        rows = cur.fetchall()
+
+    if not rows:
+        return {"sent": 0, "failed": 0, "errors": []}
+
+    try:
+        config = load_config()
+    except FileNotFoundError:
+        config = {}
+
+    sent = 0
+    failed = 0
+    errors: list[str] = []
+
+    for row in rows:
+        try:
+            ok = send_campaign_email(
+                conn,
+                row["contact_id"],
+                row["campaign_id"],
+                row["template_id"],
+                config,
+                user_id=row["user_id"],
+            )
+            if ok:
+                sent += 1
+            else:
+                failed += 1
+                errors.append(
+                    f"contact {row['contact_id']}/campaign {row['campaign_id']}: send returned false"
+                )
+        except Exception as exc:
+            logger.exception(
+                "cron_send_scheduled failed for contact %s campaign %s",
+                row["contact_id"], row["campaign_id"],
+            )
+            failed += 1
+            errors.append(
+                f"contact {row['contact_id']}/campaign {row['campaign_id']}: {exc}"
+            )
+
+    return {"sent": sent, "failed": failed, "errors": errors}
