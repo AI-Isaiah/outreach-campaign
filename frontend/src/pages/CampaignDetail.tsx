@@ -62,6 +62,7 @@ export default function CampaignDetail() {
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold text-gray-900">{campaign.name}</h1>
             <StatusBadge status={campaign.status} />
+            <HealthScoreBadge score={campaign.health_score} />
           </div>
           {campaign.description && (
             <p className="text-sm text-gray-500 mt-1">{campaign.description}</p>
@@ -415,6 +416,27 @@ function ReplyBreakdownCard({ positive, negative }: { positive: number; negative
 }
 
 // ─── Template Performance Table ───────────────────────────────────
+
+function HealthScoreBadge({ score }: { score?: number | null }) {
+  if (score == null) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-500">
+        N/A
+      </span>
+    );
+  }
+  const color =
+    score >= 70
+      ? "bg-green-100 text-green-800"
+      : score >= 40
+        ? "bg-amber-100 text-amber-800"
+        : "bg-red-100 text-red-800";
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${color}`}>
+      {score}
+    </span>
+  );
+}
 
 function rateColorClass(rate: number): string {
   if (rate >= 0.5) return "text-green-600 font-semibold";

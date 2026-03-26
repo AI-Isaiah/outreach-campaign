@@ -62,6 +62,7 @@ export interface Campaign {
   description: string | null;
   status: string;
   created_at: string;
+  health_score?: number | null;
 }
 
 export interface ReplyBreakdown {
