@@ -111,7 +111,7 @@ def _get_email_body_text(payload: dict) -> str:
 
 def _find_contact_by_profile_url(conn, profile_url: str, *, user_id: int) -> Optional[dict]:
     """Find a contact by normalized LinkedIn URL."""
-    normalized = _normalize_linkedin_url(profile_url)
+    normalized = normalize_linkedin_url(profile_url)
     if not normalized:
         return None
 

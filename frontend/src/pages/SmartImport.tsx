@@ -1361,10 +1361,18 @@ export default function SmartImport() {
 
           <div className="flex gap-3 pt-2">
             <button
-              onClick={() => navigate("/campaigns/wizard")}
-              className="px-4 py-2.5 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors"
+              onClick={() => {
+                const totalImported = importResult.contacts_created + (importResult.contacts_merged || 0);
+                navigate("/campaigns/wizard", {
+                  state: {
+                    importedContactIds: importResult.contact_ids ?? [],
+                    importedCount: totalImported,
+                  },
+                });
+              }}
+              className="px-6 py-2.5 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors"
             >
-              Create Campaign
+              Create Campaign with {importResult.contacts_created + (importResult.contacts_merged || 0)} Contacts
             </button>
             <button
               onClick={() => navigate("/contacts")}

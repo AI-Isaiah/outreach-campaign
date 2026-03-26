@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from src.web.dependencies import get_current_user, get_db
 from src.models.database import get_cursor
+
+logger = logging.getLogger(__name__)
+_limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(tags=["templates"])
 
@@ -156,3 +163,85 @@ def deactivate_template(
         conn.commit()
 
         return {"success": True, "id": template_id, "is_active": False}
+
+
+class SequenceStepInput(BaseModel):
+    step_order: int
+    channel: str = Field(max_length=50)
+    delay_days: int = Field(ge=0)
+
+
+class GenerateSequenceMessagesRequest(BaseModel):
+    steps: list[SequenceStepInput] = Field(min_length=1, max_length=10)
+    product_description: str = Field(min_length=10, max_length=2000)
+    target_audience: str = Field(default="crypto fund allocators", max_length=200)
+
+
+class ImproveMessageRequest(BaseModel):
+    channel: str = Field(max_length=50)
+    body: str = Field(min_length=1, max_length=5000)
+    subject: Optional[str] = Field(default=None, max_length=200)
+    instruction: str = Field(min_length=1, max_length=500)
+
+
+@router.post("/templates/generate-sequence")
+@_limiter.limit("5/minute")
+def generate_sequence_messages_route(
+    request: Request,
+    body: GenerateSequenceMessagesRequest,
+    user=Depends(get_current_user),
+):
+    """Generate AI messages for all steps in a campaign sequence."""
+    from src.services.message_drafter import generate_sequence_messages
+
+    try:
+        messages = generate_sequence_messages(
+            steps=[s.model_dump() for s in body.steps],
+            product_description=body.product_description,
+            target_audience=body.target_audience,
+            user_id=user["id"],
+        )
+        return {"messages": messages}
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc))
+    except httpx.TimeoutException:
+        raise HTTPException(504, "AI service timeout — try again")
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 429:
+            raise HTTPException(429, "AI service rate limited — try again in a minute")
+        raise HTTPException(502, f"AI service error: {exc.response.status_code}")
+    except Exception as exc:
+        logger.error("Sequence generation error: %s", exc, exc_info=True)
+        raise HTTPException(500, "Sequence generation failed")
+
+
+@router.post("/templates/improve-message")
+@_limiter.limit("10/minute")
+def improve_message_route(
+    request: Request,
+    body: ImproveMessageRequest,
+    user=Depends(get_current_user),
+):
+    """Improve an existing message based on user instruction."""
+    from src.services.message_drafter import improve_message
+
+    try:
+        result = improve_message(
+            channel=body.channel,
+            body=body.body,
+            subject=body.subject,
+            instruction=body.instruction,
+            user_id=user["id"],
+        )
+        return result
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc))
+    except httpx.TimeoutException:
+        raise HTTPException(504, "AI service timeout — try again")
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 429:
+            raise HTTPException(429, "AI service rate limited — try again in a minute")
+        raise HTTPException(502, f"AI service error: {exc.response.status_code}")
+    except Exception as exc:
+        logger.error("Message improvement error: %s", exc, exc_info=True)
+        raise HTTPException(500, "Message improvement failed")

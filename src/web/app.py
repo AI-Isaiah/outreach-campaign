@@ -148,6 +148,7 @@ def health_check():
 # Auth routers — no global auth dependency (they handle auth internally)
 app.include_router(auth.router, prefix="/api")
 app.include_router(gmail_oauth.router, prefix="/api")
+app.include_router(replies.cron_router, prefix="/api")
 
 # All other routers — auth required
 _auth_deps = [Depends(require_auth)]

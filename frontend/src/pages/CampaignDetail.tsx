@@ -10,6 +10,7 @@ import MetricCard from "../components/MetricCard";
 import StatusBadge from "../components/StatusBadge";
 import { SkeletonCard, SkeletonTable } from "../components/Skeleton";
 import ErrorCard from "../components/ui/ErrorCard";
+import HealthScoreBadge from "../components/HealthScoreBadge";
 
 type Tab = "contacts" | "messages" | "sequence" | "analytics";
 
@@ -62,6 +63,7 @@ export default function CampaignDetail() {
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold text-gray-900">{campaign.name}</h1>
             <StatusBadge status={campaign.status} />
+            <HealthScoreBadge score={campaign.health_score} />
           </div>
           {campaign.description && (
             <p className="text-sm text-gray-500 mt-1">{campaign.description}</p>

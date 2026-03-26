@@ -235,4 +235,5 @@ def import_expandi_results(
                     )
                 result["advanced"] += 1
 
+    conn.commit()
     return result

@@ -39,10 +39,7 @@ def get_stats(conn=Depends(get_db), user=Depends(get_current_user)):
                 (SELECT COUNT(*) FROM contact_campaign_status ccs
                      JOIN campaigns cam ON cam.id = ccs.campaign_id
                      WHERE cam.user_id = %s) AS enrolled,
-                (SELECT COUNT(*) FROM events e
-                     JOIN contacts ct ON ct.id = e.contact_id
-                     JOIN companies co ON co.id = ct.company_id
-                     WHERE co.user_id = %s) AS events
+                (SELECT COUNT(*) FROM events WHERE user_id = %s) AS events
         """, (uid, uid, uid, uid))
         t = cur.fetchone()
 
@@ -84,9 +81,7 @@ def get_stats(conn=Depends(get_db), user=Depends(get_current_user)):
                       AND e.event_type = 'call_booked'
                 ) AS previous_week_calls_booked
             FROM events e
-            JOIN contacts ct ON ct.id = e.contact_id
-            JOIN companies co ON co.id = ct.company_id
-            WHERE co.user_id = %s
+            WHERE e.user_id = %s
         """, (uid,))
         period = cur.fetchone()
 

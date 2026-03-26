@@ -319,6 +319,7 @@ def update_contact_campaign_status(
     if current_step is not None:
         fields.append("current_step = %s")
         params.append(current_step)
+        fields.append("sent_at = NULL")
     if next_action_date is not None:
         fields.append("next_action_date = %s")
         params.append(next_action_date)

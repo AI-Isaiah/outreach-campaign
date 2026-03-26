@@ -7,6 +7,7 @@ import StatusBadge from "../components/StatusBadge";
 import { SkeletonCard } from "../components/Skeleton";
 import ErrorCard from "../components/ui/ErrorCard";
 import Button from "../components/ui/Button";
+import HealthScoreBadge from "../components/HealthScoreBadge";
 
 export default function CampaignList() {
   const { data, isLoading, isError, error, refetch } = useQuery<CampaignWithMetrics[]>({
@@ -90,10 +91,11 @@ function CampaignCard({ campaign: c }: { campaign: CampaignWithMetrics }) {
           </p>
         </div>
 
-        <div className="flex gap-6 shrink-0">
+        <div className="flex gap-6 shrink-0 items-center">
           <Metric label="Contacts" value={c.contacts_count ?? 0} />
           <Metric label="Reply Rate" value={`${c.reply_rate ?? 0}%`} />
           <Metric label="Calls" value={c.calls_booked ?? 0} />
+          <HealthScoreBadge score={c.health_score} />
         </div>
 
         <div className="w-28 shrink-0 mt-1">

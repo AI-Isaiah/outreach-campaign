@@ -494,7 +494,8 @@ def test_preview_import_duplicate_detection(tmp_db):
     assert result["total_contacts"] == 2
     # Email-only match is not an exact duplicate — only exact matches count
     assert result["duplicates"] == 0
-    assert result["new_contacts"] == 2
+    # Alice is email_only match → classified as "review" tier, not "new"
+    assert result["new_contacts"] == 1
     assert result["total_companies"] == 2
 
     # Check that preview_rows marks the match correctly

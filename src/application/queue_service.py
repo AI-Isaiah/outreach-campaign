@@ -54,6 +54,7 @@ def get_enriched_queue(
         try:
             items = get_adaptive_queue(
                 conn, campaign_id, target_date=date, limit=limit * 3, diverse=use_diverse,
+                user_id=user_id,
             )
         except (KeyError, ValueError, TypeError):
             items = get_daily_queue(conn, campaign_id, target_date=date, limit=limit * 3)
@@ -132,9 +133,9 @@ def _batch_enrich(conn, items: list[dict], campaign_id: int, config: dict, *, us
         with get_cursor(conn) as cur:
             cur.execute(
                 """SELECT contact_id, gmail_draft_id, status FROM gmail_drafts
-                   WHERE contact_id = ANY(%s) AND campaign_id = %s AND user_id = %s
+                   WHERE contact_id = ANY(%s) AND campaign_id = %s
                    ORDER BY contact_id, id DESC""",
-                (contact_ids, campaign_id, user_id),
+                (contact_ids, campaign_id),
             )
             for row in cur.fetchall():
                 cid = row["contact_id"]
@@ -192,7 +193,7 @@ def _batch_enrich(conn, items: list[dict], campaign_id: int, config: dict, *, us
                 """SELECT DISTINCT ON (company_id)
                           company_id, company_overview, crypto_signals,
                           key_people, talking_points, risk_factors,
-                          updated_crypto_score, confidence
+                          updated_crypto_score, confidence, fund_signals
                    FROM deep_research
                    WHERE company_id = ANY(%s) AND status = 'completed'
                          AND user_id = %s
@@ -247,6 +248,8 @@ def _batch_enrich(conn, items: list[dict], campaign_id: int, config: dict, *, us
         step_num = item.get("step_order")
         entry["message_draft"] = message_drafts_by_key.get((cid, step_num))
         entry["has_research"] = contact_row.get("company_id") in companies_with_research
+        company_research = research_by_company.get(contact_row.get("company_id"))
+        entry["fund_signals"] = (company_research.get("fund_signals") or []) if company_research else []
         entry["draft_mode"] = step_draft_modes.get(step_num, "template")
 
         if item["channel"] == "email" and item["template_id"]:

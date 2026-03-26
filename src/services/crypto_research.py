@@ -174,8 +174,9 @@ def check_duplicate_companies(conn, company_names: list[str], user_id: int | Non
     if not company_names:
         return {"already_researched": [], "new": company_names}
 
-    normalized = [normalize_company_name(n) for n in company_names]
-    norm_to_orig = dict(zip(normalized, company_names))
+    # Use simple lower/trim normalization to match the SQL side
+    simple_norm = [n.lower().strip() for n in company_names]
+    norm_to_orig = dict(zip(simple_norm, company_names))
 
     with get_cursor(conn) as cur:
         query = """SELECT DISTINCT regexp_replace(lower(trim(rr.company_name)), '\\s+', ' ', 'g') AS name_norm
@@ -183,15 +184,15 @@ def check_duplicate_companies(conn, company_names: list[str], user_id: int | Non
                JOIN research_jobs rj ON rj.id = rr.job_id
                WHERE rj.status IN ('completed', 'researching', 'classifying')
                  AND regexp_replace(lower(trim(rr.company_name)), '\\s+', ' ', 'g') = ANY(%s)"""
-        params: list = [normalized]
+        params: list = [simple_norm]
         if user_id is not None:
             query += " AND rj.user_id = %s"
             params.append(user_id)
         cur.execute(query, params)
         existing = {row["name_norm"] for row in cur.fetchall()}
 
-    already = [norm_to_orig[n] for n in normalized if n in existing]
-    new = [norm_to_orig[n] for n in normalized if n not in existing]
+    already = [norm_to_orig[n] for n in simple_norm if n in existing]
+    new = [norm_to_orig[n] for n in simple_norm if n not in existing]
 
     return {"already_researched": already, "new": new}
 

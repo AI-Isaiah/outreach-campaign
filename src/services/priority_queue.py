@@ -134,9 +134,9 @@ def get_daily_queue(
             cursor.execute(
                 """SELECT COUNT(*) AS cnt FROM sequence_steps
                    WHERE campaign_id = %s
-                     AND (non_gdpr_only = false OR false = false)
-                     AND (gdpr_only = false OR false = true)""",
-                (campaign_id,),
+                     AND (non_gdpr_only = false OR %s = false)
+                     AND (gdpr_only = false OR %s = true)""",
+                (campaign_id, False, False),
             )
             non_gdpr_steps = cursor.fetchone()["cnt"]
             for cid in non_gdpr_contacts:
@@ -146,9 +146,9 @@ def get_daily_queue(
             cursor.execute(
                 """SELECT COUNT(*) AS cnt FROM sequence_steps
                    WHERE campaign_id = %s
-                     AND (non_gdpr_only = false OR true = false)
-                     AND (gdpr_only = false OR true = true)""",
-                (campaign_id,),
+                     AND (non_gdpr_only = false OR %s = false)
+                     AND (gdpr_only = false OR %s = true)""",
+                (campaign_id, True, True),
             )
             gdpr_steps = cursor.fetchone()["cnt"]
             for cid in gdpr_contacts:
@@ -294,11 +294,10 @@ def defer_contact(
         if row is None:
             return {"success": False, "error": "Contact not enrolled in campaign"}
 
-        metadata = json.dumps({"reason": reason}) if reason else None
         cursor.execute(
-            """INSERT INTO events (contact_id, campaign_id, event_type, metadata, notes, user_id)
-               VALUES (%s, %s, 'deferred', %s, %s, %s)""",
-            (contact_id, campaign_id, metadata, reason, user_id),
+            """INSERT INTO events (contact_id, campaign_id, event_type, notes, user_id)
+               VALUES (%s, %s, 'deferred', %s, %s)""",
+            (contact_id, campaign_id, reason, user_id),
         )
         conn.commit()
 

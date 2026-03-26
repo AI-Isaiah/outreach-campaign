@@ -298,7 +298,7 @@ def test_find_warm_intros_by_company_id(db_conn):
 def test_find_warm_intros_by_name(db_conn):
     cur = db_conn.cursor()
     cur.execute(
-        "INSERT INTO companies (name, name_normalized, user_id) VALUES ('Name Match LLC', 'name match llc', %s) RETURNING id",
+        "INSERT INTO companies (name, name_normalized, user_id) VALUES ('Name Match LLC', 'name match', %s) RETURNING id",
         (TEST_USER_ID,),
     )
     company_id = cur.fetchone()["id"]

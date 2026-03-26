@@ -11,5 +11,15 @@
       "runtime": "@vercel/python@4.3",
       "maxDuration": 10
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/scan-replies",
+      "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/send-scheduled",
+      "schedule": "*/15 * * * *"
+    }
+  ]
 }

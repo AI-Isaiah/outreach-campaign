@@ -39,9 +39,42 @@ class GmailDrafter:
         self.token_path = Path(token_path)
         self._service = None
 
+    @classmethod
+    def from_db_tokens(
+        cls,
+        access_token: str,
+        refresh_token: str,
+        client_id: str,
+        client_secret: str,
+    ) -> "GmailDrafter":
+        """Create a GmailDrafter from DB-stored OAuth tokens.
+
+        Builds a google.oauth2.credentials.Credentials object directly
+        instead of reading from filesystem. Works in serverless environments.
+        """
+        from google.oauth2.credentials import Credentials
+
+        creds = Credentials(
+            token=access_token,
+            refresh_token=refresh_token,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=client_id,
+            client_secret=client_secret,
+            scopes=SCOPES,
+        )
+        instance = cls.__new__(cls)
+        instance.credentials_path = None
+        instance.token_path = None
+        instance._service = None
+        instance._db_credentials = creds
+        return instance
+
     def is_authorized(self) -> bool:
         """Check if we have valid Gmail credentials."""
-        if not self.token_path.exists():
+        db_creds = getattr(self, "_db_credentials", None)
+        if db_creds is not None:
+            return db_creds.token is not None
+        if not self.token_path or not self.token_path.exists():
             return False
         try:
             creds = self._load_credentials()
@@ -120,7 +153,7 @@ class GmailDrafter:
 
         from googleapiclient.discovery import build
 
-        creds = self._load_credentials()
+        creds = getattr(self, "_db_credentials", None) or self._load_credentials()
         if creds is None:
             raise RuntimeError("Gmail not authorized. Call get_authorization_url() first.")
 

@@ -127,6 +127,7 @@ export interface ImportResult {
   contacts_merged: number;
   contacts_enrolled: number;
   contacts_skipped: number;
+  contact_ids?: number[];
 }
 
 export const smartImportApi = {

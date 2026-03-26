@@ -29,10 +29,14 @@ from src.services.compliance import (
     check_gdpr_email_limit,
     is_contact_gdpr,
 )
+from jinja2.sandbox import SandboxedEnvironment
+
 from src.models.database import get_cursor
 from src.services.template_engine import get_template_context, render_template
 
 logger = logging.getLogger(__name__)
+
+_SANDBOX_ENV = SandboxedEnvironment()
 
 _RETRY_MAX_ATTEMPTS = 3
 _RETRY_BACKOFF_SECONDS = 1
@@ -358,8 +362,8 @@ def send_campaign_email(
     # Check if contact is unsubscribed
     with get_cursor(conn) as cursor:
         cursor.execute(
-            "SELECT * FROM contacts WHERE id = %s",
-            (contact_id,),
+            "SELECT * FROM contacts WHERE id = %s AND user_id = %s",
+            (contact_id, user_id),
         )
         contact = cursor.fetchone()
     if contact is None:
@@ -379,6 +383,23 @@ def send_campaign_email(
         if not check_gdpr_email_limit(conn, contact_id, campaign_id):
             logger.info("GDPR limit reached for contact %d in campaign %d", contact_id, campaign_id)
             return False
+
+    # --- Idempotency guard: atomic claim-and-read in one query ----------------
+
+    with get_cursor(conn) as cur:
+        cur.execute(
+            "UPDATE contact_campaign_status "
+            "SET sent_at = NOW() "
+            "WHERE contact_id = %s AND campaign_id = %s AND sent_at IS NULL "
+            "RETURNING current_step",
+            (contact_id, campaign_id),
+        )
+        claimed = cur.fetchone()
+    if not claimed:
+        logger.info("Skipping already-sent or missing enrollment for contact %s", contact_id)
+        return False
+    current_step = claimed["current_step"]
+    conn.commit()
 
     # --- Render template ------------------------------------------------------
 
@@ -450,20 +471,13 @@ def send_campaign_email(
         channel=template_row["channel"],
     )
 
-    # Advance the contact's current step
-    with get_cursor(conn) as cursor:
-        cursor.execute(
-            "SELECT current_step FROM contact_campaign_status WHERE contact_id = %s AND campaign_id = %s",
-            (contact_id, campaign_id),
-        )
-        status_row = cursor.fetchone()
-    if status_row:
-        update_contact_campaign_status(
-            conn, contact_id, campaign_id,
-            current_step=status_row["current_step"] + 1,
-            user_id=user_id,
-        )
+    update_contact_campaign_status(
+        conn, contact_id, campaign_id,
+        current_step=current_step + 1,
+        user_id=user_id,
+    )
 
+    conn.commit()
     logger.info("Campaign email sent to contact %d (campaign %d)", contact_id, campaign_id)
     return True
 
@@ -481,7 +495,5 @@ def _render_inline_template(template_str: str, context: dict) -> str:
     Returns:
         The rendered string.
     """
-    from jinja2.sandbox import SandboxedEnvironment
-    env = SandboxedEnvironment()
-    tmpl = env.from_string(template_str)
+    tmpl = _SANDBOX_ENV.from_string(template_str)
     return tmpl.render(**context)

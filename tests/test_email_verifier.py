@@ -16,7 +16,10 @@ from tests.conftest import TEST_USER_ID
 def _insert_contact_with_email(conn, email, status="unverified"):
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO companies (name, name_normalized, country, is_gdpr, user_id) VALUES ('X', 'x', 'US', false, %s) RETURNING id",
+        "INSERT INTO companies (name, name_normalized, country, is_gdpr, user_id) "
+        "VALUES ('X', 'x', 'US', false, %s) "
+        "ON CONFLICT (user_id, name_normalized) DO UPDATE SET name = EXCLUDED.name "
+        "RETURNING id",
         (TEST_USER_ID,),
     )
     cid = cursor.fetchone()["id"]

@@ -37,6 +37,13 @@ export interface QueueItem {
   message_draft?: MessageDraft | null;
   has_research?: boolean;
   draft_mode?: 'template' | 'ai';
+  fund_signals?: FundSignal[];
+}
+
+export interface FundSignal {
+  type: string;
+  text: string;
+  recency_score: number;
 }
 
 export interface RenderedEmail {
@@ -62,6 +69,7 @@ export interface Campaign {
   description: string | null;
   status: string;
   created_at: string;
+  health_score?: number | null;
 }
 
 export interface ReplyBreakdown {
@@ -415,6 +423,11 @@ export interface LinkedInScanResponse {
 export interface ReplyScanResponse {
   scanned: number;
   new_replies: number;
+}
+
+export interface PendingRepliesResponse {
+  replies: PendingReply[];
+  last_auto_scan_at: string | null;
 }
 
 export interface ImportResponse {

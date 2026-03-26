@@ -10,7 +10,9 @@ import psycopg2.extras
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from src.models.campaigns import get_campaign_by_name
 from src.services.metrics import (
+    compute_health_score,
     get_campaign_metrics,
     get_company_type_breakdown,
     get_variant_comparison,
@@ -165,6 +167,10 @@ def list_all_campaigns(
                COUNT(*) FILTER (WHERE ccs.status IN
                    ('replied_positive','replied_negative')
                ) AS replied_count,
+               COUNT(*) FILTER (WHERE ccs.status = 'replied_positive'
+               ) AS positive_count,
+               COUNT(*) FILTER (WHERE ccs.status = 'bounced'
+               ) AS bounced_count,
                COUNT(*) FILTER (WHERE ccs.status IN
                    ('replied_positive','replied_negative','no_response',
                     'bounced','completed')
@@ -178,6 +184,12 @@ def list_all_campaigns(
         FROM events e
         WHERE e.event_type = 'call_booked' AND e.user_id = %s
         GROUP BY e.campaign_id
+    ),
+    campaign_sends AS (
+        SELECT e.campaign_id, COUNT(*) AS emails_sent
+        FROM events e
+        WHERE e.event_type = 'email_sent' AND e.user_id = %s
+        GROUP BY e.campaign_id
     )
     SELECT c.*,
            COALESCE(cs.contacts_count, 0) AS contacts_count,
@@ -188,22 +200,39 @@ def list_all_campaigns(
            COALESCE(cc.calls_booked, 0) AS calls_booked,
            CASE WHEN COALESCE(cs.contacts_count, 0) > 0
                 THEN ROUND(cs.completed_count::numeric / cs.contacts_count * 100, 1)
-                ELSE 0 END AS progress_pct
+                ELSE 0 END AS progress_pct,
+           COALESCE(cs.positive_count, 0) AS positive_count,
+           COALESCE(cs.bounced_count, 0) AS bounced_count,
+           COALESCE(csn.emails_sent, 0) AS emails_sent
     FROM campaigns c
     LEFT JOIN campaign_stats cs ON cs.campaign_id = c.id
     LEFT JOIN campaign_calls cc ON cc.campaign_id = c.id
+    LEFT JOIN campaign_sends csn ON csn.campaign_id = c.id
     WHERE c.user_id = %s {status_filter}
     ORDER BY c.created_at DESC
     """
 
-    # Build final params: [user_id (stats CTE), user_id (calls CTE), user_id (WHERE)]
-    final_params = [user_id, user_id, user_id]
+    # Build final params: [user_id (stats CTE), user_id (calls CTE), user_id (sends CTE), user_id (WHERE)]
+    final_params = [user_id, user_id, user_id, user_id]
     if status:
         final_params.append(status)
 
     with get_cursor(conn) as cur:
         cur.execute(query, final_params)
-        return [_row_to_dict(r) for r in cur.fetchall()]
+        rows = [_row_to_dict(r) for r in cur.fetchall()]
+
+    for row in rows:
+        metrics_compat = {
+            "total_enrolled": row.get("contacts_count", 0),
+            "by_status": {
+                "replied_positive": row.get("positive_count", 0),
+                "bounced": row.get("bounced_count", 0),
+            },
+            "emails_sent": row.get("emails_sent", 0),
+        }
+        row["health_score"] = compute_health_score(metrics_compat)
+
+    return rows
 
 
 @router.get("/campaigns/{campaign_id}/contacts")
@@ -259,16 +288,6 @@ def get_campaign_contacts(
         return [_row_to_dict(r) for r in cur.fetchall()]
 
 
-def _get_campaign_by_name_scoped(conn, name: str, user_id):
-    """Fetch a campaign by name scoped to user_id."""
-    with get_cursor(conn) as cur:
-        cur.execute(
-            "SELECT * FROM campaigns WHERE name = %s AND user_id = %s",
-            (name, user_id),
-        )
-        return cur.fetchone()
-
-
 @router.get("/campaigns/{name}")
 def get_campaign(
     name: str,
@@ -276,10 +295,13 @@ def get_campaign(
     user=Depends(get_current_user),
 ):
     """Get campaign details by name."""
-    camp = _get_campaign_by_name_scoped(conn, name, user["id"])
+    camp = get_campaign_by_name(conn, name, user_id=user["id"])
     if not camp:
         raise HTTPException(404, f"Campaign '{name}' not found")
-    return _row_to_dict(camp)
+    result = _row_to_dict(camp)
+    metrics = get_campaign_metrics(conn, camp["id"])
+    result["health_score"] = compute_health_score(metrics)
+    return result
 
 
 @router.get("/campaigns/{name}/metrics")
@@ -289,7 +311,7 @@ def get_metrics(
     user=Depends(get_current_user),
 ):
     """Get campaign metrics."""
-    camp = _get_campaign_by_name_scoped(conn, name, user["id"])
+    camp = get_campaign_by_name(conn, name, user_id=user["id"])
     if not camp:
         raise HTTPException(404, f"Campaign '{name}' not found")
 
@@ -299,8 +321,11 @@ def get_metrics(
     weekly = get_weekly_summary(conn, campaign_id, weeks_back=1)
     firm_breakdown = get_company_type_breakdown(conn, campaign_id)
 
+    campaign_dict = _row_to_dict(camp)
+    campaign_dict["health_score"] = compute_health_score(metrics)
+
     return {
-        "campaign": _row_to_dict(camp),
+        "campaign": campaign_dict,
         "metrics": metrics,
         "variants": variants,
         "weekly": weekly,
@@ -316,7 +341,7 @@ def get_campaign_weekly(
     user=Depends(get_current_user),
 ):
     """Get weekly summary for a campaign."""
-    camp = _get_campaign_by_name_scoped(conn, name, user["id"])
+    camp = get_campaign_by_name(conn, name, user_id=user["id"])
     if not camp:
         raise HTTPException(404, f"Campaign '{name}' not found")
 
@@ -331,7 +356,7 @@ def get_campaign_report(
     user=Depends(get_current_user),
 ):
     """Get full campaign report with metrics, variants, and breakdown."""
-    camp = _get_campaign_by_name_scoped(conn, name, user["id"])
+    camp = get_campaign_by_name(conn, name, user_id=user["id"])
     if not camp:
         raise HTTPException(404, f"Campaign '{name}' not found")
 
@@ -352,7 +377,7 @@ def get_campaign_template_performance(
     user=Depends(get_current_user),
 ):
     """Get template performance metrics with winning badge for a campaign."""
-    camp = _get_campaign_by_name_scoped(conn, name, user["id"])
+    camp = get_campaign_by_name(conn, name, user_id=user["id"])
     if not camp:
         raise HTTPException(404, f"Campaign '{name}' not found")
 

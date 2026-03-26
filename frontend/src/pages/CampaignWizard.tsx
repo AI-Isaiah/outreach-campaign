@@ -1,9 +1,10 @@
-import { useState, useCallback, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
+import { useMutation, useQuery, keepPreviousData } from "@tanstack/react-query";
 import {
   Upload,
   Check,
+  CheckCircle,
   ChevronLeft,
   ChevronRight,
   Rocket,
@@ -17,6 +18,8 @@ import {
   GripVertical,
   Plus,
   Trash2,
+  Search,
+  Wand2,
 } from "lucide-react";
 import {
   DndContext,
@@ -40,6 +43,7 @@ import Input from "../components/ui/Input";
 import { campaignsApi } from "../api/campaigns";
 import type { GeneratedStep } from "../api/campaigns";
 import { api } from "../api/client";
+import { contactsApi } from "../api/contacts";
 import type { Template } from "../types";
 import { useToast } from "../components/Toast";
 import { splitCsvLine } from "../utils/parseCsv";
@@ -78,6 +82,7 @@ interface ParsedContact {
 
 export default function CampaignWizard() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const [step, setStep] = useState(0);
   const [showLeaveDialog, setShowLeaveDialog] = useState(false);
@@ -87,12 +92,24 @@ export default function CampaignWizard() {
   const [description, setDescription] = useState("");
 
   // Step 2: Contacts
+  const [contactTab, setContactTab] = useState<"crm" | "csv">("crm");
   const [contacts, setContacts] = useState<ParsedContact[]>([]);
   const [csvError, setCsvError] = useState("");
   const [csvFileName, setCsvFileName] = useState("");
   const [uploading, setUploading] = useState(false);
   const [showFormatHelp, setShowFormatHelp] = useState(false);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [crmSelectedIds, setCrmSelectedIds] = useState<Set<number>>(() => {
+    const state = location.state as { importedContactIds?: number[] } | null;
+    if (state?.importedContactIds?.length) {
+      return new Set(state.importedContactIds);
+    }
+    return new Set();
+  });
+  const [importedCount] = useState<number>(() => {
+    const state = location.state as { importedCount?: number } | null;
+    return state?.importedCount ?? 0;
+  });
 
   // Step 3: Sequence
   const [touchpoints, setTouchpoints] = useState(5);
@@ -171,9 +188,13 @@ export default function CampaignWizard() {
   });
 
   const selectedContacts = contacts.filter((c) => c.selected);
-  const selectedContactIds = selectedContacts
+  const csvSelectedIds = selectedContacts
     .filter((c) => c.id != null)
     .map((c) => c.id!);
+  const selectedContactIds =
+    contactTab === "crm" ? Array.from(crmSelectedIds) : csvSelectedIds;
+  const totalSelectedCount =
+    contactTab === "crm" ? crmSelectedIds.size : selectedContacts.length;
 
   // Warn on navigate-away
   useEffect(() => {
@@ -200,13 +221,13 @@ export default function CampaignWizard() {
   const canProceed = useCallback((): boolean => {
     switch (step) {
       case 0: return name.trim().length > 0;
-      case 1: return selectedContacts.length > 0;
+      case 1: return totalSelectedCount > 0;
       case 2: return generatedSteps.length > 0;
       case 3: return true; // templates are optional
       case 4: return true;
       default: return false;
     }
-  }, [step, name, selectedContacts.length, generatedSteps.length]);
+  }, [step, name, totalSelectedCount, generatedSteps.length]);
 
   const handleCsvUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -339,6 +360,8 @@ export default function CampaignWizard() {
         )}
         {step === 1 && (
           <StepContacts
+            contactTab={contactTab}
+            setContactTab={setContactTab}
             contacts={contacts}
             csvError={csvError}
             csvFileName={csvFileName}
@@ -354,6 +377,9 @@ export default function CampaignWizard() {
                 navigate("/import/smart", { state: { file: pendingFile } });
               }
             }}
+            crmSelectedIds={crmSelectedIds}
+            setCrmSelectedIds={setCrmSelectedIds}
+            importedCount={importedCount}
           />
         )}
         {step === 2 && (
@@ -385,7 +411,7 @@ export default function CampaignWizard() {
           <StepReview
             name={name}
             description={description}
-            contactCount={selectedContacts.length}
+            contactCount={totalSelectedCount}
             steps={generatedSteps}
             channels={channels}
           />
@@ -504,6 +530,267 @@ function StepName({
 // ─── Step 2: Add Contacts ──────────────────────────────────────────
 
 function StepContacts({
+  contactTab,
+  setContactTab,
+  contacts,
+  csvError,
+  csvFileName,
+  uploading,
+  showFormatHelp,
+  pendingFile,
+  onUpload,
+  onToggle,
+  onToggleAll,
+  onShowFormatHelp,
+  onSmartImport,
+  crmSelectedIds,
+  setCrmSelectedIds,
+  importedCount,
+}: {
+  contactTab: "crm" | "csv";
+  setContactTab: (t: "crm" | "csv") => void;
+  contacts: ParsedContact[];
+  csvError: string;
+  csvFileName: string;
+  uploading: boolean;
+  showFormatHelp: boolean;
+  pendingFile: File | null;
+  onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onToggle: (i: number) => void;
+  onToggleAll: (selected: boolean) => void;
+  onShowFormatHelp: () => void;
+  onSmartImport: () => void;
+  crmSelectedIds: Set<number>;
+  setCrmSelectedIds: (ids: Set<number>) => void;
+  importedCount: number;
+}) {
+  return (
+    <div className="space-y-4">
+      <h2 className="text-lg font-semibold">Add contacts</h2>
+      <p className="text-sm text-gray-500">
+        Pick contacts from your CRM or upload a CSV file.
+      </p>
+
+      {importedCount > 0 && crmSelectedIds.size > 0 && (
+        <div className="flex items-center gap-2 rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">
+          <CheckCircle size={16} className="shrink-0" />
+          <span>{crmSelectedIds.size} recently imported contacts pre-selected</span>
+        </div>
+      )}
+
+      {/* Tab group */}
+      <div className="flex border-b border-gray-200">
+        <button
+          className={`px-4 py-2.5 text-sm font-medium ${
+            contactTab === "crm"
+              ? "text-gray-900 border-b-2 border-gray-900"
+              : "text-gray-500 hover:text-gray-700"
+          }`}
+          onClick={() => setContactTab("crm")}
+        >
+          From CRM
+        </button>
+        <button
+          className={`px-4 py-2.5 text-sm font-medium ${
+            contactTab === "csv"
+              ? "text-gray-900 border-b-2 border-gray-900"
+              : "text-gray-500 hover:text-gray-700"
+          }`}
+          onClick={() => setContactTab("csv")}
+        >
+          Upload CSV
+        </button>
+      </div>
+
+      {contactTab === "crm" ? (
+        <CrmContactPicker
+          selectedIds={crmSelectedIds}
+          setSelectedIds={setCrmSelectedIds}
+        />
+      ) : (
+        <CsvUploadTab
+          contacts={contacts}
+          csvError={csvError}
+          csvFileName={csvFileName}
+          uploading={uploading}
+          showFormatHelp={showFormatHelp}
+          pendingFile={pendingFile}
+          onUpload={onUpload}
+          onToggle={onToggle}
+          onToggleAll={onToggleAll}
+          onShowFormatHelp={onShowFormatHelp}
+          onSmartImport={onSmartImport}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── CRM Contact Picker ────────────────────────────────────────────
+
+function CrmContactPicker({
+  selectedIds,
+  setSelectedIds,
+}: {
+  selectedIds: Set<number>;
+  setSelectedIds: (ids: Set<number>) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(debounceRef.current);
+  }, [search]);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["contacts", "picker", debouncedSearch, page],
+    queryFn: () => contactsApi.listContacts(page, debouncedSearch || undefined),
+    placeholderData: keepPreviousData,
+  });
+
+  const crmContacts = data?.contacts ?? [];
+  const totalPages = data?.pages ?? 1;
+  const total = data?.total ?? 0;
+
+  const toggleOne = (id: number) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedIds(next);
+  };
+
+  const allOnPageSelected =
+    crmContacts.length > 0 && crmContacts.every((c) => selectedIds.has(c.id));
+
+  const togglePage = () => {
+    const next = new Set(selectedIds);
+    if (allOnPageSelected) {
+      crmContacts.forEach((c) => next.delete(c.id));
+    } else {
+      crmContacts.forEach((c) => next.add(c.id));
+    }
+    setSelectedIds(next);
+  };
+
+  const formatAum = (aum: number | null | undefined) => {
+    if (aum == null) return "-";
+    if (aum >= 1000) return `$${(aum / 1000).toFixed(1)}B`;
+    return `$${aum}M`;
+  };
+
+  return (
+    <div className="space-y-3">
+      <Input
+        placeholder="Search by name, email, or company..."
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        leftIcon={<Search size={16} />}
+      />
+
+      {isLoading && crmContacts.length === 0 ? (
+        <div className="flex items-center justify-center py-12 text-gray-400">
+          <Loader2 size={20} className="animate-spin" />
+        </div>
+      ) : crmContacts.length === 0 ? (
+        <div className="text-center py-8 text-sm text-gray-500">
+          {debouncedSearch
+            ? `No contacts matching "${debouncedSearch}"`
+            : "No contacts in your CRM yet"}
+        </div>
+      ) : (
+        <>
+          <div className="border border-gray-200 rounded-lg overflow-hidden max-h-72 overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 sticky top-0">
+                <tr>
+                  <th className="w-10 px-3 py-2">
+                    <input
+                      type="checkbox"
+                      checked={allOnPageSelected}
+                      onChange={togglePage}
+                      className="rounded border-gray-300"
+                      aria-label="Select all on this page"
+                    />
+                  </th>
+                  <th className="text-left px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide">Name</th>
+                  <th className="text-left px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide">Company</th>
+                  <th className="text-right px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide">AUM</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {crmContacts.map((c) => {
+                  const checked = selectedIds.has(c.id);
+                  return (
+                    <tr
+                      key={c.id}
+                      className={`hover:bg-gray-50 cursor-pointer transition-colors ${checked ? "bg-blue-50" : ""}`}
+                      onClick={() => toggleOne(c.id)}
+                    >
+                      <td className="px-3 py-2">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleOne(c.id)}
+                          className="rounded border-gray-300"
+                          aria-label={`Select ${c.full_name || c.first_name}`}
+                        />
+                      </td>
+                      <td className="px-3 py-2 font-medium">
+                        {c.full_name || [c.first_name, c.last_name].filter(Boolean).join(" ")}
+                      </td>
+                      <td className="px-3 py-2 text-gray-500">{c.company_name || "-"}</td>
+                      <td className="px-3 py-2 text-right text-gray-500">{formatAum(c.aum_millions)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Footer: selection count + pagination */}
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-gray-500">
+              {selectedIds.size} selected
+              {total > 0 && ` of ${total}`}
+            </span>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page <= 1}
+                  className="px-2 py-1 text-xs font-medium text-gray-600 border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft size={14} />
+                </button>
+                <span className="text-xs text-gray-500">
+                  Page {page} of {totalPages}
+                </span>
+                <button
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page >= totalPages}
+                  className="px-2 py-1 text-xs font-medium text-gray-600 border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── CSV Upload Tab ────────────────────────────────────────────────
+
+function CsvUploadTab({
   contacts,
   csvError,
   csvFileName,
@@ -532,11 +819,6 @@ function StepContacts({
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold">Add contacts</h2>
-      <p className="text-sm text-gray-500">
-        Upload a CSV file with your contacts. We'll try to auto-detect the columns.
-      </p>
-
       {/* CSV upload zone */}
       <label className="flex flex-col items-center justify-center border-2 border-dashed border-gray-200 rounded-lg p-8 cursor-pointer hover:border-gray-400 transition-colors">
         {uploading ? (
@@ -1029,9 +1311,66 @@ function StepMessages({
   refTemplates: Record<number, number | null>;
   setRefTemplates: (v: Record<number, number | null>) => void;
 }) {
+  const { toast } = useToast();
   const { data: templates = [] } = useQuery<Template[]>({
     queryKey: ["templates"],
     queryFn: () => api.listTemplates(undefined, true),
+  });
+
+  const [productDescription, setProductDescription] = useState("");
+  const [showSmartInput, setShowSmartInput] = useState(false);
+  const [improveStep, setImproveStep] = useState<number | null>(null);
+  const [improveInstruction, setImproveInstruction] = useState("");
+
+  const sequenceMutation = useMutation({
+    mutationFn: () =>
+      api.generateSequenceMessages({
+        steps: steps.map((s) => ({
+          step_order: s.step_order,
+          channel: s.channel,
+          delay_days: s.delay_days,
+        })),
+        product_description: productDescription,
+      }),
+    onSuccess: (data) => {
+      const newModes: Record<number, 'template' | 'manual' | 'ai'> = {};
+      const newSubjects: Record<number, string> = { ...manualSubjects };
+      const newBodies: Record<number, string> = { ...manualBodies };
+      for (const msg of data.messages) {
+        newModes[msg.step_order] = "manual";
+        if (msg.subject) newSubjects[msg.step_order] = msg.subject;
+        newBodies[msg.step_order] = msg.body;
+      }
+      setTemplateModes({ ...templateModes, ...newModes });
+      setManualSubjects(newSubjects);
+      setManualBodies(newBodies);
+      toast(`Generated messages for ${data.messages.length} steps`, "success");
+    },
+    onError: () => {
+      toast("AI generation failed. Set messages manually.", "error");
+    },
+  });
+
+  const improveMutation = useMutation({
+    mutationFn: (params: { stepOrder: number; channel: string; body: string; subject?: string; instruction: string }) =>
+      api.improveMessage({
+        channel: params.channel,
+        body: params.body,
+        subject: params.subject,
+        instruction: params.instruction,
+      }),
+    onSuccess: (data, vars) => {
+      if (data.subject) {
+        setManualSubjects({ ...manualSubjects, [vars.stepOrder]: data.subject });
+      }
+      setManualBodies({ ...manualBodies, [vars.stepOrder]: data.body });
+      setImproveStep(null);
+      setImproveInstruction("");
+      toast("Message improved", "success");
+    },
+    onError: () => {
+      toast("Failed to improve message. Try again.", "error");
+    },
   });
 
   const getMode = (stepOrder: number) => templateModes[stepOrder] || "template";
@@ -1052,18 +1391,69 @@ function StepMessages({
         Pick a template, write your own message, or use AI to generate personalized drafts from research data.
       </p>
 
+      {!showSmartInput ? (
+        <button
+          type="button"
+          onClick={() => setShowSmartInput(true)}
+          className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-lg border-2 border-dashed border-purple-200 bg-purple-50/50 text-purple-700 text-sm font-medium hover:bg-purple-50 hover:border-purple-300 transition-colors"
+        >
+          <Sparkles size={16} />
+          Generate All Messages with AI
+        </button>
+      ) : (
+        <div className="p-4 rounded-lg border border-purple-200 bg-purple-50/30 space-y-3">
+          <label className="block text-sm font-medium text-gray-700">
+            Describe what you're selling / your fund thesis
+          </label>
+          <textarea
+            value={productDescription}
+            onChange={(e) => setProductDescription(e.target.value)}
+            placeholder="e.g., We run a $200M crypto-native fund focused on DePIN infrastructure. Looking to connect with allocators exploring digital asset exposure..."
+            className="w-full h-20 p-3 border border-gray-200 rounded-md text-sm resize-y focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+          />
+          <div className="flex items-center gap-2">
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => sequenceMutation.mutate()}
+              loading={sequenceMutation.isPending}
+              disabled={productDescription.trim().length < 10}
+              leftIcon={<Sparkles size={14} />}
+              className="!bg-purple-600 hover:!bg-purple-700"
+            >
+              Generate All Messages
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowSmartInput(false)}
+              disabled={sequenceMutation.isPending}
+            >
+              Cancel
+            </Button>
+            {productDescription.trim().length > 0 && productDescription.trim().length < 10 && (
+              <span className="text-xs text-gray-400">Minimum 10 characters</span>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="space-y-4">
         {steps.map((s) => {
           const mode = getMode(s.step_order);
           const isEmail = isEmailChannel(s.channel);
           const available = filteredTemplates(s.channel);
+          const hasBody = (manualBodies[s.step_order] || "").trim().length > 0;
 
           return (
             <div
               key={s.step_order}
-              className="p-4 border border-gray-200 rounded-lg space-y-3"
+              className={`p-4 border rounded-lg space-y-3 ${
+                sequenceMutation.isPending
+                  ? "border-purple-200 bg-purple-50/20"
+                  : "border-gray-200"
+              }`}
             >
-              {/* Step header */}
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-400 shrink-0">
                   Step {s.step_order} &middot; Day {s.delay_days}
@@ -1079,141 +1469,217 @@ function StepMessages({
                 </span>
               </div>
 
-              {/* Radio group */}
-              <div
-                className="flex flex-col sm:flex-row gap-2 sm:gap-4"
-                role="radiogroup"
-                aria-label={`Template mode for Step ${s.step_order}: ${s.channel}`}
-              >
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="radio"
-                    name={`mode-${s.step_order}`}
-                    checked={mode === "template"}
-                    onChange={() => setMode(s.step_order, "template")}
-                    className="text-blue-600 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-                  />
-                  <span className="text-sm font-medium text-gray-700">Select template</span>
-                </label>
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="radio"
-                    name={`mode-${s.step_order}`}
-                    checked={mode === "manual"}
-                    onChange={() => setMode(s.step_order, "manual")}
-                    className="text-blue-600 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-                  />
-                  <span className="text-sm font-medium text-gray-700">Write manually</span>
-                </label>
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="radio"
-                    name={`mode-${s.step_order}`}
-                    checked={mode === "ai"}
-                    onChange={() => setMode(s.step_order, "ai")}
-                    className="text-purple-600 focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2"
-                  />
-                  <Sparkles size={14} className="text-purple-500" />
-                  <span className="text-sm font-medium text-purple-600">AI draft</span>
-                </label>
-              </div>
-
-              {/* Mode-specific content */}
-              {mode === "template" && (
-                <div>
-                  <select
-                    value={stepTemplates[s.step_order] ?? ""}
-                    onChange={(e) =>
-                      setStepTemplates({
-                        ...stepTemplates,
-                        [s.step_order]: e.target.value ? Number(e.target.value) : null,
-                      })
-                    }
-                    className="bg-white border border-gray-200 rounded-md px-3 py-2 text-sm w-full"
+              {sequenceMutation.isPending ? (
+                <div className="space-y-2 animate-pulse">
+                  <div className="h-4 bg-purple-100 rounded w-3/4" />
+                  <div className="h-4 bg-purple-100 rounded w-full" />
+                  <div className="h-4 bg-purple-100 rounded w-5/6" />
+                  <p className="text-xs text-purple-500 font-medium">Generating personalized sequence...</p>
+                </div>
+              ) : (
+                <>
+                  <div
+                    className="flex flex-col sm:flex-row gap-2 sm:gap-4"
+                    role="radiogroup"
+                    aria-label={`Template mode for Step ${s.step_order}: ${s.channel}`}
                   >
-                    <option value="">Choose later...</option>
-                    {available.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}
-                        {t.variant_label ? ` (${t.variant_label})` : ""}
-                      </option>
-                    ))}
-                  </select>
-                  {available.length === 0 && (
-                    <p className="text-xs text-gray-400 mt-1">
-                      No {isEmail ? "email" : "LinkedIn"} templates yet -- write manually or use AI.
-                    </p>
-                  )}
-                  {/* Template preview */}
-                  {stepTemplates[s.step_order] && (() => {
-                    const tpl = templates.find((t) => t.id === stepTemplates[s.step_order]);
-                    if (!tpl) return null;
-                    return (
-                      <div className="bg-gray-50 rounded-md p-3 text-sm text-gray-600 max-h-32 overflow-y-auto mt-2 whitespace-pre-wrap">
-                        {tpl.subject && <div className="font-medium mb-1">{tpl.subject}</div>}
-                        {tpl.body_template}
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
-
-              {mode === "manual" && (
-                <div className="space-y-2">
-                  <p className="text-xs text-gray-400">
-                    Variables: <code className="text-purple-600 font-medium">{"{{first_name}}"}</code>, <code className="text-purple-600 font-medium">{"{{company_name}}"}</code>, <code className="text-purple-600 font-medium">{"{{title}}"}</code>
-                  </p>
-                  {isEmail && (
-                    <input
-                      type="text"
-                      placeholder="Subject line"
-                      value={manualSubjects[s.step_order] || ""}
-                      onChange={(e) =>
-                        setManualSubjects({ ...manualSubjects, [s.step_order]: e.target.value })
-                      }
-                      className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                  )}
-                  <textarea
-                    placeholder="Message body..."
-                    value={manualBodies[s.step_order] || ""}
-                    onChange={(e) =>
-                      setManualBodies({ ...manualBodies, [s.step_order]: e.target.value })
-                    }
-                    className="w-full h-28 p-3 border border-gray-200 rounded-md text-sm resize-y focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-              )}
-
-              {mode === "ai" && (
-                <div className="space-y-2">
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">
-                      Reference template (optional)
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        name={`mode-${s.step_order}`}
+                        checked={mode === "template"}
+                        onChange={() => setMode(s.step_order, "template")}
+                        className="text-blue-600 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                      />
+                      <span className="text-sm font-medium text-gray-700">Select template</span>
                     </label>
-                    <select
-                      value={refTemplates[s.step_order] ?? ""}
-                      onChange={(e) =>
-                        setRefTemplates({
-                          ...refTemplates,
-                          [s.step_order]: e.target.value ? Number(e.target.value) : null,
-                        })
-                      }
-                      className="bg-white border border-gray-200 rounded-md px-3 py-2 text-sm w-full"
-                    >
-                      <option value="">None</option>
-                      {available.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
-                          {t.variant_label ? ` (${t.variant_label})` : ""}
-                        </option>
-                      ))}
-                    </select>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        name={`mode-${s.step_order}`}
+                        checked={mode === "manual"}
+                        onChange={() => setMode(s.step_order, "manual")}
+                        className="text-blue-600 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                      />
+                      <span className="text-sm font-medium text-gray-700">Write manually</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        name={`mode-${s.step_order}`}
+                        checked={mode === "ai"}
+                        onChange={() => setMode(s.step_order, "ai")}
+                        className="text-purple-600 focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2"
+                      />
+                      <Sparkles size={14} className="text-purple-500" />
+                      <span className="text-sm font-medium text-purple-600">AI draft</span>
+                    </label>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">
-                    AI generates a personalized message using deep research data. You'll review and edit each draft before sending.
-                  </p>
-                </div>
+
+                  {mode === "template" && (
+                    <div>
+                      <select
+                        value={stepTemplates[s.step_order] ?? ""}
+                        onChange={(e) =>
+                          setStepTemplates({
+                            ...stepTemplates,
+                            [s.step_order]: e.target.value ? Number(e.target.value) : null,
+                          })
+                        }
+                        className="bg-white border border-gray-200 rounded-md px-3 py-2 text-sm w-full"
+                      >
+                        <option value="">Choose later...</option>
+                        {available.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name}
+                            {t.variant_label ? ` (${t.variant_label})` : ""}
+                          </option>
+                        ))}
+                      </select>
+                      {available.length === 0 && (
+                        <p className="text-xs text-gray-400 mt-1">
+                          No {isEmail ? "email" : "LinkedIn"} templates yet -- write manually or use AI.
+                        </p>
+                      )}
+                      {stepTemplates[s.step_order] && (() => {
+                        const tpl = templates.find((t) => t.id === stepTemplates[s.step_order]);
+                        if (!tpl) return null;
+                        return (
+                          <div className="bg-gray-50 rounded-md p-3 text-sm text-gray-600 max-h-32 overflow-y-auto mt-2 whitespace-pre-wrap">
+                            {tpl.subject && <div className="font-medium mb-1">{tpl.subject}</div>}
+                            {tpl.body_template}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+
+                  {mode === "manual" && (
+                    <div className="space-y-2">
+                      <p className="text-xs text-gray-400">
+                        Variables: <code className="text-purple-600 font-medium">{"{{first_name}}"}</code>, <code className="text-purple-600 font-medium">{"{{company_name}}"}</code>, <code className="text-purple-600 font-medium">{"{{title}}"}</code>
+                      </p>
+                      {isEmail && (
+                        <input
+                          type="text"
+                          placeholder="Subject line"
+                          value={manualSubjects[s.step_order] || ""}
+                          onChange={(e) =>
+                            setManualSubjects({ ...manualSubjects, [s.step_order]: e.target.value })
+                          }
+                          className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                      )}
+                      <textarea
+                        placeholder="Message body..."
+                        value={manualBodies[s.step_order] || ""}
+                        onChange={(e) =>
+                          setManualBodies({ ...manualBodies, [s.step_order]: e.target.value })
+                        }
+                        className="w-full h-28 p-3 border border-gray-200 rounded-md text-sm resize-y focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                      {hasBody && (
+                        <>
+                          {improveStep === s.step_order ? (
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                value={improveInstruction}
+                                onChange={(e) => setImproveInstruction(e.target.value)}
+                                placeholder="What would you like to improve?"
+                                className="flex-1 px-3 py-1.5 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" && improveInstruction.trim()) {
+                                    improveMutation.mutate({
+                                      stepOrder: s.step_order,
+                                      channel: s.channel,
+                                      body: manualBodies[s.step_order],
+                                      subject: isEmail ? manualSubjects[s.step_order] : undefined,
+                                      instruction: improveInstruction,
+                                    });
+                                  }
+                                }}
+                                autoFocus
+                              />
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                onClick={() =>
+                                  improveMutation.mutate({
+                                    stepOrder: s.step_order,
+                                    channel: s.channel,
+                                    body: manualBodies[s.step_order],
+                                    subject: isEmail ? manualSubjects[s.step_order] : undefined,
+                                    instruction: improveInstruction,
+                                  })
+                                }
+                                loading={improveMutation.isPending}
+                                disabled={!improveInstruction.trim()}
+                                className="!bg-purple-600 hover:!bg-purple-700"
+                              >
+                                Apply
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setImproveStep(null);
+                                  setImproveInstruction("");
+                                }}
+                                disabled={improveMutation.isPending}
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setImproveStep(s.step_order);
+                                setImproveInstruction("");
+                              }}
+                              className="inline-flex items-center gap-1 text-xs text-purple-600 hover:text-purple-700 font-medium"
+                            >
+                              <Wand2 size={12} />
+                              Improve with AI
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {mode === "ai" && (
+                    <div className="space-y-2">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">
+                          Reference template (optional)
+                        </label>
+                        <select
+                          value={refTemplates[s.step_order] ?? ""}
+                          onChange={(e) =>
+                            setRefTemplates({
+                              ...refTemplates,
+                              [s.step_order]: e.target.value ? Number(e.target.value) : null,
+                            })
+                          }
+                          className="bg-white border border-gray-200 rounded-md px-3 py-2 text-sm w-full"
+                        >
+                          <option value="">None</option>
+                          {available.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.name}
+                              {t.variant_label ? ` (${t.variant_label})` : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">
+                        AI generates a personalized message using deep research data. You'll review and edit each draft before sending.
+                      </p>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           );

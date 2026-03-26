@@ -1,12 +1,13 @@
 import { useState, useRef } from "react";
 import React from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Linkedin, ChevronDown, ChevronUp, Pencil, Sparkles } from "lucide-react";
+import { Linkedin, ChevronDown, ChevronUp, Pencil, Sparkles, CheckCircle } from "lucide-react";
 import { api } from "../api/client";
 import { queueApi } from "../api/queue";
 import AiDraftControls from "./AiDraftControls";
 import type { QueueItem } from "../types";
 import AumTierBadge from "./AumTierBadge";
+import SignalBadge from "./SignalBadge";
 import CopyButton from "./CopyButton";
 import ContactEditPanel from "./ContactEditPanel";
 import SkipMenu from "./SkipMenu";
@@ -33,10 +34,14 @@ function QueueLinkedInCard({
   item,
   campaign,
   onDeferred,
+  isFocused,
+  isApproved,
 }: {
   item: QueueItem;
   campaign: string;
   onDeferred?: () => void;
+  isFocused?: boolean;
+  isApproved?: boolean;
 }) {
   const [done, setDone] = useState(false);
   const [skipped, setSkipped] = useState(false);
@@ -113,9 +118,15 @@ function QueueLinkedInCard({
   }
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+    <div
+      className={`bg-white border rounded-lg shadow-sm overflow-hidden ${
+        isFocused ? "ring-2 ring-blue-500 ring-offset-2 border-blue-300" : "border-gray-200"
+      }`}
+      aria-label={`LinkedIn: ${item.contact_name}`}
+    >
       <div className="bg-blue-50 px-5 py-3 flex items-center justify-between border-b border-blue-100">
         <div className="flex items-center gap-1.5">
+          {isApproved && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
           <Linkedin size={16} className="text-blue-600 flex-shrink-0" />
           <span className="font-semibold text-gray-900">
             {item.contact_name}
@@ -124,6 +135,7 @@ function QueueLinkedInCard({
             onClick={() => contactEdit.setShowEdit(!contactEdit.showEdit)}
             className="p-0.5 text-gray-400 hover:text-gray-600 transition-colors"
             title="Edit contact details"
+            data-role="edit-contact"
           >
             <Pencil size={14} />
           </button>
@@ -135,6 +147,9 @@ function QueueLinkedInCard({
             )}
           </span>
           <AumTierBadge tier={item.aum_tier} />
+          {item.fund_signals && item.fund_signals.length > 0 && (
+            <SignalBadge signals={item.fund_signals} />
+          )}
         </div>
         <div className="flex items-center gap-3">
           <span className="text-sm text-blue-600 font-medium">

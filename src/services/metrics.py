@@ -113,6 +113,22 @@ def get_campaign_metrics(conn, campaign_id: int) -> dict:
     }
 
 
+def compute_health_score(metrics: dict) -> Optional[int]:
+    total_enrolled = metrics.get("total_enrolled", 0)
+    if total_enrolled == 0:
+        return None
+
+    by_status = metrics.get("by_status", {})
+    emails_sent = metrics.get("emails_sent", 0)
+
+    positive_reply_rate = by_status.get("replied_positive", 0) / total_enrolled
+    send_velocity_pct = emails_sent / total_enrolled
+    bounce_rate = by_status.get("bounced", 0) / emails_sent if emails_sent > 0 else 0
+
+    score = (positive_reply_rate * 50) + (send_velocity_pct * 30) - (bounce_rate * 20)
+    return max(0, min(100, round(score)))
+
+
 def get_variant_comparison(conn, campaign_id: int) -> list[dict]:
     """Compare A/B variants by reply rates.
 

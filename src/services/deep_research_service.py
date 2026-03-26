@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import threading
 import time
@@ -36,6 +37,28 @@ from src.services.normalization_utils import (
 logger = logging.getLogger(__name__)
 
 DEEP_RESEARCH_MODEL = "claude-sonnet-4-20250514"
+
+_HIGH_RECENCY_PATTERNS = re.compile(
+    r"\b(just|recently|this week|this month|announced|launching|new fund|"
+    r"newly appointed|breaking|latest|upcoming|imminent|days ago)\b",
+    re.IGNORECASE,
+)
+_MEDIUM_RECENCY_PATTERNS = re.compile(
+    r"\b(this year|this quarter|2026|2025|recent|last month|q[1-4]\b)",
+    re.IGNORECASE,
+)
+_LOW_RECENCY_PATTERNS = re.compile(
+    r"\b(historically|has been|tradition|long.?standing|for years|established)\b",
+    re.IGNORECASE,
+)
+
+_SIGNAL_TYPE_PATTERNS: list[tuple[str, re.Pattern]] = [
+    ("fund_raise", re.compile(r"\b(fund\s*rais|raised|new fund|launch.{0,20}fund|capital raise|close[ds]?\s+\$)", re.IGNORECASE)),
+    ("key_hire", re.compile(r"\b(hired|appoint|new\s+(?:cio|cfo|head|director|partner|managing)|joined as|promotion)\b", re.IGNORECASE)),
+    ("crypto_allocation", re.compile(r"\b(allocat|bitcoin|crypto.{0,15}portfolio|digital asset.{0,15}invest|blockchain.{0,15}fund)\b", re.IGNORECASE)),
+    ("portfolio_move", re.compile(r"\b(acqui|divest|portfolio.{0,10}move|exit|new position|stake in|increased.{0,10}holding)\b", re.IGNORECASE)),
+    ("conference", re.compile(r"\b(conference|summit|panel|speak|keynote|event|forum|symposium)\b", re.IGNORECASE)),
+]
 
 # Cost estimates per operation
 COST_PERPLEXITY_QUERY = 0.005
@@ -80,6 +103,86 @@ Rules:
 
 
 # ---------------------------------------------------------------------------
+# Fund Signal Extraction
+# ---------------------------------------------------------------------------
+
+
+def _recency_score(text: str) -> float:
+    if _HIGH_RECENCY_PATTERNS.search(text):
+        return 0.9
+    if _MEDIUM_RECENCY_PATTERNS.search(text):
+        return 0.6
+    if _LOW_RECENCY_PATTERNS.search(text):
+        return 0.2
+    return 0.4
+
+
+def _detect_signal_type(text: str) -> str:
+    for signal_type, pattern in _SIGNAL_TYPE_PATTERNS:
+        if pattern.search(text):
+            return signal_type
+    return "general"
+
+
+def _extract_fund_signals(research_result: dict) -> list[dict]:
+    """Extract time-sensitive fund intelligence signals from synthesis output.
+
+    Scans crypto_signals and talking_points for actionable, time-sensitive
+    items like fund raises, key hires, crypto allocations, portfolio moves,
+    and conference attendance.
+    """
+    signals: list[dict] = []
+    seen_texts: set[str] = set()
+
+    crypto_signals = research_result.get("crypto_signals") or []
+    if isinstance(crypto_signals, list):
+        for entry in crypto_signals:
+            if not isinstance(entry, dict):
+                continue
+            text = (entry.get("quote") or "").strip()
+            if not text or text.lower() in seen_texts:
+                continue
+            signal_type = _detect_signal_type(text)
+            if signal_type == "general" and (entry.get("relevance") or "").lower() == "low":
+                continue
+            seen_texts.add(text.lower())
+            signals.append({
+                "type": signal_type,
+                "text": text,
+                "recency_score": _recency_score(text),
+            })
+
+    talking_points = research_result.get("talking_points") or []
+    if isinstance(talking_points, list):
+        for entry in talking_points:
+            if not isinstance(entry, dict):
+                continue
+            hook = (entry.get("hook_type") or "")
+            if hook not in ("event_hook", "portfolio_move", "team_signal"):
+                continue
+            text = (entry.get("text") or "").strip()
+            if not text or text.lower() in seen_texts:
+                continue
+            signal_type = _detect_signal_type(text)
+            if signal_type == "general":
+                type_map = {
+                    "event_hook": "conference",
+                    "portfolio_move": "portfolio_move",
+                    "team_signal": "key_hire",
+                }
+                signal_type = type_map.get(hook, "general")
+            seen_texts.add(text.lower())
+            signals.append({
+                "type": signal_type,
+                "text": text,
+                "recency_score": _recency_score(text),
+            })
+
+    signals.sort(key=lambda s: s["recency_score"], reverse=True)
+    return signals
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -104,11 +207,11 @@ def _update_status(conn, deep_research_id: int, status: str, **kwargs) -> None:
         "raw_queries", "company_overview", "crypto_signals", "key_people",
         "talking_points", "risk_factors", "updated_crypto_score", "confidence",
         "actual_cost_usd", "query_count", "previous_crypto_score",
-        "error_message",
+        "error_message", "fund_signals",
     ):
         if key in kwargs:
             val = kwargs[key]
-            if key in ("raw_queries", "crypto_signals", "key_people", "talking_points"):
+            if key in ("raw_queries", "crypto_signals", "key_people", "talking_points", "fund_signals"):
                 val = json.dumps(val) if val is not None else None
             sets.append(f"{key} = %s")
             vals.append(val)
@@ -472,10 +575,8 @@ def run_deep_research(
 
         keys = api_keys or {}
         if not keys.get("perplexity"):
-            import os
             keys["perplexity"] = os.getenv("PERPLEXITY_API_KEY", "")
         if not keys.get("anthropic"):
-            import os
             keys["anthropic"] = os.getenv("ANTHROPIC_API_KEY", "")
 
         _execute_deep_research(conn, deep_research_id, keys)
@@ -622,6 +723,8 @@ def _execute_deep_research(conn, deep_research_id: int, api_keys: dict) -> None:
     except (TypeError, ValueError):
         validated_score = None
 
+    fund_signals = _extract_fund_signals(synthesis)
+
     # --- Final update ---
     _update_status(
         conn, deep_research_id, "completed",
@@ -636,6 +739,7 @@ def _execute_deep_research(conn, deep_research_id: int, api_keys: dict) -> None:
         actual_cost_usd=round(total_cost, 4),
         query_count=len(queries),
         previous_crypto_score=previous_score,
+        fund_signals=fund_signals,
     )
 
     logger.info(

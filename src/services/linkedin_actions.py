@@ -102,6 +102,7 @@ def complete_linkedin_action(
             user_id=user_id,
         )
         advanced = True
+        conn.commit()
         return {
             "success": True,
             "event_type": event_type,
@@ -110,16 +111,10 @@ def complete_linkedin_action(
             "next_date": next_date,
         }
     else:
-        # No more steps — mark as no_response (triggers auto-activation)
-        update_contact_campaign_status(
-            conn, contact_id, campaign_id,
-            status="no_response",
-            user_id=user_id,
-        )
-        log_event(conn, contact_id, "status_no_response", campaign_id=campaign_id, user_id=user_id)
-        # Auto-activate next contact at company
-        from src.services.state_machine import _activate_next_contact
-        _activate_next_contact(conn, contact_id, campaign_id, user_id=user_id)
+        # No more steps — use state machine for validated transition + auto-activation
+        from src.services.state_machine import transition_contact
+        transition_contact(conn, contact_id, campaign_id, "no_response", user_id=user_id)
+        conn.commit()
 
         return {
             "success": True,

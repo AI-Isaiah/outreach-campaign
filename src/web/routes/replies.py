@@ -3,20 +3,59 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from src.services.gmail_drafter import GmailDrafter
 from src.services.linkedin_acceptance_scanner import scan_linkedin_acceptances
 from src.services.reply_detector import scan_gmail_for_replies
 from src.services.state_machine import InvalidTransition, transition_contact
-from src.web.dependencies import get_current_user, get_db
+from src.services.token_encryption import decrypt_token
+from src.web.dependencies import get_current_user, get_db, verify_cron_secret
 from src.models.database import get_cursor
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["replies"])
+cron_router = APIRouter(tags=["cron"])
+
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
+
+
+def _build_drafter_from_db(conn, user_id: int) -> GmailDrafter | None:
+    """Load Gmail OAuth tokens from DB and return a GmailDrafter, or None."""
+    with get_cursor(conn) as cur:
+        cur.execute(
+            """SELECT gmail_access_token, gmail_refresh_token, gmail_connected
+               FROM users WHERE id = %s""",
+            (user_id,),
+        )
+        row = cur.fetchone()
+
+    if not row or not row["gmail_connected"] or not row["gmail_access_token"]:
+        return None
+
+    try:
+        access_token = decrypt_token(row["gmail_access_token"])
+        refresh_token = decrypt_token(row["gmail_refresh_token"]) if row["gmail_refresh_token"] else ""
+    except Exception:
+        logger.exception("Failed to decrypt Gmail tokens for user %s", user_id)
+        return None
+
+    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+        logger.warning("GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET not set")
+        return None
+
+    return GmailDrafter.from_db_tokens(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        client_id=GOOGLE_CLIENT_ID,
+        client_secret=GOOGLE_CLIENT_SECRET,
+    )
 
 
 class ConfirmReplyRequest(BaseModel):
@@ -42,7 +81,19 @@ def list_pending_replies(
                ORDER BY pr.detected_at DESC""",
             (user["id"],),
         )
-        return [dict(r) for r in cur.fetchall()]
+        replies = [dict(r) for r in cur.fetchall()]
+
+        cur.execute(
+            "SELECT last_reply_scan_at FROM users WHERE id = %s",
+            (user["id"],),
+        )
+        user_row = cur.fetchone()
+        last_scan = user_row["last_reply_scan_at"] if user_row else None
+
+    return {
+        "replies": replies,
+        "last_auto_scan_at": last_scan.isoformat() if last_scan else None,
+    }
 
 
 @router.post("/replies/{reply_id}/confirm")
@@ -139,7 +190,8 @@ def trigger_reply_scan(
 ):
     """Scan Gmail inbox for replies from enrolled contacts."""
     try:
-        result = scan_gmail_for_replies(conn, user_id=user["id"])
+        drafter = _build_drafter_from_db(conn, user["id"])
+        result = scan_gmail_for_replies(conn, drafter=drafter, user_id=user["id"])
         return {"status": "ok", **result}
     except RuntimeError as e:
         raise HTTPException(400, str(e))
@@ -161,3 +213,144 @@ def trigger_linkedin_scan(
         return {"status": "ok", **result}
     except RuntimeError as e:
         raise HTTPException(400, str(e))
+
+
+CRON_BATCH_SIZE = 10
+
+
+@cron_router.post("/cron/scan-replies")
+def cron_scan_replies(conn=Depends(get_db), _=Depends(verify_cron_secret)):
+    """Batch-scan replies for all Gmail-connected users (called by Vercel cron)."""
+    errors: list[str] = []
+
+    with get_cursor(conn) as cur:
+        cur.execute("SELECT COALESCE(MAX(last_scan_cursor), 0) AS cursor FROM users")
+        cursor_row = cur.fetchone()
+        cursor_pos = cursor_row["cursor"] if cursor_row else 0
+
+        cur.execute(
+            """SELECT id FROM users
+               WHERE gmail_connected = true AND gmail_access_token IS NOT NULL
+                     AND id > %s
+               ORDER BY id LIMIT %s""",
+            (cursor_pos, CRON_BATCH_SIZE),
+        )
+        batch = [r["id"] for r in cur.fetchall()]
+
+        cur.execute(
+            """SELECT COUNT(*) AS cnt FROM users
+               WHERE gmail_connected = true AND gmail_access_token IS NOT NULL
+                     AND id > %s""",
+            (cursor_pos,),
+        )
+        total_remaining = cur.fetchone()["cnt"]
+
+    processed = 0
+    for user_id in batch:
+        try:
+            drafter = _build_drafter_from_db(conn, user_id)
+            if drafter is None:
+                logger.info("Skipping user %d — drafter unavailable", user_id)
+                continue
+
+            scan_gmail_for_replies(conn, drafter=drafter, user_id=user_id)
+
+            with get_cursor(conn) as cur:
+                cur.execute(
+                    "UPDATE users SET last_reply_scan_at = NOW() WHERE id = %s",
+                    (user_id,),
+                )
+                conn.commit()
+            processed += 1
+        except Exception as exc:
+            logger.exception("Cron scan failed for user %d", user_id)
+            errors.append(f"user {user_id}: {exc}")
+
+    new_cursor = batch[-1] if batch else 0
+    remaining = total_remaining - len(batch)
+    if remaining <= 0:
+        new_cursor = 0
+
+    with get_cursor(conn) as cur:
+        cur.execute(
+            "UPDATE users SET last_scan_cursor = %s WHERE id = (SELECT MIN(id) FROM users)",
+            (new_cursor,),
+        )
+        conn.commit()
+
+    return {
+        "processed": processed,
+        "remaining": max(remaining, 0),
+        "errors": errors,
+    }
+
+
+SCHEDULED_SEND_BATCH_SIZE = 10
+
+
+@cron_router.post("/cron/send-scheduled")
+def cron_send_scheduled(conn=Depends(get_db), _=Depends(verify_cron_secret)):
+    """Send emails whose scheduled_for time has arrived (called by Vercel cron)."""
+    from src.config import load_config
+    from src.services.email_sender import send_campaign_email
+
+    with get_cursor(conn) as cur:
+        cur.execute(
+            """SELECT ccs.contact_id, ccs.campaign_id,
+                      ss.template_id, c.user_id
+               FROM contact_campaign_status ccs
+               JOIN campaigns c ON c.id = ccs.campaign_id
+               JOIN sequence_steps ss
+                 ON ss.campaign_id = ccs.campaign_id AND ss.step_order = ccs.current_step
+               WHERE ccs.approved_at IS NOT NULL
+                 AND ccs.scheduled_for IS NOT NULL
+                 AND ccs.scheduled_for <= NOW()
+                 AND ccs.sent_at IS NULL
+                 AND ccs.status = 'in_progress'
+                 AND ss.channel = 'email'
+               ORDER BY ccs.scheduled_for
+               LIMIT %s""",
+            (SCHEDULED_SEND_BATCH_SIZE,),
+        )
+        rows = cur.fetchall()
+
+    if not rows:
+        return {"sent": 0, "failed": 0, "errors": []}
+
+    try:
+        config = load_config()
+    except FileNotFoundError:
+        config = {}
+
+    sent = 0
+    failed = 0
+    errors: list[str] = []
+
+    for row in rows:
+        try:
+            ok = send_campaign_email(
+                conn,
+                row["contact_id"],
+                row["campaign_id"],
+                row["template_id"],
+                config,
+                user_id=row["user_id"],
+            )
+            if ok:
+                sent += 1
+            else:
+                failed += 1
+                errors.append(
+                    f"contact {row['contact_id']}/campaign {row['campaign_id']}: send returned false"
+                )
+        except Exception as exc:
+            logger.exception(
+                "cron_send_scheduled failed for contact %s campaign %s",
+                row["contact_id"], row["campaign_id"],
+            )
+            failed += 1
+            errors.append(
+                f"contact {row['contact_id']}/campaign {row['campaign_id']}: {exc}"
+            )
+
+    return {"sent": sent, "failed": failed, "errors": errors}
