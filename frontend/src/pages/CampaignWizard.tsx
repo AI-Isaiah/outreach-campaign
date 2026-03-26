@@ -1,9 +1,10 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useMutation, useQuery, keepPreviousData } from "@tanstack/react-query";
 import {
   Upload,
   Check,
+  CheckCircle,
   ChevronLeft,
   ChevronRight,
   Rocket,
@@ -81,6 +82,7 @@ interface ParsedContact {
 
 export default function CampaignWizard() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const [step, setStep] = useState(0);
   const [showLeaveDialog, setShowLeaveDialog] = useState(false);
@@ -97,7 +99,17 @@ export default function CampaignWizard() {
   const [uploading, setUploading] = useState(false);
   const [showFormatHelp, setShowFormatHelp] = useState(false);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
-  const [crmSelectedIds, setCrmSelectedIds] = useState<Set<number>>(new Set());
+  const [crmSelectedIds, setCrmSelectedIds] = useState<Set<number>>(() => {
+    const state = location.state as { importedContactIds?: number[] } | null;
+    if (state?.importedContactIds?.length) {
+      return new Set(state.importedContactIds);
+    }
+    return new Set();
+  });
+  const [importedCount] = useState<number>(() => {
+    const state = location.state as { importedCount?: number } | null;
+    return state?.importedCount ?? 0;
+  });
 
   // Step 3: Sequence
   const [touchpoints, setTouchpoints] = useState(5);
@@ -367,6 +379,7 @@ export default function CampaignWizard() {
             }}
             crmSelectedIds={crmSelectedIds}
             setCrmSelectedIds={setCrmSelectedIds}
+            importedCount={importedCount}
           />
         )}
         {step === 2 && (
@@ -532,6 +545,7 @@ function StepContacts({
   onSmartImport,
   crmSelectedIds,
   setCrmSelectedIds,
+  importedCount,
 }: {
   contactTab: "crm" | "csv";
   setContactTab: (t: "crm" | "csv") => void;
@@ -548,6 +562,7 @@ function StepContacts({
   onSmartImport: () => void;
   crmSelectedIds: Set<number>;
   setCrmSelectedIds: (ids: Set<number>) => void;
+  importedCount: number;
 }) {
   return (
     <div className="space-y-4">
@@ -555,6 +570,13 @@ function StepContacts({
       <p className="text-sm text-gray-500">
         Pick contacts from your CRM or upload a CSV file.
       </p>
+
+      {importedCount > 0 && crmSelectedIds.size > 0 && (
+        <div className="flex items-center gap-2 rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">
+          <CheckCircle size={16} className="shrink-0" />
+          <span>{crmSelectedIds.size} recently imported contacts pre-selected</span>
+        </div>
+      )}
 
       {/* Tab group */}
       <div className="flex border-b border-gray-200">
