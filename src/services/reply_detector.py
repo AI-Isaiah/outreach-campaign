@@ -22,18 +22,26 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 CLASSIFY_MODEL = "claude-haiku-4-5-20251001"
 
 
-def scan_gmail_for_replies(conn, drafter: GmailDrafter | None = None, *, user_id: int) -> dict:
+def scan_gmail_for_replies(
+    conn,
+    drafter: GmailDrafter | None = None,
+    *,
+    user_id: int,
+    gmail_service=None,
+) -> dict:
     """Scan Gmail for replies from enrolled contacts.
 
     Args:
         conn: PostgreSQL connection
         drafter: optional GmailDrafter instance (created if not provided)
         user_id: owner user id — only scan contacts belonging to this user
+        gmail_service: optional pre-built Gmail API service object.
+            When provided (e.g. from DB-stored tokens in a cron/web context),
+            used directly instead of building one from drafter.
 
     Returns:
         dict with keys: scanned, new_replies, errors
     """
-    # Get enrolled contacts with email addresses first
     with get_cursor(conn) as cur:
         cur.execute(
             """SELECT DISTINCT c.id, c.email, ccs.campaign_id, ccs.created_at AS enrolled_at
@@ -51,10 +59,12 @@ def scan_gmail_for_replies(conn, drafter: GmailDrafter | None = None, *, user_id
     if not contacts:
         return stats
 
-    if drafter is None:
-        drafter = GmailDrafter()
-
-    service = drafter._get_service()
+    if gmail_service is not None:
+        service = gmail_service
+    else:
+        if drafter is None:
+            drafter = GmailDrafter()
+        service = drafter._get_service()
 
     for contact in contacts:
         try:

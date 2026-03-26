@@ -3,20 +3,58 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from src.services.gmail_drafter import GmailDrafter
 from src.services.linkedin_acceptance_scanner import scan_linkedin_acceptances
 from src.services.reply_detector import scan_gmail_for_replies
 from src.services.state_machine import InvalidTransition, transition_contact
+from src.services.token_encryption import decrypt_token
 from src.web.dependencies import get_current_user, get_db
 from src.models.database import get_cursor
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["replies"])
+
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
+
+
+def _build_drafter_from_db(conn, user_id: int) -> GmailDrafter | None:
+    """Load Gmail OAuth tokens from DB and return a GmailDrafter, or None."""
+    with get_cursor(conn) as cur:
+        cur.execute(
+            """SELECT gmail_access_token, gmail_refresh_token, gmail_connected
+               FROM users WHERE id = %s""",
+            (user_id,),
+        )
+        row = cur.fetchone()
+
+    if not row or not row["gmail_connected"] or not row["gmail_access_token"]:
+        return None
+
+    try:
+        access_token = decrypt_token(row["gmail_access_token"])
+        refresh_token = decrypt_token(row["gmail_refresh_token"]) if row["gmail_refresh_token"] else ""
+    except Exception:
+        logger.exception("Failed to decrypt Gmail tokens for user %s", user_id)
+        return None
+
+    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+        logger.warning("GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET not set")
+        return None
+
+    return GmailDrafter.from_db_tokens(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        client_id=GOOGLE_CLIENT_ID,
+        client_secret=GOOGLE_CLIENT_SECRET,
+    )
 
 
 class ConfirmReplyRequest(BaseModel):
@@ -139,7 +177,8 @@ def trigger_reply_scan(
 ):
     """Scan Gmail inbox for replies from enrolled contacts."""
     try:
-        result = scan_gmail_for_replies(conn, user_id=user["id"])
+        drafter = _build_drafter_from_db(conn, user["id"])
+        result = scan_gmail_for_replies(conn, drafter=drafter, user_id=user["id"])
         return {"status": "ok", **result}
     except RuntimeError as e:
         raise HTTPException(400, str(e))
