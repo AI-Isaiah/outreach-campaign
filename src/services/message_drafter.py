@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 HAIKU_MODEL = "claude-haiku-4-5-20251001"
 HAIKU_TIMEOUT = 8  # seconds
+SEQUENCE_TIMEOUT = 30  # seconds — longer for multi-step generation
 
 # Channel → prompt type mapping (niche LinkedIn types fall back to message)
 CHANNEL_PROMPT_MAP = {
@@ -239,6 +240,213 @@ def generate_draft(
         "research_id": research_id,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+# ── Sequence-level generation ─────────────────────────────────────────────
+
+SYSTEM_SEQUENCE = """\
+You are a B2B outreach specialist designing a multi-touch outreach sequence \
+targeting crypto fund allocators.
+
+Channel best practices:
+- linkedin_connect: Short, personal, under 280 chars. One reference + one value prop. No "Hi {name}".
+- linkedin_message: DM tone, specific insight hook, under 400 words. No formal greetings.
+- email: Lead with a specific insight, under 200 words, conversational. No "Dear" or sign-offs.
+- Follow-up emails: Reference prior outreach, add new value, shorter than initial.
+
+Sequence design rules:
+- Each step should build on previous ones — avoid repeating the same pitch.
+- Early steps establish credibility, later steps add urgency or new value.
+- LinkedIn connects are warm intros; follow-up messages deepen the conversation.
+- Keep the overall narrative arc: introduce → add value → create urgency → final ask.
+
+Output MUST be valid JSON: an array of objects, one per step, with keys:
+  step_order (int), channel (string), subject (string or null), body (string)
+
+For email steps, include a subject line. For LinkedIn steps, subject should be null.\
+"""
+
+SYSTEM_IMPROVE = """\
+You are a B2B outreach specialist improving a message for crypto fund allocator outreach.
+
+Rules:
+- Apply the requested improvement while preserving the overall message intent.
+- Maintain channel-appropriate length (email <200 words, LinkedIn connect <280 chars, LinkedIn message <400 words).
+- Keep the tone conversational and professional.
+- Do NOT add greetings, sign-offs, or unsubscribe links.
+
+Output the improved message only — no explanations or labels.\
+"""
+
+
+def generate_sequence_messages(
+    *,
+    steps: list[dict],
+    product_description: str,
+    target_audience: str = "crypto fund allocators",
+    user_id: int,
+) -> list[dict]:
+    """Generate messages for all steps in a campaign sequence.
+
+    Returns list of {step_order, channel, subject, body} dicts.
+    """
+    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        raise RuntimeError("ANTHROPIC_API_KEY not configured")
+
+    steps_desc = "\n".join(
+        f"- Step {s['step_order']}: {s['channel']} (day {s.get('delay_days', 0)})"
+        for s in steps
+    )
+
+    user_message = (
+        f"PRODUCT/FUND THESIS:\n{product_description}\n\n"
+        f"TARGET AUDIENCE: {target_audience}\n\n"
+        f"SEQUENCE STEPS:\n{steps_desc}\n\n"
+        "Generate a complete outreach sequence with a message for each step. "
+        "Return valid JSON only."
+    )
+
+    logger.info("Generating sequence messages: %d steps, user=%d", len(steps), user_id)
+
+    import time as _time
+    _t0 = _time.monotonic()
+    resp = httpx.post(
+        "https://api.anthropic.com/v1/messages",
+        headers={
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        },
+        json={
+            "model": HAIKU_MODEL,
+            "max_tokens": 4096,
+            "system": SYSTEM_SEQUENCE,
+            "messages": [{"role": "user", "content": user_message}],
+        },
+        timeout=SEQUENCE_TIMEOUT,
+    )
+    resp.raise_for_status()
+    raw_text = resp.json()["content"][0]["text"]
+    _elapsed = _time.monotonic() - _t0
+    logger.info("Sequence generation: %d chars, %.1fs", len(raw_text), _elapsed)
+
+    messages = _parse_sequence_response(raw_text, steps)
+
+    for msg in messages:
+        channel = msg["channel"]
+        if msg.get("body"):
+            msg["body"] = _enforce_constraints(msg["body"], channel)
+
+    return messages
+
+
+def improve_message(
+    *,
+    channel: str,
+    body: str,
+    subject: str | None = None,
+    instruction: str,
+    user_id: int,
+) -> dict:
+    """Improve an existing message based on user instruction.
+
+    Returns {subject, body} dict.
+    """
+    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        raise RuntimeError("ANTHROPIC_API_KEY not configured")
+
+    prompt_type = CHANNEL_PROMPT_MAP.get(channel, "linkedin_message")
+    channel_label = {
+        "email": "email",
+        "linkedin_connect": "LinkedIn connection note",
+        "linkedin_message": "LinkedIn direct message",
+    }.get(prompt_type, "message")
+
+    parts = [f"CHANNEL: {channel_label}"]
+    if subject:
+        parts.append(f"CURRENT SUBJECT: {subject}")
+    parts.append(f"CURRENT MESSAGE:\n{body}")
+    parts.append(f"IMPROVEMENT REQUEST: {instruction}")
+
+    if prompt_type == "email":
+        parts.append(
+            "Output the improved message in this format:\n"
+            "SUBJECT: <subject line>\nBODY: <message body>"
+        )
+    else:
+        parts.append("Output the improved message text only.")
+
+    user_message = "\n\n".join(parts)
+
+    logger.info("Improving message: channel=%s, user=%d", channel, user_id)
+
+    resp = httpx.post(
+        "https://api.anthropic.com/v1/messages",
+        headers={
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        },
+        json={
+            "model": HAIKU_MODEL,
+            "max_tokens": 1024,
+            "system": SYSTEM_IMPROVE,
+            "messages": [{"role": "user", "content": user_message}],
+        },
+        timeout=HAIKU_TIMEOUT,
+    )
+    resp.raise_for_status()
+    raw_text = resp.json()["content"][0]["text"]
+
+    improved_subject, improved_body = _parse_response(raw_text, prompt_type)
+    improved_body = _enforce_constraints(improved_body, channel)
+
+    return {
+        "subject": improved_subject if prompt_type == "email" else subject,
+        "body": improved_body,
+    }
+
+
+def _parse_sequence_response(raw_text: str, steps: list[dict]) -> list[dict]:
+    """Parse the JSON array response from sequence generation."""
+    text = raw_text.strip()
+    json_match = re.search(r"\[.*\]", text, re.DOTALL)
+    if json_match:
+        text = json_match.group(0)
+
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        logger.warning("Failed to parse sequence JSON, falling back to step extraction")
+        return [
+            {
+                "step_order": s["step_order"],
+                "channel": s["channel"],
+                "subject": None,
+                "body": "",
+            }
+            for s in steps
+        ]
+
+    if not isinstance(parsed, list):
+        parsed = [parsed]
+
+    step_map = {s["step_order"]: s["channel"] for s in steps}
+    messages = []
+    for item in parsed:
+        step_order = item.get("step_order")
+        if step_order not in step_map:
+            continue
+        messages.append({
+            "step_order": step_order,
+            "channel": step_map[step_order],
+            "subject": item.get("subject"),
+            "body": item.get("body", ""),
+        })
+
+    return messages
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────

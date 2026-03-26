@@ -18,6 +18,7 @@ import {
   Plus,
   Trash2,
   Search,
+  Wand2,
 } from "lucide-react";
 import {
   DndContext,
@@ -1288,9 +1289,66 @@ function StepMessages({
   refTemplates: Record<number, number | null>;
   setRefTemplates: (v: Record<number, number | null>) => void;
 }) {
+  const { toast } = useToast();
   const { data: templates = [] } = useQuery<Template[]>({
     queryKey: ["templates"],
     queryFn: () => api.listTemplates(undefined, true),
+  });
+
+  const [productDescription, setProductDescription] = useState("");
+  const [showSmartInput, setShowSmartInput] = useState(false);
+  const [improveStep, setImproveStep] = useState<number | null>(null);
+  const [improveInstruction, setImproveInstruction] = useState("");
+
+  const sequenceMutation = useMutation({
+    mutationFn: () =>
+      api.generateSequenceMessages({
+        steps: steps.map((s) => ({
+          step_order: s.step_order,
+          channel: s.channel,
+          delay_days: s.delay_days,
+        })),
+        product_description: productDescription,
+      }),
+    onSuccess: (data) => {
+      const newModes: Record<number, 'template' | 'manual' | 'ai'> = {};
+      const newSubjects: Record<number, string> = { ...manualSubjects };
+      const newBodies: Record<number, string> = { ...manualBodies };
+      for (const msg of data.messages) {
+        newModes[msg.step_order] = "manual";
+        if (msg.subject) newSubjects[msg.step_order] = msg.subject;
+        newBodies[msg.step_order] = msg.body;
+      }
+      setTemplateModes({ ...templateModes, ...newModes });
+      setManualSubjects(newSubjects);
+      setManualBodies(newBodies);
+      toast(`Generated messages for ${data.messages.length} steps`, "success");
+    },
+    onError: () => {
+      toast("AI generation failed. Set messages manually.", "error");
+    },
+  });
+
+  const improveMutation = useMutation({
+    mutationFn: (params: { stepOrder: number; channel: string; body: string; subject?: string; instruction: string }) =>
+      api.improveMessage({
+        channel: params.channel,
+        body: params.body,
+        subject: params.subject,
+        instruction: params.instruction,
+      }),
+    onSuccess: (data, vars) => {
+      if (data.subject) {
+        setManualSubjects({ ...manualSubjects, [vars.stepOrder]: data.subject });
+      }
+      setManualBodies({ ...manualBodies, [vars.stepOrder]: data.body });
+      setImproveStep(null);
+      setImproveInstruction("");
+      toast("Message improved", "success");
+    },
+    onError: () => {
+      toast("Failed to improve message. Try again.", "error");
+    },
   });
 
   const getMode = (stepOrder: number) => templateModes[stepOrder] || "template";
@@ -1311,18 +1369,69 @@ function StepMessages({
         Pick a template, write your own message, or use AI to generate personalized drafts from research data.
       </p>
 
+      {!showSmartInput ? (
+        <button
+          type="button"
+          onClick={() => setShowSmartInput(true)}
+          className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-lg border-2 border-dashed border-purple-200 bg-purple-50/50 text-purple-700 text-sm font-medium hover:bg-purple-50 hover:border-purple-300 transition-colors"
+        >
+          <Sparkles size={16} />
+          Generate All Messages with AI
+        </button>
+      ) : (
+        <div className="p-4 rounded-lg border border-purple-200 bg-purple-50/30 space-y-3">
+          <label className="block text-sm font-medium text-gray-700">
+            Describe what you're selling / your fund thesis
+          </label>
+          <textarea
+            value={productDescription}
+            onChange={(e) => setProductDescription(e.target.value)}
+            placeholder="e.g., We run a $200M crypto-native fund focused on DePIN infrastructure. Looking to connect with allocators exploring digital asset exposure..."
+            className="w-full h-20 p-3 border border-gray-200 rounded-md text-sm resize-y focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+          />
+          <div className="flex items-center gap-2">
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => sequenceMutation.mutate()}
+              loading={sequenceMutation.isPending}
+              disabled={productDescription.trim().length < 10}
+              leftIcon={<Sparkles size={14} />}
+              className="!bg-purple-600 hover:!bg-purple-700"
+            >
+              Generate All Messages
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowSmartInput(false)}
+              disabled={sequenceMutation.isPending}
+            >
+              Cancel
+            </Button>
+            {productDescription.trim().length > 0 && productDescription.trim().length < 10 && (
+              <span className="text-xs text-gray-400">Minimum 10 characters</span>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="space-y-4">
         {steps.map((s) => {
           const mode = getMode(s.step_order);
           const isEmail = isEmailChannel(s.channel);
           const available = filteredTemplates(s.channel);
+          const hasBody = (manualBodies[s.step_order] || "").trim().length > 0;
 
           return (
             <div
               key={s.step_order}
-              className="p-4 border border-gray-200 rounded-lg space-y-3"
+              className={`p-4 border rounded-lg space-y-3 ${
+                sequenceMutation.isPending
+                  ? "border-purple-200 bg-purple-50/20"
+                  : "border-gray-200"
+              }`}
             >
-              {/* Step header */}
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-400 shrink-0">
                   Step {s.step_order} &middot; Day {s.delay_days}
@@ -1338,141 +1447,217 @@ function StepMessages({
                 </span>
               </div>
 
-              {/* Radio group */}
-              <div
-                className="flex flex-col sm:flex-row gap-2 sm:gap-4"
-                role="radiogroup"
-                aria-label={`Template mode for Step ${s.step_order}: ${s.channel}`}
-              >
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="radio"
-                    name={`mode-${s.step_order}`}
-                    checked={mode === "template"}
-                    onChange={() => setMode(s.step_order, "template")}
-                    className="text-blue-600 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-                  />
-                  <span className="text-sm font-medium text-gray-700">Select template</span>
-                </label>
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="radio"
-                    name={`mode-${s.step_order}`}
-                    checked={mode === "manual"}
-                    onChange={() => setMode(s.step_order, "manual")}
-                    className="text-blue-600 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-                  />
-                  <span className="text-sm font-medium text-gray-700">Write manually</span>
-                </label>
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="radio"
-                    name={`mode-${s.step_order}`}
-                    checked={mode === "ai"}
-                    onChange={() => setMode(s.step_order, "ai")}
-                    className="text-purple-600 focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2"
-                  />
-                  <Sparkles size={14} className="text-purple-500" />
-                  <span className="text-sm font-medium text-purple-600">AI draft</span>
-                </label>
-              </div>
-
-              {/* Mode-specific content */}
-              {mode === "template" && (
-                <div>
-                  <select
-                    value={stepTemplates[s.step_order] ?? ""}
-                    onChange={(e) =>
-                      setStepTemplates({
-                        ...stepTemplates,
-                        [s.step_order]: e.target.value ? Number(e.target.value) : null,
-                      })
-                    }
-                    className="bg-white border border-gray-200 rounded-md px-3 py-2 text-sm w-full"
+              {sequenceMutation.isPending ? (
+                <div className="space-y-2 animate-pulse">
+                  <div className="h-4 bg-purple-100 rounded w-3/4" />
+                  <div className="h-4 bg-purple-100 rounded w-full" />
+                  <div className="h-4 bg-purple-100 rounded w-5/6" />
+                  <p className="text-xs text-purple-500 font-medium">Generating personalized sequence...</p>
+                </div>
+              ) : (
+                <>
+                  <div
+                    className="flex flex-col sm:flex-row gap-2 sm:gap-4"
+                    role="radiogroup"
+                    aria-label={`Template mode for Step ${s.step_order}: ${s.channel}`}
                   >
-                    <option value="">Choose later...</option>
-                    {available.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}
-                        {t.variant_label ? ` (${t.variant_label})` : ""}
-                      </option>
-                    ))}
-                  </select>
-                  {available.length === 0 && (
-                    <p className="text-xs text-gray-400 mt-1">
-                      No {isEmail ? "email" : "LinkedIn"} templates yet -- write manually or use AI.
-                    </p>
-                  )}
-                  {/* Template preview */}
-                  {stepTemplates[s.step_order] && (() => {
-                    const tpl = templates.find((t) => t.id === stepTemplates[s.step_order]);
-                    if (!tpl) return null;
-                    return (
-                      <div className="bg-gray-50 rounded-md p-3 text-sm text-gray-600 max-h-32 overflow-y-auto mt-2 whitespace-pre-wrap">
-                        {tpl.subject && <div className="font-medium mb-1">{tpl.subject}</div>}
-                        {tpl.body_template}
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
-
-              {mode === "manual" && (
-                <div className="space-y-2">
-                  <p className="text-xs text-gray-400">
-                    Variables: <code className="text-purple-600 font-medium">{"{{first_name}}"}</code>, <code className="text-purple-600 font-medium">{"{{company_name}}"}</code>, <code className="text-purple-600 font-medium">{"{{title}}"}</code>
-                  </p>
-                  {isEmail && (
-                    <input
-                      type="text"
-                      placeholder="Subject line"
-                      value={manualSubjects[s.step_order] || ""}
-                      onChange={(e) =>
-                        setManualSubjects({ ...manualSubjects, [s.step_order]: e.target.value })
-                      }
-                      className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                  )}
-                  <textarea
-                    placeholder="Message body..."
-                    value={manualBodies[s.step_order] || ""}
-                    onChange={(e) =>
-                      setManualBodies({ ...manualBodies, [s.step_order]: e.target.value })
-                    }
-                    className="w-full h-28 p-3 border border-gray-200 rounded-md text-sm resize-y focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-              )}
-
-              {mode === "ai" && (
-                <div className="space-y-2">
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">
-                      Reference template (optional)
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        name={`mode-${s.step_order}`}
+                        checked={mode === "template"}
+                        onChange={() => setMode(s.step_order, "template")}
+                        className="text-blue-600 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                      />
+                      <span className="text-sm font-medium text-gray-700">Select template</span>
                     </label>
-                    <select
-                      value={refTemplates[s.step_order] ?? ""}
-                      onChange={(e) =>
-                        setRefTemplates({
-                          ...refTemplates,
-                          [s.step_order]: e.target.value ? Number(e.target.value) : null,
-                        })
-                      }
-                      className="bg-white border border-gray-200 rounded-md px-3 py-2 text-sm w-full"
-                    >
-                      <option value="">None</option>
-                      {available.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
-                          {t.variant_label ? ` (${t.variant_label})` : ""}
-                        </option>
-                      ))}
-                    </select>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        name={`mode-${s.step_order}`}
+                        checked={mode === "manual"}
+                        onChange={() => setMode(s.step_order, "manual")}
+                        className="text-blue-600 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                      />
+                      <span className="text-sm font-medium text-gray-700">Write manually</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        name={`mode-${s.step_order}`}
+                        checked={mode === "ai"}
+                        onChange={() => setMode(s.step_order, "ai")}
+                        className="text-purple-600 focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2"
+                      />
+                      <Sparkles size={14} className="text-purple-500" />
+                      <span className="text-sm font-medium text-purple-600">AI draft</span>
+                    </label>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">
-                    AI generates a personalized message using deep research data. You'll review and edit each draft before sending.
-                  </p>
-                </div>
+
+                  {mode === "template" && (
+                    <div>
+                      <select
+                        value={stepTemplates[s.step_order] ?? ""}
+                        onChange={(e) =>
+                          setStepTemplates({
+                            ...stepTemplates,
+                            [s.step_order]: e.target.value ? Number(e.target.value) : null,
+                          })
+                        }
+                        className="bg-white border border-gray-200 rounded-md px-3 py-2 text-sm w-full"
+                      >
+                        <option value="">Choose later...</option>
+                        {available.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name}
+                            {t.variant_label ? ` (${t.variant_label})` : ""}
+                          </option>
+                        ))}
+                      </select>
+                      {available.length === 0 && (
+                        <p className="text-xs text-gray-400 mt-1">
+                          No {isEmail ? "email" : "LinkedIn"} templates yet -- write manually or use AI.
+                        </p>
+                      )}
+                      {stepTemplates[s.step_order] && (() => {
+                        const tpl = templates.find((t) => t.id === stepTemplates[s.step_order]);
+                        if (!tpl) return null;
+                        return (
+                          <div className="bg-gray-50 rounded-md p-3 text-sm text-gray-600 max-h-32 overflow-y-auto mt-2 whitespace-pre-wrap">
+                            {tpl.subject && <div className="font-medium mb-1">{tpl.subject}</div>}
+                            {tpl.body_template}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+
+                  {mode === "manual" && (
+                    <div className="space-y-2">
+                      <p className="text-xs text-gray-400">
+                        Variables: <code className="text-purple-600 font-medium">{"{{first_name}}"}</code>, <code className="text-purple-600 font-medium">{"{{company_name}}"}</code>, <code className="text-purple-600 font-medium">{"{{title}}"}</code>
+                      </p>
+                      {isEmail && (
+                        <input
+                          type="text"
+                          placeholder="Subject line"
+                          value={manualSubjects[s.step_order] || ""}
+                          onChange={(e) =>
+                            setManualSubjects({ ...manualSubjects, [s.step_order]: e.target.value })
+                          }
+                          className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                      )}
+                      <textarea
+                        placeholder="Message body..."
+                        value={manualBodies[s.step_order] || ""}
+                        onChange={(e) =>
+                          setManualBodies({ ...manualBodies, [s.step_order]: e.target.value })
+                        }
+                        className="w-full h-28 p-3 border border-gray-200 rounded-md text-sm resize-y focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                      {hasBody && (
+                        <>
+                          {improveStep === s.step_order ? (
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                value={improveInstruction}
+                                onChange={(e) => setImproveInstruction(e.target.value)}
+                                placeholder="What would you like to improve?"
+                                className="flex-1 px-3 py-1.5 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" && improveInstruction.trim()) {
+                                    improveMutation.mutate({
+                                      stepOrder: s.step_order,
+                                      channel: s.channel,
+                                      body: manualBodies[s.step_order],
+                                      subject: isEmail ? manualSubjects[s.step_order] : undefined,
+                                      instruction: improveInstruction,
+                                    });
+                                  }
+                                }}
+                                autoFocus
+                              />
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                onClick={() =>
+                                  improveMutation.mutate({
+                                    stepOrder: s.step_order,
+                                    channel: s.channel,
+                                    body: manualBodies[s.step_order],
+                                    subject: isEmail ? manualSubjects[s.step_order] : undefined,
+                                    instruction: improveInstruction,
+                                  })
+                                }
+                                loading={improveMutation.isPending}
+                                disabled={!improveInstruction.trim()}
+                                className="!bg-purple-600 hover:!bg-purple-700"
+                              >
+                                Apply
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setImproveStep(null);
+                                  setImproveInstruction("");
+                                }}
+                                disabled={improveMutation.isPending}
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setImproveStep(s.step_order);
+                                setImproveInstruction("");
+                              }}
+                              className="inline-flex items-center gap-1 text-xs text-purple-600 hover:text-purple-700 font-medium"
+                            >
+                              <Wand2 size={12} />
+                              Improve with AI
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {mode === "ai" && (
+                    <div className="space-y-2">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">
+                          Reference template (optional)
+                        </label>
+                        <select
+                          value={refTemplates[s.step_order] ?? ""}
+                          onChange={(e) =>
+                            setRefTemplates({
+                              ...refTemplates,
+                              [s.step_order]: e.target.value ? Number(e.target.value) : null,
+                            })
+                          }
+                          className="bg-white border border-gray-200 rounded-md px-3 py-2 text-sm w-full"
+                        >
+                          <option value="">None</option>
+                          {available.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.name}
+                              {t.variant_label ? ` (${t.variant_label})` : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">
+                        AI generates a personalized message using deep research data. You'll review and edit each draft before sending.
+                      </p>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           );

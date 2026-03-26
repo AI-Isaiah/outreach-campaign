@@ -7,7 +7,7 @@
  */
 
 import type {
-  SearchResults, EngineSettings, Template, PendingReply,
+  SearchResults, EngineSettings, Template, PendingReply, PendingRepliesResponse,
   TimelineResponse, CompanyDetailResponse, Tag, InboxResponse, StatsResponse,
   ContactListResponse, CompanyListResponse, AnalysisResponse,
   ImportResponse, Product, ContactProduct, LinkedInScanResponse, ReplyScanResponse,
@@ -68,9 +68,28 @@ export const api = {
     }),
   deactivateTemplate: (id: number) =>
     request<{ success: boolean }>(`/templates/${id}/deactivate`, { method: "PATCH" }),
+  generateSequenceMessages: (data: {
+    steps: Array<{ step_order: number; channel: string; delay_days: number }>;
+    product_description: string;
+    target_audience?: string;
+  }) =>
+    request<{ messages: Array<{ step_order: number; channel: string; subject: string | null; body: string }> }>(
+      "/templates/generate-sequence",
+      { method: "POST", body: JSON.stringify(data) },
+    ),
+  improveMessage: (data: {
+    channel: string;
+    body: string;
+    subject?: string;
+    instruction: string;
+  }) =>
+    request<{ subject: string | null; body: string }>("/templates/improve-message", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 
   // Pending Replies
-  listPendingReplies: () => request<PendingReply[]>("/replies/pending"),
+  listPendingReplies: () => request<PendingRepliesResponse>("/replies/pending"),
   confirmReply: (id: number, outcome: string, note?: string) =>
     request<{ success: boolean }>(`/replies/${id}/confirm`, {
       method: "POST", body: JSON.stringify({ outcome, note }),
