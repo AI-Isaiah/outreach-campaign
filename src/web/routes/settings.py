@@ -13,7 +13,7 @@ from src.models.database import get_cursor
 
 router = APIRouter(tags=["settings"])
 
-_FOUNDER_EMAIL = "helmut.mueller1@gmail.com"
+_FOUNDER_EMAIL = os.getenv("FOUNDER_EMAIL", "")
 
 
 def _mask_key(key: str | None) -> str:

@@ -30,12 +30,12 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
 
 -- 4. Seed allowed emails
 INSERT INTO allowed_emails (email, note) VALUES
-    ('helmut.mueller1@gmail.com', 'founder')
+    ('founder@example.com', 'founder')
 ON CONFLICT DO NOTHING;
 
 -- 5. Seed helmut as a user (password set on first login via forgot-password flow)
 INSERT INTO users (email, name, is_active) VALUES
-    ('helmut.mueller1@gmail.com', 'Helmut Mueller', true)
+    ('founder@example.com', 'Helmut Mueller', true)
 ON CONFLICT (email) DO NOTHING;
 
 -- 6. Add user_id to root tables (nullable first, then backfill, then NOT NULL)
@@ -51,7 +51,7 @@ ALTER TABLE research_jobs  ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES u
 DO $$
 DECLARE v_uid INTEGER;
 BEGIN
-    SELECT id INTO v_uid FROM users WHERE email = 'helmut.mueller1@gmail.com';
+    SELECT id INTO v_uid FROM users WHERE email = 'founder@example.com';
     IF v_uid IS NOT NULL THEN
         UPDATE companies     SET user_id = v_uid WHERE user_id IS NULL;
         UPDATE campaigns     SET user_id = v_uid WHERE user_id IS NULL;

@@ -36,7 +36,7 @@ ALTER TABLE engine_config ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES us
 DO $$
 DECLARE v_uid INTEGER;
 BEGIN
-    SELECT id INTO v_uid FROM users WHERE email = 'helmut.mueller1@gmail.com';
+    SELECT id INTO v_uid FROM users WHERE email = 'founder@example.com';
     IF v_uid IS NOT NULL THEN
         UPDATE engine_config SET user_id = v_uid WHERE user_id IS NULL;
     END IF;
@@ -66,7 +66,7 @@ BEGIN
         FROM campaigns camp
         WHERE e.campaign_id = camp.id AND e.user_id IS NULL;
     -- Fallback: any remaining events without campaign_id get founder's user_id
-    SELECT id INTO v_uid FROM users WHERE email = 'helmut.mueller1@gmail.com';
+    SELECT id INTO v_uid FROM users WHERE email = 'founder@example.com';
     IF v_uid IS NOT NULL THEN
         UPDATE events SET user_id = v_uid WHERE user_id IS NULL;
     END IF;
@@ -78,7 +78,7 @@ ALTER TABLE dedup_log ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(
 DO $$
 DECLARE v_uid INTEGER;
 BEGIN
-    SELECT id INTO v_uid FROM users WHERE email = 'helmut.mueller1@gmail.com';
+    SELECT id INTO v_uid FROM users WHERE email = 'founder@example.com';
     IF v_uid IS NOT NULL THEN
         UPDATE dedup_log SET user_id = v_uid WHERE user_id IS NULL;
     END IF;
@@ -95,7 +95,7 @@ BEGIN
     -- Second backfill: via company directly
     UPDATE deals SET user_id = c.user_id FROM companies c WHERE deals.company_id = c.id AND deals.user_id IS NULL;
     -- Fallback
-    SELECT id INTO v_uid FROM users WHERE email = 'helmut.mueller1@gmail.com';
+    SELECT id INTO v_uid FROM users WHERE email = 'founder@example.com';
     IF v_uid IS NOT NULL THEN
         UPDATE deals SET user_id = v_uid WHERE user_id IS NULL;
     END IF;
