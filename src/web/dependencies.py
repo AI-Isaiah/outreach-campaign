@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import os
+from contextlib import contextmanager
 from typing import Generator
 
+import httpx
 import jwt
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -72,6 +74,20 @@ def verify_cron_secret(request: Request):
     auth = request.headers.get("Authorization", "")
     if auth != f"Bearer {expected}":
         raise HTTPException(401, "Invalid cron secret")
+
+
+@contextmanager
+def handle_llm_errors():
+    try:
+        yield
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc))
+    except httpx.TimeoutException:
+        raise HTTPException(504, "AI service timeout — try again")
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 429:
+            raise HTTPException(429, "AI service rate limited — try again in a minute")
+        raise HTTPException(502, f"AI service error: {exc.response.status_code}")
 
 
 def get_db() -> Generator:
