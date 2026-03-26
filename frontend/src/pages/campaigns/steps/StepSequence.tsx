@@ -264,7 +264,8 @@ export default function StepSequence() {
     prevTouchpointsRef.current = touchpoints;
     prevChannelsRef.current = channels;
 
-    if (!touchpointsChanged && !channelsChanged) return;
+    // Also generate on first mount when steps are empty
+    if (!touchpointsChanged && !channelsChanged && steps.length > 0) return;
 
     if (channels.length === 0) {
       setValue("steps", [], { shouldValidate: true });
