@@ -7,6 +7,7 @@ import StatusBadge from "../components/StatusBadge";
 import { SkeletonCard } from "../components/Skeleton";
 import ErrorCard from "../components/ui/ErrorCard";
 import Button from "../components/ui/Button";
+import HealthScoreBadge from "../components/HealthScoreBadge";
 
 export default function CampaignList() {
   const { data, isLoading, isError, error, refetch } = useQuery<CampaignWithMetrics[]>({
@@ -121,27 +122,6 @@ function Metric({ label, value }: { label: string; value: string | number }) {
       <div className="text-lg font-bold text-gray-900">{value}</div>
       <div className="text-xs text-gray-400 uppercase tracking-wide">{label}</div>
     </div>
-  );
-}
-
-function HealthScoreBadge({ score }: { score?: number | null }) {
-  if (score == null) {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-500">
-        N/A
-      </span>
-    );
-  }
-  const color =
-    score >= 70
-      ? "bg-green-100 text-green-800"
-      : score >= 40
-        ? "bg-amber-100 text-amber-800"
-        : "bg-red-100 text-red-800";
-  return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${color}`}>
-      {score}
-    </span>
   );
 }
 

@@ -108,6 +108,7 @@ function QueueEmailCard({
             onClick={() => contactEdit.setShowEdit(!contactEdit.showEdit)}
             className="p-0.5 text-gray-400 hover:text-gray-600 transition-colors"
             title="Edit contact details"
+            data-role="edit-contact"
           >
             <Pencil size={14} />
           </button>

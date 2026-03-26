@@ -222,16 +222,15 @@ def list_all_campaigns(
         rows = [_row_to_dict(r) for r in cur.fetchall()]
 
     for row in rows:
-        total_enrolled = row.get("contacts_count", 0)
-        emails_sent = row.get("emails_sent", 0)
-        if total_enrolled == 0:
-            row["health_score"] = None
-        else:
-            positive_reply_rate = row.get("positive_count", 0) / total_enrolled
-            send_velocity_pct = emails_sent / total_enrolled
-            bounce_rate = row.get("bounced_count", 0) / emails_sent if emails_sent > 0 else 0
-            score = (positive_reply_rate * 50) + (send_velocity_pct * 30) - (bounce_rate * 20)
-            row["health_score"] = max(0, min(100, round(score)))
+        metrics_compat = {
+            "total_enrolled": row.get("contacts_count", 0),
+            "by_status": {
+                "replied_positive": row.get("positive_count", 0),
+                "bounced": row.get("bounced_count", 0),
+            },
+            "emails_sent": row.get("emails_sent", 0),
+        }
+        row["health_score"] = compute_health_score(metrics_compat)
 
     return rows
 

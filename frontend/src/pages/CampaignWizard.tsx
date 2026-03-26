@@ -707,7 +707,7 @@ function CrmContactPicker({
                   return (
                     <tr
                       key={c.id}
-                      className={`hover:bg-gray-50 cursor-pointer transition-colors ${checked ? "" : "opacity-60"}`}
+                      className={`hover:bg-gray-50 cursor-pointer transition-colors ${checked ? "bg-blue-50" : ""}`}
                       onClick={() => toggleOne(c.id)}
                     >
                       <td className="px-3 py-2">

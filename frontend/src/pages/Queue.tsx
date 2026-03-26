@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle, Inbox, Mail, Linkedin, X } from "lucide-react";
 import { queueApi } from "../api/queue";
@@ -91,8 +91,10 @@ export default function Queue() {
   const emailItems = items.filter((i) => i.channel === "email");
   const linkedinItems = items.filter((i) => i.channel.startsWith("linkedin"));
 
-  // Flat array: emails first, then LinkedIn
-  const flatItems = [...emailItems, ...linkedinItems];
+  const flatItems = useMemo(
+    () => [...emailItems, ...linkedinItems],
+    [items]
+  );
 
   const handleDeferred = useCallback(
     () => queryClient.invalidateQueries({ queryKey: ["queue-all"] }),
@@ -101,6 +103,12 @@ export default function Queue() {
 
   // Get unique campaign names from items
   const campaignNames = [...new Set(allItems.map((i) => i.campaign_name).filter((n): n is string => !!n))];
+
+  useEffect(() => {
+    if (flatItems.length > 0 && focusedIndex >= flatItems.length) {
+      setFocusedIndex(flatItems.length - 1);
+    }
+  }, [flatItems.length, focusedIndex]);
 
   // Increment hint view count on mount
   useEffect(() => {
@@ -179,7 +187,7 @@ export default function Queue() {
           const idx = Math.min(focusedIndex, maxIndex);
           const el = cardRefs.current.get(idx);
           if (el) {
-            const editBtn = el.querySelector<HTMLButtonElement>('button[title="Edit contact details"]');
+            const editBtn = el.querySelector<HTMLButtonElement>('button[data-role="edit-contact"]');
             if (editBtn) editBtn.click();
           }
           break;
