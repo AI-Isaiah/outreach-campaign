@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { useForm, FormProvider } from "react-hook-form";
+import { useForm, useFormContext, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
 import { Check, Loader2 } from "lucide-react";
@@ -53,16 +53,27 @@ const STEP_VALIDATION: Record<number, readonly string[]> = {
 };
 
 export default function CampaignWizard() {
-  const navigate = useNavigate();
-  const { toast } = useToast();
-  const [pendingAction, setPendingAction] = useState<"launch" | "draft" | null>(null);
-  const [step, setStep] = useState(0);
-
   const form = useForm<WizardFormData>({
     resolver: zodResolver(fullCampaignSchema),
     mode: "onTouched",
     defaultValues: EMPTY_DEFAULTS,
   });
+
+  // FormProvider MUST wrap everything that calls useFormContext —
+  // including useWizardPersistence which lives inside CampaignWizardInner
+  return (
+    <FormProvider {...form}>
+      <CampaignWizardInner />
+    </FormProvider>
+  );
+}
+
+function CampaignWizardInner() {
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const form = useFormContext<WizardFormData>();
+  const [pendingAction, setPendingAction] = useState<"launch" | "draft" | null>(null);
+  const [step, setStep] = useState(0);
 
   const { saveToApi, cleanupDraft, isLoading } = useWizardPersistence(step);
 
@@ -192,7 +203,6 @@ export default function CampaignWizard() {
   // ─── Render ───
 
   return (
-    <FormProvider {...form}>
       <div className="max-w-3xl mx-auto px-6 py-8">
         {/* Step progress indicator */}
         <div className="mb-8">
@@ -267,6 +277,5 @@ export default function CampaignWizard() {
           {step === 4 && <StepReview />}
         </WizardStepWrapper>
       </div>
-    </FormProvider>
   );
 }
