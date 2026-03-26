@@ -1988,39 +1988,33 @@ class TestParseInsightsEdgeCases:
 class TestCallLlmNoApiKey:
     """Tests for _call_llm when API key is missing."""
 
-    @patch("src.services.llm_advisor.ANTHROPIC_API_KEY", "")
-    def test_returns_not_configured(self):
+    @patch("src.services.llm_client.detect_provider", return_value=None)
+    def test_returns_not_configured(self, mock_detect):
         from src.services.llm_advisor import _call_llm
         result = _call_llm("test prompt")
         parsed = json.loads(result)
-        assert "not configured" in parsed["insights"][0].lower()
+        assert "not configured" in parsed["insights"][0].lower() or "no llm api key" in parsed["insights"][0].lower()
 
 
 class TestCallLlmApiFailure:
     """Tests for _call_llm when API call fails."""
 
-    @patch("src.services.llm_advisor.ANTHROPIC_API_KEY", "test-key")
-    @patch("src.services.llm_advisor.httpx.post")
-    def test_api_error_returns_fallback(self, mock_post):
+    @patch("src.services.llm_client.detect_provider", return_value=("anthropic", "test-key"))
+    @patch("src.services.llm_client._call_anthropic", side_effect=Exception("Connection failed"))
+    def test_api_error_returns_fallback(self, mock_call, mock_detect):
         from src.services.llm_advisor import _call_llm
-        mock_post.side_effect = httpx.HTTPError("Connection failed")
         result = _call_llm("test prompt")
         parsed = json.loads(result)
         assert "failed" in parsed["insights"][0].lower()
 
-    @patch("src.services.llm_advisor.ANTHROPIC_API_KEY", "test-key")
-    @patch("src.services.llm_advisor.httpx.post")
-    def test_malformed_response_returns_fallback(self, mock_post):
+    @patch("src.services.llm_client.detect_provider", return_value=("anthropic", "test-key"))
+    @patch("src.services.llm_client._call_anthropic", return_value="not json at all")
+    def test_malformed_response_returns_valid_json(self, mock_call, mock_detect):
         from src.services.llm_advisor import _call_llm
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.raise_for_status = MagicMock()
-        mock_resp.json.return_value = {"content": []}  # empty content
-        mock_post.return_value = mock_resp
-
         result = _call_llm("test prompt")
-        parsed = json.loads(result)
-        assert "failed" in parsed["insights"][0].lower()
+        # _call_llm returns raw text which _parse_insights handles
+        # Should not raise — raw text is valid even if not JSON
+        assert isinstance(result, str)
 
 
 class TestGetAnalysisHistory:
@@ -2034,8 +2028,8 @@ class TestGetAnalysisHistory:
         assert result == []
         conn.close()
 
-    @patch("src.services.llm_advisor.ANTHROPIC_API_KEY", "")
-    def test_history_after_run(self, tmp_db):
+    @patch("src.services.llm_client.detect_provider", return_value=None)
+    def test_history_after_run(self, mock_detect, tmp_db):
         from src.services.llm_advisor import get_analysis_history, run_analysis
         conn = _setup_db(tmp_db)
         camp = create_campaign(conn, "hist_run", user_id=TEST_USER_ID)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from typing import Optional
@@ -588,3 +589,64 @@ def bulk_update_lifecycle(
             "updated": len(body.contact_ids),
             "lifecycle_stage": body.lifecycle_stage,
         }
+
+
+@router.delete("/contacts/{contact_id}/gdpr")
+@_limiter.limit("5/minute")
+def gdpr_delete_contact(
+    contact_id: int,
+    request: Request,
+    conn=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Permanently delete a GDPR-flagged contact and all associated data."""
+    with get_cursor(conn) as cur:
+        # Verify contact exists, belongs to user, and is GDPR-flagged
+        cur.execute(
+            """SELECT c.id, c.email, c.full_name, c.is_gdpr
+               FROM contacts c
+               WHERE c.id = %s AND c.user_id = %s""",
+            (contact_id, user["id"]),
+        )
+        contact = cur.fetchone()
+        if not contact:
+            raise HTTPException(404, f"Contact {contact_id} not found")
+
+        if not contact["is_gdpr"]:
+            raise HTTPException(400, "Contact is not GDPR-flagged")
+
+        # Hash the email for audit trail (SHA-256, no PII retained)
+        email_hash = ""
+        if contact["email"]:
+            email_hash = hashlib.sha256(contact["email"].encode("utf-8")).hexdigest()
+
+        # Cascade delete within a single transaction
+        # 1. Events
+        cur.execute(
+            "DELETE FROM events WHERE contact_id = %s AND user_id = %s",
+            (contact_id, user["id"]),
+        )
+        # 2. Campaign enrollment status
+        cur.execute(
+            "DELETE FROM contact_campaign_status WHERE contact_id = %s",
+            (contact_id,),
+        )
+        # 3. Dedup log references
+        cur.execute(
+            "DELETE FROM dedup_log WHERE kept_contact_id = %s OR merged_contact_id = %s",
+            (contact_id, contact_id),
+        )
+        # 4. Audit log entry
+        cur.execute(
+            """INSERT INTO gdpr_deletion_log (user_id, contact_email_hash, contact_name)
+               VALUES (%s, %s, %s)""",
+            (user["id"], email_hash, contact["full_name"]),
+        )
+        # 5. Delete the contact (response_notes, entity_tags cascade via FK)
+        cur.execute(
+            "DELETE FROM contacts WHERE id = %s AND user_id = %s",
+            (contact_id, user["id"]),
+        )
+
+        conn.commit()
+        return {"deleted": True, "contact_id": contact_id}

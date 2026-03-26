@@ -150,7 +150,12 @@ async def smart_import_upload(
     if not file.filename or not file.filename.lower().endswith(".csv"):
         raise HTTPException(400, "File must be a CSV")
 
+    MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
+    MAX_IMPORT_ROWS = 10_000
+
     content_bytes = await file.read()
+    if len(content_bytes) > MAX_UPLOAD_SIZE:
+        raise HTTPException(413, f"File too large ({len(content_bytes) // (1024*1024)}MB). Maximum is 10MB.")
 
     # Handle BOM (UTF-8 BOM from Excel)
     try:
@@ -169,6 +174,13 @@ async def smart_import_upload(
 
     if not rows:
         raise HTTPException(400, "CSV has no data rows")
+
+    if len(rows) > MAX_IMPORT_ROWS:
+        raise HTTPException(
+            400,
+            f"CSV has {len(rows):,} rows. Maximum is {MAX_IMPORT_ROWS:,}. "
+            "Split your file into smaller batches.",
+        )
 
     # Create job in 'analyzing' status — return immediately
     job_id = str(uuid.uuid4())

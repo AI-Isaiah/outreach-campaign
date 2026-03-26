@@ -15,16 +15,15 @@ LLM provider priority: uses whichever API key is configured, in order:
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import json
 import logging
-import os
 import re
 from typing import Optional
 
-import httpx
-
 from src.models.database import get_cursor
+from src.services.llm_client import call_llm, strip_markdown_fences
 from src.services.normalization_utils import (
     normalize_company_name,
     normalize_email,
@@ -34,10 +33,6 @@ from src.services.normalization_utils import (
 
 logger = logging.getLogger(__name__)
 
-
-# ---------------------------------------------------------------------------
-# LLM provider abstraction
-# ---------------------------------------------------------------------------
 
 def _build_prompt(headers: list[str], sample_rows: list[dict]) -> str:
     """Build the column-mapping prompt sent to any LLM provider."""
@@ -69,96 +64,8 @@ Return ONLY valid JSON (no markdown, no explanation):
 }}"""
 
 
-def _call_anthropic(prompt: str, api_key: str) -> str:
-    """Call Anthropic Messages API and return the raw text response."""
-    resp = httpx.post(
-        "https://api.anthropic.com/v1/messages",
-        headers={
-            "x-api-key": api_key,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-        },
-        json={
-            "model": "claude-haiku-4-5-20251001",
-            "max_tokens": 2000,
-            "temperature": 0,
-            "messages": [{"role": "user", "content": prompt}],
-        },
-        timeout=30.0,
-    )
-    resp.raise_for_status()
-    return resp.json()["content"][0]["text"]
-
-
-def _call_openai(prompt: str, api_key: str) -> str:
-    """Call OpenAI Chat Completions API and return the raw text response."""
-    resp = httpx.post(
-        "https://api.openai.com/v1/chat/completions",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "model": "gpt-4o-mini",
-            "temperature": 0,
-            "max_tokens": 2000,
-            "messages": [{"role": "user", "content": prompt}],
-        },
-        timeout=30.0,
-    )
-    resp.raise_for_status()
-    return resp.json()["choices"][0]["message"]["content"]
-
-
-def _call_gemini(prompt: str, api_key: str) -> str:
-    """Call Google Gemini API and return the raw text response."""
-    resp = httpx.post(
-        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}",
-        headers={"Content-Type": "application/json"},
-        json={
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0, "maxOutputTokens": 2000},
-        },
-        timeout=30.0,
-    )
-    resp.raise_for_status()
-    return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-
-
-def _detect_provider() -> tuple[str, str] | None:
-    """Detect which LLM API key is available. Returns (provider_name, api_key) or None."""
-    for env_var, name in [
-        ("ANTHROPIC_API_KEY", "anthropic"),
-        ("OPENAI_API_KEY", "openai"),
-        ("GEMINI_API_KEY", "gemini"),
-    ]:
-        key = os.getenv(env_var, "").strip()
-        if key:
-            return (name, key)
-    return None
-
-
-def _call_llm(prompt: str) -> tuple[str, str]:
-    """Call the first available LLM provider. Returns (raw_text, provider_name).
-
-    Raises RuntimeError if no API key is configured.
-    """
-    provider = _detect_provider()
-    if not provider:
-        raise RuntimeError("No LLM API key configured (set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY)")
-
-    name, api_key = provider
-    callers = {
-        "anthropic": _call_anthropic,
-        "openai": _call_openai,
-        "gemini": _call_gemini,
-    }
-    raw_text = callers[name](prompt, api_key)
-    return raw_text, name
-
-
 # ---------------------------------------------------------------------------
-# CSV header detection (moved from routes layer)
+# CSV header detection
 # ---------------------------------------------------------------------------
 
 # Keywords that suggest a row is a header (lowercased)
@@ -378,6 +285,64 @@ def _heuristic_mapping(headers: list[str]) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Schema template caching
+# ---------------------------------------------------------------------------
+
+
+def _header_fingerprint(headers: list[str]) -> str:
+    """Compute a stable fingerprint for a set of CSV headers."""
+    normalized = "|".join(h.strip().lower() for h in sorted(headers))
+    return hashlib.sha256(normalized.encode()).hexdigest()[:16]
+
+
+def _get_cached_mapping(conn, user_id: int, fingerprint: str) -> dict | None:
+    """Check schema_templates for a cached mapping. Returns dict or None."""
+    with get_cursor(conn) as cur:
+        cur.execute(
+            """SELECT column_mapping, multi_contact_pattern
+               FROM schema_templates
+               WHERE user_id = %s AND fingerprint = %s""",
+            (user_id, fingerprint),
+        )
+        row = cur.fetchone()
+    if not row:
+        return None
+    mapping = row["column_mapping"] if isinstance(row["column_mapping"], dict) else json.loads(row["column_mapping"])
+    multi = row["multi_contact_pattern"]
+    if multi and isinstance(multi, str):
+        multi = json.loads(multi)
+    return {
+        "column_map": mapping,
+        "multi_contact": multi or {"detected": False, "contact_groups": []},
+        "unmapped": [],
+        "confidence": 1.0,
+        "provider": "cache",
+    }
+
+
+def _save_mapping_cache(conn, user_id: int, fingerprint: str, result: dict, source_label: str | None = None):
+    """Save a successful mapping to schema_templates for reuse."""
+    with get_cursor(conn) as cur:
+        cur.execute(
+            """INSERT INTO schema_templates (user_id, fingerprint, source_label, column_mapping, multi_contact_pattern)
+               VALUES (%s, %s, %s, %s, %s)
+               ON CONFLICT (user_id, fingerprint) DO UPDATE
+               SET column_mapping = EXCLUDED.column_mapping,
+                   multi_contact_pattern = EXCLUDED.multi_contact_pattern,
+                   times_used = schema_templates.times_used + 1,
+                   updated_at = NOW()""",
+            (
+                user_id,
+                fingerprint,
+                source_label,
+                json.dumps(result.get("column_map", {})),
+                json.dumps(result.get("multi_contact", {})),
+            ),
+        )
+    conn.commit()
+
+
+# ---------------------------------------------------------------------------
 # analyze_csv — LLM column mapping
 # ---------------------------------------------------------------------------
 
@@ -391,7 +356,7 @@ def analyze_csv(
 ) -> dict:
     """Call LLM to map CSV columns to CRM target fields.
 
-    Tries providers in order: Anthropic → OpenAI → Gemini (whichever key is set).
+    Checks schema_templates cache first. Falls back to LLM, then heuristic.
 
     Returns
     -------
@@ -399,20 +364,22 @@ def analyze_csv(
         ``{"column_map": {...}, "unmapped": [...], "multi_contact": {...},
           "confidence": float, "provider": str}``
     """
+    fingerprint = _header_fingerprint(headers)
+
+    # Check cache first
+    cached = _get_cached_mapping(conn, user_id, fingerprint)
+    if cached:
+        logger.info("analyze_csv: cache hit (fingerprint=%s)", fingerprint)
+        return cached
+
     heuristic = _heuristic_mapping(headers)
     heuristic["provider"] = None
     fallback = dict(heuristic)  # shallow copy so mutations don't affect fallback
 
     try:
         prompt = _build_prompt(headers, sample_rows)
-        raw_text, provider_name = _call_llm(prompt)
-
-        raw_text = raw_text.strip()
-
-        # Strip markdown fences if present
-        if raw_text.startswith("```"):
-            raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text)
-            raw_text = re.sub(r"\s*```$", "", raw_text)
+        raw_text, provider_name = call_llm(prompt)
+        raw_text = strip_markdown_fences(raw_text)
 
         result = json.loads(raw_text)
 
@@ -443,6 +410,13 @@ def analyze_csv(
 
         logger.info("analyze_csv: mapped %d columns via %s + heuristic (confidence: %.2f)",
                      len(result["column_map"]), provider_name, result["confidence"])
+
+        # Cache successful mapping for future reuse
+        try:
+            _save_mapping_cache(conn, user_id, fingerprint, result)
+        except Exception:
+            logger.warning("Failed to cache mapping (non-fatal)")
+
         return result
 
     except RuntimeError as exc:
@@ -450,12 +424,6 @@ def analyze_csv(
         return fallback
     except json.JSONDecodeError as exc:
         logger.warning("Failed to parse LLM JSON response: %s", exc)
-        return fallback
-    except httpx.HTTPStatusError as exc:
-        logger.warning("LLM API HTTP error: %s %s", exc.response.status_code, exc.response.text[:200])
-        return fallback
-    except httpx.TimeoutException:
-        logger.warning("LLM API call timed out (30s)")
         return fallback
     except Exception as exc:
         logger.exception("Unexpected error during analyze_csv: %s", exc)
