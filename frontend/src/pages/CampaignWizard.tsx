@@ -1138,6 +1138,7 @@ function StepMessages({
   const descriptionRef = useRef<HTMLTextAreaElement>(null);
   const [improveStep, setImproveStep] = useState<number | null>(null);
   const [improveInstruction, setImproveInstruction] = useState("");
+  const [aiModel, setAiModel] = useState<"haiku" | "sonnet" | "opus">("haiku");
 
   const sequenceMutation = useMutation({
     mutationFn: () =>
@@ -1148,6 +1149,7 @@ function StepMessages({
           delay_days: s.delay_days,
         })),
         product_description: productDescription,
+        model: aiModel,
       }),
     onSuccess: (data) => {
       const newModes: Record<number, 'template' | 'manual' | 'ai'> = {};
@@ -1235,6 +1237,15 @@ function StepMessages({
             className="w-full h-20 p-3 border border-gray-200 rounded-md text-sm resize-y focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
           />
           <div className="flex items-center gap-2">
+            <select
+              value={aiModel}
+              onChange={(e) => setAiModel(e.target.value as "haiku" | "sonnet" | "opus")}
+              className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+            >
+              <option value="haiku">Haiku (fast, $)</option>
+              <option value="sonnet">Sonnet (balanced, $$)</option>
+              <option value="opus">Opus (best, $$$)</option>
+            </select>
             <Button
               variant="primary"
               size="sm"

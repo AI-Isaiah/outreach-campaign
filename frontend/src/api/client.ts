@@ -72,6 +72,7 @@ export const api = {
     steps: Array<{ step_order: number; channel: string; delay_days: number }>;
     product_description: string;
     target_audience?: string;
+    model?: string;
   }) =>
     request<{ messages: Array<{ step_order: number; channel: string; subject: string | null; body: string }> }>(
       "/templates/generate-sequence",
