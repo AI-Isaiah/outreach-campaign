@@ -103,6 +103,12 @@
 **What:** Show sent message history for this campaign. Each row: contact name, template used, sent date, reply status. Currently shows empty "No messages sent yet" placeholder.
 **Why:** Users need to see what was actually sent, not just what's queued.
 
+### Resizable table columns
+**Priority:** P2
+**Files:** `frontend/src/components/DataTable.tsx` or inline in pages
+**What:** Allow users to drag column borders to resize columns in all data tables (templates, contacts, campaign contacts). Persist widths in localStorage.
+**Why:** Subject lines get truncated, name column is too wide. User should control column widths.
+
 ### Templates back-link from edit page
 **Priority:** P2
 **Files:** `frontend/src/pages/TemplateEdit.tsx` or equivalent
