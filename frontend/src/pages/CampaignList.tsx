@@ -167,7 +167,7 @@ function CampaignCard({ campaign: c, viewMode }: { campaign: CampaignWithMetrics
           <div className="flex gap-6 shrink-0 items-center">
             <Metric label="Contacts" value={c.contacts_count ?? 0} />
             <Metric label="Reply Rate" value={`${c.reply_rate ?? 0}%`} />
-            <Metric label="Calls" value={c.calls_booked ?? 0} />
+            <Metric label="Sent" value={c.emails_sent ?? 0} />
             <HealthScoreBadge score={c.health_score} />
           </div>
 
