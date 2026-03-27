@@ -363,10 +363,10 @@ export default function ContactList() {
                           "-"}
                       </Link>
                     </td>
-                    <td className="px-5 py-3 text-sm text-gray-600">
+                    <td className="px-5 py-3 text-sm text-gray-600 max-w-[200px] truncate" title={c.company_name || ""}>
                       {c.company_name || "-"}
                     </td>
-                    <td className="px-5 py-3 text-sm text-gray-500">
+                    <td className="px-5 py-3 text-sm text-gray-500 max-w-[220px] truncate" title={c.email || ""}>
                       {c.email || "-"}
                     </td>
                     <td className="px-5 py-3 text-sm text-right text-gray-600">
