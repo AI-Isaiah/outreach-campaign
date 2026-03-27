@@ -3,7 +3,6 @@ import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   Megaphone,
-  ListTodo,
   Users,
   FileText,
   Search,
@@ -13,8 +12,6 @@ import {
   LogOut,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import { campaignsApi } from "../api/campaigns";
-import type { CampaignWithMetrics } from "../api/campaigns";
 import { queryKeys } from "../api/queryKeys";
 import GlobalSearchBar from "./GlobalSearchBar";
 import ImportStatusBanner from "./ImportStatusBanner";
@@ -30,25 +27,10 @@ export default function Layout() {
   const location = useLocation();
   const { user, logout } = useAuth();
 
-  const { data: campaigns } = useQuery<CampaignWithMetrics[]>({
-    queryKey: queryKeys.campaigns.all,
-    queryFn: () => campaignsApi.listCampaigns(),
-    staleTime: 60_000,
-  });
-
-  const queueLink = useMemo(() => {
-    const active = campaigns?.find((c) => c.status === "active");
-    if (active) return `/campaigns/${active.name}?tab=queue`;
-    return "/queue";
-  }, [campaigns]);
-
-  const isQueueActive = location.pathname.startsWith("/campaigns/") && location.search.includes("tab=queue");
-
   const primaryLinks = useMemo(() => [
     { to: "/", label: "Campaigns", icon: Megaphone, end: true },
-    { to: queueLink, label: "Queue", icon: ListTodo, end: false, forceActive: isQueueActive },
     { to: "/contacts", label: "Contacts", icon: Users, end: false },
-  ], [queueLink, isQueueActive]);
+  ], []);
 
   useEffect(() => {
     setSidebarOpen(false);
