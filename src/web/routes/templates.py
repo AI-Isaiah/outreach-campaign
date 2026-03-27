@@ -174,6 +174,7 @@ class GenerateSequenceMessagesRequest(BaseModel):
     steps: list[SequenceStepInput] = Field(min_length=1, max_length=10)
     product_description: str = Field(min_length=10, max_length=2000)
     target_audience: str = Field(default="crypto fund allocators", max_length=200)
+    model: str = Field(default="haiku", pattern="^(haiku|sonnet|opus)$")
 
 
 class ImproveMessageRequest(BaseModel):
@@ -199,6 +200,7 @@ def generate_sequence_messages_route(
                 steps=[s.model_dump() for s in body.steps],
                 product_description=body.product_description,
                 target_audience=body.target_audience,
+                model=body.model,
                 user_id=user["id"],
             )
             return {"messages": messages}

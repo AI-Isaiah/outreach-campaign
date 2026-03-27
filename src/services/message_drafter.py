@@ -286,11 +286,19 @@ Output the improved message only — no explanations or labels.\
 """
 
 
+ALLOWED_MODELS = {
+    "haiku": "claude-haiku-4-5-20251001",
+    "sonnet": "claude-sonnet-4-20250514",
+    "opus": "claude-opus-4-20250514",
+}
+
+
 def generate_sequence_messages(
     *,
     steps: list[dict],
     product_description: str,
     target_audience: str = "crypto fund allocators",
+    model: str = "haiku",
     user_id: int,
 ) -> list[dict]:
     """Generate messages for all steps in a campaign sequence.
@@ -326,7 +334,7 @@ def generate_sequence_messages(
             "content-type": "application/json",
         },
         json={
-            "model": HAIKU_MODEL,
+            "model": ALLOWED_MODELS.get(model, HAIKU_MODEL),
             "max_tokens": 8192,
             "system": SYSTEM_SEQUENCE,
             "messages": [{"role": "user", "content": user_message}],
