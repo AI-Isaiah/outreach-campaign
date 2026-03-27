@@ -400,17 +400,19 @@ export default function Queue() {
           </button>
         ))}
 
-        {campaignNames.length > 1 && (
+        {campaignNames.length > 0 && (
           <>
             <div className="w-px bg-gray-200 mx-1" />
-            <button
-              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                !campaignFilter ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-              }`}
-              onClick={() => setCampaignFilter("")}
-            >
-              All campaigns
-            </button>
+            {campaignNames.length > 1 && (
+              <button
+                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                  !campaignFilter ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}
+                onClick={() => setCampaignFilter("")}
+              >
+                All campaigns
+              </button>
+            )}
             {campaignNames.map((cn) => (
               <button
                 key={cn}
