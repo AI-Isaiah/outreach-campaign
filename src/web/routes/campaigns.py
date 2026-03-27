@@ -126,7 +126,7 @@ def list_all_campaigns(
 ):
     """List all campaigns with embedded metrics (CTE for O(1) table scans)."""
     user_id = user["id"]
-    status_filter = "AND c.status = %s" if status else ""
+    status_filter = "AND c.status = %s" if status else "AND c.status != 'archived'"
 
     query = f"""
     WITH campaign_stats AS (
@@ -240,11 +240,14 @@ def get_campaign_contacts(
            comp.name AS company_name, comp.id AS company_id,
            ccs.current_step, ccs.status, ccs.next_action_date,
            ccs.assigned_variant,
+           ss_cur.channel AS current_channel,
            (SELECT COUNT(*) FROM sequence_steps ss
             WHERE ss.campaign_id = %s) AS total_steps
     FROM contact_campaign_status ccs
     JOIN contacts c ON c.id = ccs.contact_id
     LEFT JOIN companies comp ON comp.id = c.company_id
+    LEFT JOIN sequence_steps ss_cur ON ss_cur.campaign_id = ccs.campaign_id
+         AND ss_cur.step_order = ccs.current_step
     WHERE ccs.campaign_id = %s AND c.user_id = %s
     {"AND ccs.status = %s" if status else ""}
     ORDER BY {order_by}
@@ -273,6 +276,18 @@ def get_campaign(
     metrics = get_campaign_metrics(conn, camp["id"])
     result["health_score"] = compute_health_score(metrics)
     return result
+
+
+@router.get("/campaigns/{campaign_id}/sequence")
+def get_campaign_sequence(
+    campaign_id: int,
+    conn=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Get sequence steps for a campaign."""
+    from src.models.enrollment import get_sequence_steps
+    steps = get_sequence_steps(conn, campaign_id, user_id=user["id"])
+    return steps
 
 
 @router.get("/campaigns/{name}/metrics")

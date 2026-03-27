@@ -490,6 +490,14 @@ def send_campaign_email(
     )
 
     conn.commit()
+
+    # Auto-advance lifecycle: cold → contacted
+    try:
+        from src.services.lifecycle import on_email_sent
+        on_email_sent(conn, contact_id, user_id=user_id)
+    except Exception:
+        logger.debug("Lifecycle advance failed for contact %d (non-blocking)", contact_id)
+
     logger.info("Campaign email sent to contact %d (campaign %d)", contact_id, campaign_id)
     return True
 

@@ -1,5 +1,5 @@
 import type { QueueResponse, DeferStatsResponse } from "../types";
-import { request } from "./request";
+import { authHeaders, BASE, request } from "./request";
 
 export const queueApi = {
   getAllQueues: (options?: { date?: string; limit?: number }) => {
@@ -46,16 +46,37 @@ export const queueApi = {
       { method: "POST", body: JSON.stringify({ campaign_id: campaignId, step_order: stepOrder }) }
     ),
 
-  batchApprove: (items: { contact_id: number; campaign_id: number }[]) =>
-    request<{ approved: number }>("/queue/batch-approve", {
+  batchApprove: async (
+    items: { contact_id: number; campaign_id: number }[],
+    force = false,
+  ): Promise<{ approved: number; validation_errors: null } | { approved: 0; validation_errors: { error: string; company_duplicates?: { company_id: number; company_name: string; count: number }[]; email_duplicates?: { email: string; count: number }[] } }> => {
+    const url = `${BASE}/queue/batch-approve${force ? "?force=true" : ""}`;
+    const res = await fetch(url, {
       method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify({ items }),
-    }),
+    });
+    if (res.status === 401) {
+      localStorage.removeItem("auth_token");
+      window.dispatchEvent(new Event("auth:expired"));
+      throw new Error("Session expired");
+    }
+    if (res.status === 400) {
+      const data = await res.json();
+      return { approved: 0, validation_errors: data };
+    }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    const result = await res.json();
+    return { ...result, validation_errors: null };
+  },
 
-  batchSend: () =>
-    request<{ sent: number; failed: number; errors: { contact_id: number; campaign_id: number; error: string }[] }>(
+  batchSend: (opts?: { signal?: AbortSignal }) =>
+    request<{ sent: number; failed: number; remaining: number; errors: { contact_id: number; campaign_id: number; error: string }[] }>(
       "/queue/batch-send",
-      { method: "POST" },
+      { method: "POST", ...(opts?.signal ? { signal: opts.signal } : {}) },
     ),
 
   scheduleSend: (items: { contact_id: number; campaign_id: number }[], schedule: string) =>
@@ -63,4 +84,7 @@ export const queueApi = {
       method: "POST",
       body: JSON.stringify({ items, schedule }),
     }),
+
+  undoSend: () =>
+    request<{ undone: number }>("/queue/undo-send", { method: "POST" }),
 };

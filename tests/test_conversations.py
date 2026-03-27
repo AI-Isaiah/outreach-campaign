@@ -130,18 +130,17 @@ class TestConversations:
         assert resp.status_code == 404
 
     def test_lifecycle_auto_advance(self, client, contact_id):
-        """Successful conversation should advance lifecycle."""
-        # Contact starts as 'cold'
+        """Conversations auto-advance lifecycle via lifecycle service."""
+        # Contact starts as 'cold'. Logging a conversation → nurturing (materials sent)
         client.post(f"/api/contacts/{contact_id}/conversations", json={
-            "channel": "conference",
-            "title": "First meeting",
-            "outcome": "successful",
+            "channel": "linkedin",
+            "title": "Sent factsheet",
         })
 
         detail = client.get(f"/api/contacts/{contact_id}").json()
-        assert detail["contact"]["lifecycle_stage"] == "contacted"
+        assert detail["contact"]["lifecycle_stage"] == "nurturing"
 
-        # Second successful conversation: contacted -> nurturing
+        # Successful outcome → opportunity (meeting booked)
         client.post(f"/api/contacts/{contact_id}/conversations", json={
             "channel": "phone",
             "title": "Follow-up call",
@@ -149,4 +148,4 @@ class TestConversations:
         })
 
         detail = client.get(f"/api/contacts/{contact_id}").json()
-        assert detail["contact"]["lifecycle_stage"] == "nurturing"
+        assert detail["contact"]["lifecycle_stage"] == "opportunity"

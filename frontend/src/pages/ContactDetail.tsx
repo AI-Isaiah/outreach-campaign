@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
 import { api } from "../api/client";
@@ -20,6 +20,10 @@ export default function ContactDetail() {
   const { id } = useParams<{ id: string }>();
   const contactId = Number(id);
   const queryClient = useQueryClient();
+  const [urlParams] = useSearchParams();
+  const fromCampaign = urlParams.get("campaign");
+  const backTo = fromCampaign ? `/campaigns/${fromCampaign}` : "/contacts";
+  const backLabel = fromCampaign ? fromCampaign : "Contacts";
 
   const { data, isLoading, isError, error, refetch } = useQuery<ContactDetailResponse>({
     queryKey: ["contact", contactId],
@@ -33,6 +37,7 @@ export default function ContactDetail() {
     note: "",
   });
 
+  const [showLogResponse, setShowLogResponse] = useState(false);
   const [phoneInput, setPhoneInput] = useState("");
   const [noteInput, setNoteInput] = useState("");
 
@@ -107,8 +112,8 @@ export default function ContactDetail() {
   if (isError) {
     return (
       <div className="space-y-4">
-        <Link to="/contacts" className="text-sm text-gray-400 hover:text-gray-600 inline-flex items-center gap-1">
-          <ArrowLeft size={14} /> Contacts
+        <Link to={backTo} className="text-sm text-gray-400 hover:text-gray-600 inline-flex items-center gap-1">
+          <ArrowLeft size={14} /> {backLabel}
         </Link>
         <ErrorCard message={(error as Error).message} onRetry={() => refetch()} />
       </div>
@@ -332,75 +337,7 @@ export default function ContactDetail() {
         </Card>
       )}
 
-      {/* Log Response */}
-      {enrollments.some(
-        (e: Enrollment) =>
-          e.status === "queued" || e.status === "in_progress",
-      ) && (
-        <Card>
-          <h2 className="font-semibold text-gray-900 mb-4">Log Response</h2>
-          <div className="space-y-3">
-            <div className="flex gap-3">
-              <select
-                value={statusForm.campaign}
-                onChange={(e) =>
-                  setStatusForm((s) => ({ ...s, campaign: e.target.value }))
-                }
-                className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {enrollments
-                  .filter(
-                    (e: Enrollment) =>
-                      e.status === "queued" || e.status === "in_progress",
-                  )
-                  .map((e: Enrollment) => (
-                    <option key={e.campaign_name} value={e.campaign_name}>
-                      {e.campaign_name}
-                    </option>
-                  ))}
-              </select>
-              <select
-                value={statusForm.newStatus}
-                onChange={(e) =>
-                  setStatusForm((s) => ({ ...s, newStatus: e.target.value }))
-                }
-                className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="replied_positive">Positive Reply</option>
-                <option value="replied_negative">Negative Reply</option>
-                <option value="no_response">No Response</option>
-                <option value="bounced">Bounced</option>
-              </select>
-            </div>
-            <textarea
-              placeholder="Optional note (e.g., call booked for Tuesday, interested in factsheet...)"
-              value={statusForm.note}
-              onChange={(e) =>
-                setStatusForm((s) => ({ ...s, note: e.target.value }))
-              }
-              className="w-full h-20 px-3 py-2 border border-gray-200 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <div className="flex items-center gap-2">
-              <Button
-                variant="primary"
-                size="md"
-                onClick={() => statusMutation.mutate()}
-                loading={statusMutation.isPending}
-              >
-                Log Response
-              </Button>
-              {statusMutation.isError && (
-                <span className="text-red-500 text-sm">
-                  {(statusMutation.error as Error).message}
-                </span>
-              )}
-              {statusMutation.isSuccess && (
-                <span className="text-green-600 text-sm">Saved</span>
-              )}
-            </div>
-          </div>
-        </Card>
-      )}
+      {/* Log Response — now part of Interaction Timeline below */}
 
       {/* Notes */}
       <Card>
@@ -485,12 +422,91 @@ export default function ContactDetail() {
       {/* Product Interests */}
       <ContactProducts contactId={contactId} />
 
-      {/* Conversations */}
-      <ContactConversations contactId={contactId} />
-
-      {/* Unified Timeline */}
+      {/* Interaction Timeline — unified: timeline + log response + log conversation */}
       <Card>
-        <h2 className="font-semibold text-gray-900 mb-4">Interaction Timeline</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-semibold text-gray-900">Interaction Timeline</h2>
+          <div className="flex gap-2">
+            {enrollments.some(
+              (e: Enrollment) =>
+                e.status === "queued" || e.status === "in_progress",
+            ) && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setShowLogResponse((v) => !v)}
+              >
+                {showLogResponse ? "Cancel" : "Log Response"}
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Inline Log Response form */}
+        {showLogResponse && (
+          <div className="mb-4 p-4 bg-gray-50 rounded-lg space-y-3">
+            <div className="flex gap-3">
+              <select
+                value={statusForm.campaign}
+                onChange={(e) =>
+                  setStatusForm((s) => ({ ...s, campaign: e.target.value }))
+                }
+                className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {enrollments
+                  .filter(
+                    (e: Enrollment) =>
+                      e.status === "queued" || e.status === "in_progress",
+                  )
+                  .map((e: Enrollment) => (
+                    <option key={e.campaign_name} value={e.campaign_name}>
+                      {e.campaign_name}
+                    </option>
+                  ))}
+              </select>
+              <select
+                value={statusForm.newStatus}
+                onChange={(e) =>
+                  setStatusForm((s) => ({ ...s, newStatus: e.target.value }))
+                }
+                className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="replied_positive">Positive Reply</option>
+                <option value="replied_negative">Negative Reply</option>
+                <option value="no_response">No Response</option>
+                <option value="bounced">Bounced</option>
+              </select>
+            </div>
+            <textarea
+              placeholder="Optional note (e.g., call booked for Tuesday, interested in factsheet...)"
+              value={statusForm.note}
+              onChange={(e) =>
+                setStatusForm((s) => ({ ...s, note: e.target.value }))
+              }
+              className="w-full h-20 px-3 py-2 border border-gray-200 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <div className="flex items-center gap-2">
+              <Button
+                variant="primary"
+                size="md"
+                onClick={() => { statusMutation.mutate(); setShowLogResponse(false); }}
+                loading={statusMutation.isPending}
+              >
+                Log Response
+              </Button>
+              {statusMutation.isError && (
+                <span className="text-red-500 text-sm">
+                  {(statusMutation.error as Error).message}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Conversations (inline, no separate card) */}
+        <ContactConversations contactId={contactId} inline />
+
+        {/* Timeline entries */}
         <UnifiedTimeline contactId={contactId} />
       </Card>
     </div>

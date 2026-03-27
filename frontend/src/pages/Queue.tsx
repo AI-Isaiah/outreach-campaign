@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Calendar, CheckCircle, ChevronDown, Clock, Inbox, Mail, Linkedin, Send, X } from "lucide-react";
+import { Calendar, CheckCircle, ChevronDown, Clock, Inbox, Info, Loader2, Mail, Linkedin, Send, X } from "lucide-react";
 import { queueApi } from "../api/queue";
 import { queryKeys } from "../api/queryKeys";
 import { SCHEDULE_PRESETS } from "../constants";
@@ -8,6 +8,8 @@ import { api } from "../api/client";
 import type { QueueItem, QueueResponse } from "../types";
 import QueueEmailCard from "../components/QueueEmailCard";
 import QueueLinkedInCard from "../components/QueueLinkedInCard";
+import ReviewGateModal from "../components/ReviewGateModal";
+import { useBatchSendLoop } from "../hooks/useBatchSendLoop";
 import { SkeletonCard } from "../components/Skeleton";
 import ErrorCard from "../components/ui/ErrorCard";
 import Button from "../components/ui/Button";
@@ -24,14 +26,12 @@ function KeyboardHint({ onDismiss }: { onDismiss: () => void }) {
         /
         <kbd className="font-mono bg-white border border-blue-200 rounded px-1.5 py-0.5 text-xs">k</kbd>
         {" \u00b7 "}
-        <kbd className="font-mono bg-white border border-blue-200 rounded px-1.5 py-0.5 text-xs">Enter</kbd>
-        {" to approve \u00b7 "}
+        <kbd className="font-mono bg-white border border-blue-200 rounded px-1.5 py-0.5 text-xs">Space</kbd>
+        {" to select \u00b7 "}
         <kbd className="font-mono bg-white border border-blue-200 rounded px-1.5 py-0.5 text-xs">s</kbd>
         {" to skip \u00b7 "}
-        <kbd className="font-mono bg-white border border-blue-200 rounded px-1.5 py-0.5 text-xs">e</kbd>
-        {" to edit \u00b7 "}
-        <kbd className="font-mono bg-white border border-blue-200 rounded px-1.5 py-0.5 text-xs">Tab</kbd>
-        {" to switch sections"}
+        <kbd className="font-mono bg-white border border-blue-200 rounded px-1.5 py-0.5 text-xs">Ctrl+Enter</kbd>
+        {" to review & send"}
       </span>
       <button
         onClick={onDismiss}
@@ -50,13 +50,30 @@ export default function Queue() {
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>("all");
   const [campaignFilter, setCampaignFilter] = useState<string>("");
   const [focusedIndex, setFocusedIndex] = useState(0);
-  const [approvedIds, setApprovedIds] = useState<Set<number>>(new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [showHint, setShowHint] = useState(() => {
     const count = parseInt(localStorage.getItem(HINT_STORAGE_KEY) || "0", 10);
     return count < MAX_HINT_VIEWS;
   });
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [customDateTime, setCustomDateTime] = useState("");
+
   const cardRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const scheduleRef = useRef<HTMLDivElement>(null);
+  const selectAllRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
+
+  const {
+    sendPhase,
+    sendProgress,
+    validationErrors,
+    undoCountdown,
+    handleConfirmSend,
+    handleCancel,
+    handleUndo,
+    resetState,
+  } = useBatchSendLoop();
 
   const { data, isLoading, isError, error, refetch } = useQuery<QueueResponse>({
     queryKey: queryKeys.queue.all,
@@ -77,52 +94,22 @@ export default function Queue() {
     },
   });
 
-  const approveMutation = useMutation({
-    mutationFn: (items: { contact_id: number; campaign_id: number }[]) =>
-      queueApi.batchApprove(items),
-  });
-
-  const [sendProgress, setSendProgress] = useState<string | null>(null);
-  const [sendResult, setSendResult] = useState<{ sent: number; failed: number; errors: { contact_id: number; campaign_id: number; error: string }[] } | null>(null);
-
-  const sendMutation = useMutation({
-    mutationFn: () => {
-      setSendProgress(`Sending ${approvedIds.size} item${approvedIds.size !== 1 ? "s" : ""}...`);
-      return queueApi.batchSend();
-    },
-    onSuccess: (result) => {
-      setSendProgress(null);
-      setSendResult(result);
-      setApprovedIds(new Set());
-      queryClient.invalidateQueries({ queryKey: queryKeys.queue.all });
-      setTimeout(() => setSendResult(null), 8000);
-    },
-    onError: () => {
-      setSendProgress(null);
-    },
-  });
-
-  const [scheduleOpen, setScheduleOpen] = useState(false);
-  const [customDateTime, setCustomDateTime] = useState("");
-  const scheduleRef = useRef<HTMLDivElement>(null);
-
   const scheduleMutation = useMutation({
     mutationFn: (schedule: string) => {
-      const approvedItems = flatItems
-        .filter((i) => approvedIds.has(i.contact_id) && i.campaign_id)
+      const selectedPairs = flatItems
+        .filter((i) => selectedIds.has(i.contact_id) && i.campaign_id)
         .map((i) => ({ contact_id: i.contact_id, campaign_id: i.campaign_id! }));
-      return queueApi.scheduleSend(approvedItems, schedule);
+      return queueApi.scheduleSend(selectedPairs, schedule);
     },
     onSuccess: (result) => {
-      setApprovedIds(new Set());
+      setSelectedIds(new Set());
       setScheduleOpen(false);
       setCustomDateTime("");
-      setSendResult({ sent: result.scheduled, failed: 0, errors: [] });
       queryClient.invalidateQueries({ queryKey: queryKeys.queue.all });
-      setTimeout(() => setSendResult(null), 8000);
     },
   });
 
+  // Close schedule dropdown on outside click
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (scheduleRef.current && !scheduleRef.current.contains(e.target as Node)) {
@@ -161,16 +148,16 @@ export default function Queue() {
     [queryClient],
   );
 
-  // Get unique campaign names from items
   const campaignNames = [...new Set(allItems.map((i) => i.campaign_name).filter((n): n is string => !!n))];
 
+  // Clamp focused index
   useEffect(() => {
     if (flatItems.length > 0 && focusedIndex >= flatItems.length) {
       setFocusedIndex(flatItems.length - 1);
     }
   }, [flatItems.length, focusedIndex]);
 
-  // Increment hint view count on mount
+  // Hint view counter
   useEffect(() => {
     const count = parseInt(localStorage.getItem(HINT_STORAGE_KEY) || "0", 10);
     if (count < MAX_HINT_VIEWS) {
@@ -188,6 +175,52 @@ export default function Queue() {
     }
   }, [focusedIndex, flatItems.length]);
 
+  // Select All indeterminate state
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = selectedIds.size > 0 && selectedIds.size < flatItems.length;
+    }
+  }, [selectedIds.size, flatItems.length]);
+
+  // beforeunload warning during active send
+  useEffect(() => {
+    if (sendPhase !== "sending") return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [sendPhase]);
+
+  // Clear selectedIds after send completes
+  useEffect(() => {
+    if (sendPhase === "done") {
+      setSelectedIds(new Set());
+    }
+  }, [sendPhase]);
+
+  // Toggle selection for a single item
+  const toggleSelected = useCallback((contactId: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(contactId)) {
+        next.delete(contactId);
+      } else {
+        next.add(contactId);
+      }
+      return next;
+    });
+  }, []);
+
+  // Select All / Deselect All
+  const toggleSelectAll = useCallback(() => {
+    if (selectedIds.size === flatItems.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(flatItems.map((i) => i.contact_id)));
+    }
+  }, [flatItems, selectedIds.size]);
+
   // Keyboard event handler
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -201,9 +234,26 @@ export default function Queue() {
         return;
       }
 
+      // Block queue shortcuts when review modal is open
+      if (showReviewModal) return;
+
       if (flatItems.length === 0) return;
 
       const maxIndex = flatItems.length - 1;
+
+      // Ctrl+Enter: open review gate
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        if (selectedIds.size > 0) setShowReviewModal(true);
+        return;
+      }
+
+      // Escape: deselect all
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setSelectedIds(new Set());
+        return;
+      }
 
       switch (e.key) {
         case "j": {
@@ -216,25 +266,12 @@ export default function Queue() {
           setFocusedIndex((prev) => Math.max(prev - 1, 0));
           break;
         }
-        case "Enter": {
+        case "Enter":
+        case " ": {
           e.preventDefault();
           const idx = Math.min(focusedIndex, maxIndex);
           const item = flatItems[idx];
-          if (item && item.campaign_id) {
-            const wasApproved = approvedIds.has(item.contact_id);
-            setApprovedIds((prev) => {
-              const next = new Set(prev);
-              if (next.has(item.contact_id)) {
-                next.delete(item.contact_id);
-              } else {
-                next.add(item.contact_id);
-              }
-              return next;
-            });
-            if (!wasApproved) {
-              approveMutation.mutate([{ contact_id: item.contact_id, campaign_id: item.campaign_id }]);
-            }
-          }
+          if (item) toggleSelected(item.contact_id);
           break;
         }
         case "s": {
@@ -273,7 +310,7 @@ export default function Queue() {
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [flatItems, focusedIndex, emailItems.length, linkedinItems.length, skipMutation, approveMutation, approvedIds]);
+  }, [flatItems, focusedIndex, emailItems.length, linkedinItems.length, skipMutation, selectedIds, showReviewModal, toggleSelected]);
 
   const dismissHint = useCallback(() => {
     setShowHint(false);
@@ -288,10 +325,16 @@ export default function Queue() {
     }
   }, []);
 
-  const hasApprovals = approvedIds.size > 0;
+  const selectedItems = useMemo(
+    () => flatItems.filter((i) => selectedIds.has(i.contact_id)),
+    [flatItems, selectedIds],
+  );
+
+  const hasSelections = selectedIds.size > 0;
+  const showStickyBar = hasSelections || sendPhase !== "idle";
 
   return (
-    <div className={`space-y-6 ${hasApprovals ? "pb-20" : ""}`} role="application" aria-label="Outreach queue">
+    <div className={`space-y-6 ${showStickyBar ? "pb-20" : ""}`} role="application" aria-label="Outreach queue">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Today's Queue</h1>
@@ -301,8 +344,27 @@ export default function Queue() {
             {linkedinItems.length > 0 && ` \u00b7 ${linkedinItems.length} LinkedIn`}
           </p>
         </div>
-        {emailItems.length > 0 && (
-          <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          {/* Select All */}
+          {flatItems.length > 0 && (
+            <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
+              <input
+                ref={selectAllRef}
+                type="checkbox"
+                checked={selectedIds.size === flatItems.length && flatItems.length > 0}
+                onChange={toggleSelectAll}
+                className="w-4 h-4 accent-blue-600"
+                aria-label="Select all queue items"
+              />
+              Select All
+            </label>
+          )}
+          {selectedIds.size > 0 && (
+            <span className="bg-blue-100 text-blue-700 text-xs font-medium px-2 py-0.5 rounded-full">
+              {selectedIds.size} selected
+            </span>
+          )}
+          {emailItems.length > 0 && (
             <Button
               variant="primary"
               size="md"
@@ -314,13 +376,13 @@ export default function Queue() {
             >
               Create All Drafts
             </Button>
-            {batchDraft.isError && (
-              <span className="text-red-500 text-sm">
-                {(batchDraft.error as Error).message}
-              </span>
-            )}
-          </div>
-        )}
+          )}
+          {batchDraft.isError && (
+            <span className="text-red-500 text-sm">
+              {(batchDraft.error as Error).message}
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="flex gap-2 flex-wrap">
@@ -403,7 +465,9 @@ export default function Queue() {
                   campaign={item.campaign_name || ""}
                   onDeferred={handleDeferred}
                   isFocused={focusedIndex === i}
-                  isApproved={approvedIds.has(item.contact_id)}
+                  
+                  isSelected={selectedIds.has(item.contact_id)}
+                  onToggle={toggleSelected}
                 />
               </div>
             ))}
@@ -428,7 +492,9 @@ export default function Queue() {
                     campaign={item.campaign_name || ""}
                     onDeferred={handleDeferred}
                     isFocused={focusedIndex === flatIdx}
-                    isApproved={approvedIds.has(item.contact_id)}
+                    
+                    isSelected={selectedIds.has(item.contact_id)}
+                    onToggle={toggleSelected}
                   />
                 </div>
               );
@@ -437,26 +503,66 @@ export default function Queue() {
         </div>
       )}
 
-      {hasApprovals && (
-        <div className="fixed bottom-0 left-56 right-0 bg-white border-t border-gray-200 px-6 py-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-40">
+      {/* Review Gate Modal */}
+      <ReviewGateModal
+        open={showReviewModal}
+        onClose={() => { setShowReviewModal(false); }}
+        selectedItems={selectedItems}
+        onConfirmSend={(force) => {
+          setShowReviewModal(false);
+          handleConfirmSend(force, flatItems, selectedIds);
+        }}
+        validationErrors={validationErrors}
+        isConfirming={sendPhase === "approving"}
+        scheduleMode={null}
+      />
+
+      {/* Sticky Bottom Bar — 5-state display */}
+      {showStickyBar && (
+        <div className="fixed bottom-0 left-56 right-0 bg-white border-t border-gray-200 px-6 py-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-40" aria-live="polite">
           <div className="max-w-7xl mx-auto flex items-center justify-between">
+            {/* Left side — status */}
             <div className="flex items-center gap-3">
-              <span className="text-sm font-medium text-gray-700">
-                {approvedIds.size} approved
-              </span>
-              {sendProgress && (
-                <span className="text-sm text-blue-600">{sendProgress}</span>
+              {sendPhase === "idle" && (
+                <>
+                  <span className="text-sm font-medium text-gray-700">
+                    {selectedIds.size} selected
+                  </span>
+                  <button
+                    onClick={() => setSelectedIds(new Set())}
+                    className="text-xs text-blue-600 hover:text-blue-700 underline"
+                  >
+                    Deselect all
+                  </button>
+                </>
               )}
-              {sendResult && (
-                <span className={`text-sm ${sendResult.failed > 0 ? "text-amber-600" : "text-green-600"}`}>
-                  {sendResult.failed > 0
-                    ? `${sendResult.sent} sent, ${sendResult.failed} failed`
-                    : `All ${sendResult.sent} sent`}
+              {sendPhase === "approving" && (
+                <span className="flex items-center gap-2 text-sm text-gray-500">
+                  <Loader2 size={14} className="animate-spin" /> Validating...
                 </span>
               )}
-              {sendMutation.isError && (
+              {sendPhase === "sending" && sendProgress && (
+                <span className="flex items-center gap-2 text-sm text-blue-600">
+                  <Loader2 size={14} className="animate-spin" />
+                  Sending... {sendProgress.sent} of {sendProgress.total}
+                  <span title="If interrupted, unsent items stay in your queue."><Info size={14} className="text-gray-400" /></span>
+                </span>
+              )}
+              {sendPhase === "done" && sendProgress && (
+                <span className={`text-sm font-medium ${sendProgress.failed > 0 ? "text-amber-600" : "text-green-600"}`}>
+                  {sendProgress.failed > 0
+                    ? `${sendProgress.sent} sent, ${sendProgress.failed} failed`
+                    : `${sendProgress.sent} sent`}
+                </span>
+              )}
+              {sendPhase === "aborted" && sendProgress && (
+                <span className="text-sm text-amber-600">
+                  Cancelled. {sendProgress.sent} of {sendProgress.total} sent. Remaining items still in queue.
+                </span>
+              )}
+              {sendPhase === "error" && (
                 <span className="text-sm text-red-600">
-                  {(sendMutation.error as Error).message}
+                  Send failed. {sendProgress ? `${sendProgress.sent} sent before error.` : ""}
                 </span>
               )}
               {scheduleMutation.isError && (
@@ -465,75 +571,97 @@ export default function Queue() {
                 </span>
               )}
             </div>
+
+            {/* Right side — actions */}
             <div className="flex items-center gap-2">
-              {sendResult && sendResult.failed > 0 && (
-                <Button
-                  variant="secondary"
-                  size="md"
-                  onClick={() => sendMutation.mutate()}
-                  disabled={sendMutation.isPending}
-                >
+              {/* Sending: Cancel button */}
+              {sendPhase === "sending" && (
+                <Button variant="secondary" size="md" onClick={handleCancel}>
+                  Cancel
+                </Button>
+              )}
+
+              {/* Done: Undo + Retry */}
+              {sendPhase === "done" && undoCountdown !== null && undoCountdown > 0 && (
+                <Button variant="secondary" size="md" onClick={handleUndo}>
+                  Undo ({undoCountdown}s)
+                </Button>
+              )}
+              {sendPhase === "done" && sendProgress && sendProgress.failed > 0 && (
+                <Button variant="secondary" size="md" onClick={() => resetState()}>
                   Retry failed
                 </Button>
               )}
-              <div className="relative" ref={scheduleRef}>
-                <button
-                  type="button"
-                  onClick={() => setScheduleOpen((prev) => !prev)}
-                  disabled={scheduleMutation.isPending}
-                  className="inline-flex items-center gap-1.5 bg-white border border-gray-200 text-gray-700 rounded-lg px-4 py-2.5 text-sm font-medium hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  <Clock size={16} />
-                  Schedule
-                  <ChevronDown size={14} />
-                </button>
-                {scheduleOpen && (
-                  <div className="absolute bottom-full right-0 mb-2 w-64 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-50">
-                    {SCHEDULE_PRESETS.map((preset) => {
-                      const Icon = preset.value === "now" ? Send : preset.value === "tomorrow_9am" ? Clock : Calendar;
-                      return (
-                        <button
-                          key={preset.value}
-                          type="button"
-                          onClick={() => { scheduleMutation.mutate(preset.value); }}
-                          className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                        >
-                          <Icon size={14} className="text-gray-400" />
-                          {preset.label}
-                        </button>
-                      );
-                    })}
-                    <div className="border-t border-gray-100 mt-1 pt-1 px-4 py-2">
-                      <label className="text-xs font-medium text-gray-500 block mb-1.5">
-                        Custom date & time
-                      </label>
-                      <input
-                        type="datetime-local"
-                        value={customDateTime}
-                        onChange={(e) => setCustomDateTime(e.target.value)}
-                        className="w-full border border-gray-200 rounded px-2.5 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                      <button
-                        type="button"
-                        disabled={!customDateTime}
-                        onClick={() => { scheduleMutation.mutate(new Date(customDateTime).toISOString()); }}
-                        className="mt-2 w-full bg-blue-600 text-white rounded text-sm font-medium px-3 py-1.5 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      >
-                        Schedule for this time
-                      </button>
-                    </div>
+
+              {/* Aborted/Error: Reset */}
+              {(sendPhase === "aborted" || sendPhase === "error") && (
+                <Button variant="secondary" size="md" onClick={resetState}>
+                  Dismiss
+                </Button>
+              )}
+
+              {/* Idle: Schedule + Review & Send */}
+              {sendPhase === "idle" && hasSelections && (
+                <>
+                  <div className="relative" ref={scheduleRef}>
+                    <button
+                      type="button"
+                      onClick={() => setScheduleOpen((prev) => !prev)}
+                      disabled={scheduleMutation.isPending}
+                      className="inline-flex items-center gap-1.5 bg-white border border-gray-200 text-gray-700 rounded-lg px-4 py-2.5 text-sm font-medium hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <Clock size={16} />
+                      Schedule
+                      <ChevronDown size={14} />
+                    </button>
+                    {scheduleOpen && (
+                      <div className="absolute bottom-full right-0 mb-2 w-64 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-50">
+                        {SCHEDULE_PRESETS.map((preset) => {
+                          const Icon = preset.value === "now" ? Send : preset.value === "tomorrow_9am" ? Clock : Calendar;
+                          return (
+                            <button
+                              key={preset.value}
+                              type="button"
+                              onClick={() => { scheduleMutation.mutate(preset.value); }}
+                              className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                            >
+                              <Icon size={14} className="text-gray-400" />
+                              {preset.label}
+                            </button>
+                          );
+                        })}
+                        <div className="border-t border-gray-100 mt-1 pt-1 px-4 py-2">
+                          <label className="text-xs font-medium text-gray-500 block mb-1.5">
+                            Custom date & time
+                          </label>
+                          <input
+                            type="datetime-local"
+                            value={customDateTime}
+                            onChange={(e) => setCustomDateTime(e.target.value)}
+                            className="w-full border border-gray-200 rounded px-2.5 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                          <button
+                            type="button"
+                            disabled={!customDateTime}
+                            onClick={() => { scheduleMutation.mutate(new Date(customDateTime).toISOString()); }}
+                            className="mt-2 w-full bg-blue-600 text-white rounded text-sm font-medium px-3 py-1.5 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          >
+                            Schedule for this time
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-              <Button
-                variant="primary"
-                size="lg"
-                onClick={() => sendMutation.mutate()}
-                loading={sendMutation.isPending}
-                leftIcon={<Send size={16} />}
-              >
-                Send {approvedIds.size} now
-              </Button>
+                  <Button
+                    variant="primary"
+                    size="lg"
+                    onClick={() => setShowReviewModal(true)}
+                    leftIcon={<Send size={16} />}
+                  >
+                    Review & Send {selectedIds.size}
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </div>

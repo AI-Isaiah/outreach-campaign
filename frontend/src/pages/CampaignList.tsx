@@ -1,6 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState, useMemo } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { Megaphone, Plus, Rocket } from "lucide-react";
+import { Archive, Megaphone, MoreVertical, Plus, Rocket, Search, Trash2, RotateCcw } from "lucide-react";
 import { campaignsApi } from "../api/campaigns";
 import type { CampaignWithMetrics } from "../api/campaigns";
 import { queryKeys } from "../api/queryKeys";
@@ -10,20 +11,34 @@ import ErrorCard from "../components/ui/ErrorCard";
 import Button from "../components/ui/Button";
 import HealthScoreBadge from "../components/HealthScoreBadge";
 
+type ViewMode = "active" | "archived";
+
 export default function CampaignList() {
+  const [viewMode, setViewMode] = useState<ViewMode>("active");
+  const [searchQuery, setSearchQuery] = useState("");
+  const queryClient = useQueryClient();
+
   const { data, isLoading, isError, error, refetch } = useQuery<CampaignWithMetrics[]>({
-    queryKey: queryKeys.campaigns.all,
-    queryFn: campaignsApi.listCampaigns,
+    queryKey: [...queryKeys.campaigns.all, viewMode],
+    queryFn: () => campaignsApi.listCampaigns(viewMode === "archived" ? "archived" : undefined),
   });
+
+  const filtered = useMemo(() => {
+    if (!data) return [];
+    if (!searchQuery) return data;
+    const q = searchQuery.toLowerCase();
+    return data.filter((c) => c.name.toLowerCase().includes(q));
+  }, [data, searchQuery]);
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Campaigns</h1>
-          {data && data.length > 0 && (
+          {data && (
             <p className="text-sm text-gray-500 mt-1">
-              {data.length} campaign{data.length !== 1 ? "s" : ""}
+              {filtered.length} campaign{filtered.length !== 1 ? "s" : ""}
+              {searchQuery && ` matching "${searchQuery}"`}
             </p>
           )}
         </div>
@@ -32,6 +47,42 @@ export default function CampaignList() {
             New Campaign
           </Button>
         </Link>
+      </div>
+
+      {/* Search + Active/Archived toggle */}
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1 max-w-sm">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search campaigns..."
+            className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+        </div>
+        <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+          <button
+            className={`px-4 py-2 text-sm font-medium transition-colors ${
+              viewMode === "active"
+                ? "bg-gray-900 text-white"
+                : "bg-white text-gray-600 hover:bg-gray-50"
+            }`}
+            onClick={() => setViewMode("active")}
+          >
+            Active
+          </button>
+          <button
+            className={`px-4 py-2 text-sm font-medium transition-colors border-l border-gray-200 ${
+              viewMode === "archived"
+                ? "bg-gray-900 text-white"
+                : "bg-white text-gray-600 hover:bg-gray-50"
+            }`}
+            onClick={() => setViewMode("archived")}
+          >
+            Archived
+          </button>
+        </div>
       </div>
 
       {isLoading && (
@@ -49,14 +100,20 @@ export default function CampaignList() {
         />
       )}
 
-      {data && data.length > 0 ? (
+      {filtered.length > 0 ? (
         <div className="space-y-3">
-          {data.map((c) => (
-            <CampaignCard key={c.id} campaign={c} />
+          {filtered.map((c) => (
+            <CampaignCard key={c.id} campaign={c} viewMode={viewMode} />
           ))}
         </div>
       ) : (
-        !isLoading && !isError && <EmptyState />
+        !isLoading && !isError && (
+          data && data.length === 0 && !searchQuery
+            ? (viewMode === "archived" ? <ArchivedEmpty /> : <EmptyState />)
+            : searchQuery
+              ? <p className="text-center py-12 text-sm text-gray-500">No campaigns matching "{searchQuery}"</p>
+              : null
+        )
       )}
     </div>
   );
@@ -66,54 +123,113 @@ const STATUS_DOT_COLORS: Record<string, string> = {
   active: "bg-green-500",
   draft: "bg-gray-300",
   completed: "bg-blue-500",
+  archived: "bg-gray-400",
 };
 
-function CampaignCard({ campaign: c }: { campaign: CampaignWithMetrics }) {
-  const statusDotColor = STATUS_DOT_COLORS[c.status] || "bg-yellow-500";
+function CampaignCard({ campaign: c, viewMode }: { campaign: CampaignWithMetrics; viewMode: ViewMode }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const queryClient = useQueryClient();
 
+  const archiveMutation = useMutation({
+    mutationFn: () => campaignsApi.updateCampaignStatus(c.name, "archived"),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.campaigns.all }),
+  });
+
+  const restoreMutation = useMutation({
+    mutationFn: () => campaignsApi.updateCampaignStatus(c.name, "active"),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.campaigns.all }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => campaignsApi.deleteCampaign(c.name),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.campaigns.all }),
+  });
+
+  const statusDotColor = STATUS_DOT_COLORS[c.status] || "bg-yellow-500";
   const channels = c.description || "Email + LinkedIn";
   const createdDate = c.created_at?.split("T")[0] || "";
 
   return (
-    <Link
-      to={`/campaigns/${c.name}`}
-      className="block border border-gray-200 rounded-lg p-5 hover:shadow-sm transition-shadow bg-white"
-    >
+    <div className="border border-gray-200 rounded-lg p-5 bg-white hover:shadow-sm transition-shadow relative">
       <div className="flex items-start gap-4">
-        <div className={`w-2.5 h-2.5 rounded-full mt-1.5 shrink-0 ${statusDotColor}`} />
-
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <h3 className="font-semibold text-gray-900 truncate">{c.name}</h3>
-            <StatusBadge status={c.status} />
+        <Link to={`/campaigns/${c.name}`} className="flex-1 min-w-0 flex items-start gap-4">
+          <div className={`w-2.5 h-2.5 rounded-full mt-1.5 shrink-0 ${statusDotColor}`} />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <h3 className="font-semibold text-gray-900 truncate">{c.name}</h3>
+              <StatusBadge status={c.status} />
+            </div>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {channels} &middot; Started {createdDate}
+            </p>
           </div>
-          <p className="text-xs text-gray-500 mt-0.5">
-            {channels} &middot; Started {createdDate}
-          </p>
-        </div>
 
-        <div className="flex gap-6 shrink-0 items-center">
-          <Metric label="Contacts" value={c.contacts_count ?? 0} />
-          <Metric label="Reply Rate" value={`${c.reply_rate ?? 0}%`} />
-          <Metric label="Calls" value={c.calls_booked ?? 0} />
-          <HealthScoreBadge score={c.health_score} />
-        </div>
-
-        <div className="w-28 shrink-0 mt-1">
-          <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all ${
-                c.status === "completed" ? "bg-blue-500" : "bg-green-500"
-              }`}
-              style={{ width: `${Math.min(c.progress_pct ?? 0, 100)}%` }}
-            />
+          <div className="flex gap-6 shrink-0 items-center">
+            <Metric label="Contacts" value={c.contacts_count ?? 0} />
+            <Metric label="Reply Rate" value={`${c.reply_rate ?? 0}%`} />
+            <Metric label="Calls" value={c.calls_booked ?? 0} />
+            <HealthScoreBadge score={c.health_score} />
           </div>
-          <span className="text-xs text-gray-400 mt-0.5 block text-right">
-            {Math.round(c.progress_pct ?? 0)}%
-          </span>
+
+          <div className="w-28 shrink-0 mt-1">
+            <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${
+                  c.status === "completed" ? "bg-blue-500" : "bg-green-500"
+                }`}
+                style={{ width: `${Math.min(c.progress_pct ?? 0, 100)}%` }}
+              />
+            </div>
+            <span className="text-xs text-gray-400 mt-0.5 block text-right">
+              {Math.round(c.progress_pct ?? 0)}%
+            </span>
+          </div>
+        </Link>
+
+        {/* Actions menu */}
+        <div className="relative shrink-0">
+          <button
+            onClick={(e) => { e.preventDefault(); setMenuOpen(!menuOpen); }}
+            className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+          >
+            <MoreVertical size={16} />
+          </button>
+          {menuOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+              <div className="absolute right-0 top-8 w-40 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-50">
+                {viewMode === "active" ? (
+                  <button
+                    onClick={() => { archiveMutation.mutate(); setMenuOpen(false); }}
+                    className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                  >
+                    <Archive size={14} /> Archive
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => { restoreMutation.mutate(); setMenuOpen(false); }}
+                    className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                  >
+                    <RotateCcw size={14} /> Restore
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    if (confirm(`Delete "${c.name}"? This removes all enrollments and sequence steps permanently.`)) {
+                      deleteMutation.mutate();
+                    }
+                    setMenuOpen(false);
+                  }}
+                  className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                >
+                  <Trash2 size={14} /> Delete
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
-    </Link>
+    </div>
   );
 }
 
@@ -143,6 +259,14 @@ function EmptyState() {
           Create Campaign
         </Button>
       </Link>
+    </div>
+  );
+}
+
+function ArchivedEmpty() {
+  return (
+    <div className="text-center py-12 text-sm text-gray-500">
+      No archived campaigns.
     </div>
   );
 }

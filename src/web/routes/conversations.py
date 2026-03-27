@@ -99,27 +99,17 @@ def create_conversation(
             )
         conv_id = cur.fetchone()["id"]
 
-        # Auto-advance lifecycle on successful outcome
-        if body.outcome == "successful":
-            stage = contact["lifecycle_stage"]
-            new_stage = None
-            if stage == "cold":
-                new_stage = "contacted"
-            elif stage == "contacted":
-                new_stage = "nurturing"
-
-            if new_stage:
-                cur.execute(
-                    "UPDATE contacts SET lifecycle_stage = %s WHERE id = %s",
-                    (new_stage, contact_id),
-                )
-                log_event(
-                    conn, contact_id, "lifecycle_advanced",
-                    metadata=json.dumps({"from": stage, "to": new_stage, "trigger": "successful_conversation"}),
-                    user_id=user["id"],
-                )
-
         conn.commit()
+
+        # Auto-advance lifecycle based on conversation type
+        try:
+            from src.services.lifecycle import on_materials_sent, on_meeting_booked
+            if body.outcome == "successful":
+                on_meeting_booked(conn, contact_id, user_id=user["id"])
+            else:
+                on_materials_sent(conn, contact_id, user_id=user["id"])
+        except Exception:
+            pass  # lifecycle is non-blocking
         return {"id": conv_id, "success": True}
 
 

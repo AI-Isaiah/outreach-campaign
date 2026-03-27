@@ -37,11 +37,10 @@
 
 ## P1 — Friction Sweep (Sprint 3-4)
 
-### Batch send with review gate
-**Priority:** P1 | **Sprint:** 3
-**Files:** `frontend/src/pages/Queue.tsx`, `src/web/routes/queue.py`, migration `025_batch_send.sql`
-**What:** Two-mode queue: Review mode (cards + approve checkboxes) → sticky bottom bar when 1+ approved ("Send N approved" + Schedule dropdown). Schedule presets: Send now | Tomorrow 9am | Spread 5/day for 3 days | Custom.
-**Migration:** `approved_at TIMESTAMPTZ`, `scheduled_for TIMESTAMPTZ` on `contact_campaign_status`.
+### ~~Batch send with review gate~~
+**Priority:** P1 | **Sprint:** 3 | **Status:** Complete
+**Files:** `frontend/src/pages/Queue.tsx`, `src/web/routes/queue.py`, `frontend/src/components/ReviewGateModal.tsx`, `frontend/src/hooks/useBatchSendLoop.ts`
+**What:** Select All + card checkboxes → review gate modal (stats, safety checks, random samples) → abortable send loop with progress → 30s undo. Server-side 1-per-company + dedup validation. Migration columns (approved_at, scheduled_for, sent_at) already shipped in migration 024.
 **Why:** Approving and sending each card individually is the biggest daily friction.
 
 ### Post-import campaign creation flow
@@ -77,6 +76,44 @@
 **Depends on:** Auto-reply detection (Sprint 2).
 
 ---
+
+## P1 — Sequence Editor v2
+
+### Sequence reordering (drag-and-drop)
+**Priority:** P1
+**Files:** `frontend/src/pages/CampaignDetail.tsx` (SequenceTab), `src/web/routes/campaigns.py`
+**What:** Allow reordering sequence steps via drag-and-drop in the Sequence tab. Warn when contacts have already received messages at the affected steps. Prompt on batch send if resequenced contacts are included. User can dismiss prompt permanently per campaign or once.
+**Why:** The sequence is set during wizard creation and frozen. Users need to adjust step order for live campaigns.
+
+### Inline template editing in sequence tab
+**Priority:** P1
+**Files:** `frontend/src/pages/CampaignDetail.tsx` (SequenceTab), `src/web/routes/templates.py`
+**What:** Click a sequence step to expand and edit its message template inline. Show subject + body with live preview. Save via existing template update API.
+**Why:** Currently requires navigating to Templates page. Should be editable right where the sequence is displayed.
+
+### Campaign queue shows all queued contacts (not just today)
+**Priority:** P1
+**Files:** `frontend/src/pages/CampaignDetail.tsx` (QueueTab), `src/application/queue_service.py`
+**What:** Campaign detail Queue tab should show all contacts with status "queued" or "in_progress", not just those with next_action_date = today. The contact tab shows "Queued" status but Queue tab shows empty.
+**Why:** User sees "2 contacts" as queued in contacts tab but queue shows empty. Confusing UX gap.
+
+### Messages tab purpose: sent message history
+**Priority:** P2
+**Files:** `frontend/src/pages/CampaignDetail.tsx` (MessagesTab), `src/web/routes/campaigns.py`
+**What:** Show sent message history for this campaign. Each row: contact name, template used, sent date, reply status. Currently shows empty "No messages sent yet" placeholder.
+**Why:** Users need to see what was actually sent, not just what's queued.
+
+### Resizable table columns
+**Priority:** P2
+**Files:** `frontend/src/components/DataTable.tsx` or inline in pages
+**What:** Allow users to drag column borders to resize columns in all data tables (templates, contacts, campaign contacts). Persist widths in localStorage.
+**Why:** Subject lines get truncated, name column is too wide. User should control column widths.
+
+### Templates back-link from edit page
+**Priority:** P2
+**Files:** `frontend/src/pages/TemplateEdit.tsx` or equivalent
+**What:** Template edit page should have a back link to the templates overview. Currently no navigation back.
+**Why:** Basic navigation flow. "Back is always from where the user came."
 
 ## P2 — Backlog (deferred from friction sweep)
 

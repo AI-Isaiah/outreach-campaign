@@ -45,6 +45,7 @@ export interface CampaignContact {
   company_name: string;
   company_id: number;
   current_step: number;
+  current_channel: string | null;
   status: string;
   next_action_date: string;
   total_steps: number;
@@ -60,7 +61,8 @@ export interface GeneratedStep {
 }
 
 export const campaignsApi = {
-  listCampaigns: () => request<CampaignWithMetrics[]>("/campaigns"),
+  listCampaigns: (status?: string) =>
+    request<CampaignWithMetrics[]>(`/campaigns${status ? `?status=${status}` : ""}`),
   createCampaign: (data: { name: string; description?: string; status?: string }) =>
     request<{ id: number; success: boolean }>("/campaigns", {
       method: "POST", body: JSON.stringify(data),
