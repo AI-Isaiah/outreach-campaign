@@ -49,11 +49,9 @@
 **What:** After import, show "Create Campaign with N Contacts" CTA. Navigate to wizard with contacts pre-populated (pre-selects in Step 2 CRM tab).
 **Why:** Import dumps users on contacts page with no clear next step.
 
-### Fund intelligence signals
-**Priority:** P1 | **Sprint:** 4
-**Files:** `src/services/deep_research_service.py`, queue card components, migration `026_fund_signals.sql`
-**What:** Extract time-sensitive signals from deep_research.crypto_signals + talking_points JSONB. Store as fund_signals JSONB on deep_research. Surface as badges on queue cards with tooltips.
-**Why:** "Reach out to Paradigm — they announced a $750M fund 2 weeks ago" makes outreach feel like insider knowledge.
+### ~~Fund intelligence signals~~
+**Priority:** P1 | **Sprint:** 4 | **Status:** Complete
+**What:** Extraction, queue enrichment, SignalBadge, and queue card rendering all implemented. Verified: `_batch_enrich()` fetches fund_signals, queue API returns them, SignalBadge renders on both card types.
 
 ### ~~Scheduled send~~
 **Priority:** P1 | **Sprint:** 4 | **Status:** Complete
@@ -99,11 +97,9 @@
 **Files:** `frontend/src/pages/CampaignDetail.tsx` (MessagesTab), `src/web/routes/campaigns.py`
 **What:** Shows sent message history for this campaign. Each row: contact name, template used, sent date, reply status.
 
-### Resizable table columns
-**Priority:** P2
-**Files:** `frontend/src/components/DataTable.tsx` or inline in pages
-**What:** Allow users to drag column borders to resize columns in all data tables (templates, contacts, campaign contacts). Persist widths in localStorage.
-**Why:** Subject lines get truncated, name column is too wide. User should control column widths.
+### ~~Column width fixes~~
+**Priority:** P2 | **Status:** Complete
+**What:** Fixed with Tailwind min-w/max-w/truncate + title tooltips. No custom hook needed. Templates: min-w-[280px] on Subject. Contacts: max-w-[200px] truncate on Company/Email.
 
 ### Templates back-link from edit page
 **Priority:** P2
