@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from src.application.campaign_service import launch_campaign as _launch_campaign
-from src.models.campaigns import delete_campaign, get_campaign_by_name, update_campaign_status
+from src.models.campaigns import delete_campaign, get_campaign, get_campaign_by_name, update_campaign_status
 from src.services.metrics import (
     compute_health_score,
     get_campaign_metrics,
@@ -116,6 +116,38 @@ def remove_campaign(
     if not deleted:
         raise HTTPException(500, "Failed to delete campaign")
     return {"name": name, "deleted": True}
+
+
+class EnrollContactsRequest(BaseModel):
+    contact_ids: list[int] = Field(min_length=1, max_length=500)
+
+
+@router.post("/campaigns/{campaign_id}/enroll")
+def enroll_contacts_in_campaign(
+    campaign_id: int,
+    body: EnrollContactsRequest,
+    conn=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Add contacts to an existing campaign."""
+    user_id = user["id"]
+    from src.models.enrollment import bulk_enroll_contacts, get_sequence_steps
+
+    camp = get_campaign(conn, campaign_id, user_id=user_id)
+    if not camp:
+        raise HTTPException(404, "Campaign not found")
+
+    # Find step 1 stable_id for enrollment
+    steps = get_sequence_steps(conn, campaign_id, user_id=user_id)
+    first_step_stable_id = str(steps[0]["stable_id"]) if steps else None
+
+    enrolled = bulk_enroll_contacts(
+        conn, campaign_id, body.contact_ids,
+        first_step_stable_id=first_step_stable_id,
+        user_id=user_id,
+    )
+    conn.commit()
+    return {"enrolled": enrolled, "campaign_id": campaign_id}
 
 
 @router.get("/campaigns")

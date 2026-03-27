@@ -87,6 +87,12 @@ export const campaignsApi = {
   deleteCampaign: (name: string) =>
     request<{ name: string; deleted: boolean }>(`/campaigns/${name}`, { method: "DELETE" }),
 
+  enrollContacts: (campaignId: number, contactIds: number[]) =>
+    request<{ enrolled: number; campaign_id: number }>(`/campaigns/${campaignId}/enroll`, {
+      method: "POST",
+      body: JSON.stringify({ contact_ids: contactIds }),
+    }),
+
   getCampaignContacts: (campaignId: number, options?: { status?: string; sort?: string }) => {
     const params = new URLSearchParams();
     if (options?.status) params.set("status", options.status);
