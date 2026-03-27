@@ -54,6 +54,14 @@ export const contactsApi = {
       method: "POST", body: JSON.stringify({ first_name: firstName, last_name: lastName }),
     }),
 
+  patchContact: (id: number, fields: {
+    first_name?: string; last_name?: string; email?: string;
+    linkedin_url?: string; title?: string;
+  }) =>
+    request<{ success: boolean; contact: any }>(`/contacts/${id}`, {
+      method: "PATCH", body: JSON.stringify(fields),
+    }),
+
   createContact: (data: {
     first_name: string; last_name: string; email?: string; phone_number?: string;
     linkedin_url?: string; title?: string; company_id?: number;

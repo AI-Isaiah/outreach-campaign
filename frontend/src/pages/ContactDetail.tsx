@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, Link, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Pencil } from "lucide-react";
 import { api } from "../api/client";
 import type { ContactDetailResponse, Enrollment, ResponseNote, Deal } from "../types";
 import StatusBadge from "../components/StatusBadge";
@@ -40,6 +40,9 @@ export default function ContactDetail() {
   const [showLogResponse, setShowLogResponse] = useState(false);
   const [phoneInput, setPhoneInput] = useState("");
   const [noteInput, setNoteInput] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
+  const [editForm, setEditForm] = useState({ first_name: "", last_name: "", email: "", linkedin_url: "", title: "" });
+  const [editError, setEditError] = useState("");
 
   const { data: dealsData } = useQuery({
     queryKey: ["contact-deals", contactId],
@@ -82,6 +85,17 @@ export default function ContactDetail() {
       queryClient.invalidateQueries({ queryKey: ["contact", contactId] });
       setPhoneInput("");
     },
+  });
+
+  const patchMutation = useMutation({
+    mutationFn: (fields: Parameters<typeof api.patchContact>[1]) =>
+      api.patchContact(contactId, fields),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["contact", contactId] });
+      setIsEditing(false);
+      setEditError("");
+    },
+    onError: (err: Error) => setEditError(err.message),
   });
 
   // Set default campaign from first enrollment
@@ -151,56 +165,162 @@ export default function ContactDetail() {
       {/* Contact info */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card>
-          <h2 className="font-semibold text-gray-900 mb-3">Contact Info</h2>
-          <div className="space-y-2.5 text-sm">
-            <div className="flex justify-between">
-              <span className="text-gray-500">Email</span>
-              <span className="text-gray-900">{contact.email || "-"}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">Email Status</span>
-              <StatusBadge status={contact.email_status} />
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">LinkedIn</span>
-              {contact.linkedin_url ? (
-                <a
-                  href={contact.linkedin_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 hover:text-blue-800 truncate max-w-xs"
-                >
-                  Profile
-                </a>
-              ) : (
-                <span className="text-gray-400">-</span>
-              )}
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-500">Phone</span>
-              {contact.phone_number ? (
-                <span className="text-gray-900">{contact.phone_number}</span>
-              ) : (
-                <div className="flex gap-1">
+          <div className="flex justify-between items-center mb-3">
+            <h2 className="font-semibold text-gray-900">Contact Info</h2>
+            {!isEditing && (
+              <button
+                onClick={() => {
+                  setEditForm({
+                    first_name: contact.first_name || "",
+                    last_name: contact.last_name || "",
+                    email: contact.email || "",
+                    linkedin_url: contact.linkedin_url || "",
+                    title: contact.title || "",
+                  });
+                  setEditError("");
+                  setIsEditing(true);
+                }}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+                title="Edit contact"
+              >
+                <Pencil size={14} />
+              </button>
+            )}
+          </div>
+
+          {isEditing ? (
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Name</label>
+                <div className="flex gap-2">
                   <input
                     type="text"
-                    value={phoneInput}
-                    onChange={(e) => setPhoneInput(e.target.value)}
-                    placeholder="+1 555 123 4567"
-                    className="w-36 px-2 py-1 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={editForm.first_name}
+                    onChange={(e) => setEditForm((f) => ({ ...f, first_name: e.target.value }))}
+                    placeholder="First name"
+                    className="flex-1 px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    onKeyDown={(e) => { if (e.key === "Escape") { setIsEditing(false); setEditError(""); } }}
                   />
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => phoneMutation.mutate()}
-                    disabled={!phoneInput}
-                    loading={phoneMutation.isPending}
-                  >
-                    Add
-                  </Button>
+                  <input
+                    type="text"
+                    value={editForm.last_name}
+                    onChange={(e) => setEditForm((f) => ({ ...f, last_name: e.target.value }))}
+                    placeholder="Last name"
+                    className="flex-1 px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    onKeyDown={(e) => { if (e.key === "Escape") { setIsEditing(false); setEditError(""); } }}
+                  />
                 </div>
-              )}
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Email</label>
+                <input
+                  type="email"
+                  value={editForm.email}
+                  onChange={(e) => setEditForm((f) => ({ ...f, email: e.target.value }))}
+                  placeholder="you@example.com"
+                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onKeyDown={(e) => { if (e.key === "Escape") { setIsEditing(false); setEditError(""); } }}
+                />
+                {editForm.email !== (contact.email || "") && editForm.email && (
+                  <p className="text-xs text-amber-600 mt-1">Email verification status will reset</p>
+                )}
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">LinkedIn URL</label>
+                <input
+                  type="url"
+                  value={editForm.linkedin_url}
+                  onChange={(e) => setEditForm((f) => ({ ...f, linkedin_url: e.target.value }))}
+                  placeholder="https://linkedin.com/in/..."
+                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onKeyDown={(e) => { if (e.key === "Escape") { setIsEditing(false); setEditError(""); } }}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Title</label>
+                <input
+                  type="text"
+                  value={editForm.title}
+                  onChange={(e) => setEditForm((f) => ({ ...f, title: e.target.value }))}
+                  placeholder="e.g. Portfolio Manager"
+                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onKeyDown={(e) => { if (e.key === "Escape") { setIsEditing(false); setEditError(""); } }}
+                />
+              </div>
+              {editError && <p className="text-xs text-red-600">{editError}</p>}
+              <div className="flex gap-2 pt-1">
+                <Button
+                  variant="accent"
+                  size="sm"
+                  loading={patchMutation.isPending}
+                  onClick={() => {
+                    const fields: Record<string, string> = {};
+                    if (editForm.first_name !== (contact.first_name || "")) fields.first_name = editForm.first_name;
+                    if (editForm.last_name !== (contact.last_name || "")) fields.last_name = editForm.last_name;
+                    if (editForm.email !== (contact.email || "")) fields.email = editForm.email;
+                    if (editForm.linkedin_url !== (contact.linkedin_url || "")) fields.linkedin_url = editForm.linkedin_url;
+                    if (editForm.title !== (contact.title || "")) fields.title = editForm.title;
+                    if (Object.keys(fields).length === 0) { setIsEditing(false); return; }
+                    patchMutation.mutate(fields);
+                  }}
+                >
+                  Save
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => { setIsEditing(false); setEditError(""); }}>
+                  Cancel
+                </Button>
+              </div>
             </div>
+          ) : (
+            <div className="space-y-2.5 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-500">Email</span>
+                <span className="text-gray-900">{contact.email || "-"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Email Status</span>
+                <StatusBadge status={contact.email_status} />
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">LinkedIn</span>
+                {contact.linkedin_url ? (
+                  <a
+                    href={contact.linkedin_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:text-blue-800 truncate max-w-xs"
+                  >
+                    Profile
+                  </a>
+                ) : (
+                  <span className="text-gray-400">-</span>
+                )}
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-500">Phone</span>
+                {contact.phone_number ? (
+                  <span className="text-gray-900">{contact.phone_number}</span>
+                ) : (
+                  <div className="flex gap-1">
+                    <input
+                      type="text"
+                      value={phoneInput}
+                      onChange={(e) => setPhoneInput(e.target.value)}
+                      placeholder="+1 555 123 4567"
+                      className="w-36 px-2 py-1 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => phoneMutation.mutate()}
+                      disabled={!phoneInput}
+                      loading={phoneMutation.isPending}
+                    >
+                      Add
+                    </Button>
+                  </div>
+                )}
+              </div>
             <div className="flex justify-between items-center">
               <span className="text-gray-500">Lifecycle</span>
               <div className="flex items-center gap-2">
@@ -237,6 +357,7 @@ export default function ContactDetail() {
               )}
             </div>
           </div>
+          )}
         </Card>
 
         <Card>
