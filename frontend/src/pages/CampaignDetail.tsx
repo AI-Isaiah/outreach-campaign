@@ -32,6 +32,7 @@ import HealthScoreBadge from "../components/HealthScoreBadge";
 import QueueEmailCard from "../components/QueueEmailCard";
 import QueueLinkedInCard from "../components/QueueLinkedInCard";
 import SequenceEditorDetail from "../components/SequenceEditorDetail";
+import CrmContactPicker from "./campaigns/components/CrmContactPicker";
 
 type Tab = "contacts" | "messages" | "sequence" | "analytics" | "queue";
 
@@ -304,6 +305,9 @@ function ContactsTab({ campaignName, campaignId, onSwitchTab }: { campaignName: 
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [sortField, setSortField] = useState<string>("step");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [showAddContacts, setShowAddContacts] = useState(false);
+  const [addContactIds, setAddContactIds] = useState<Set<number>>(new Set());
+  const queryClient = useQueryClient();
 
   // Sync metric card filter from URL params
   useEffect(() => {
@@ -366,8 +370,8 @@ function ContactsTab({ campaignName, campaignId, onSwitchTab }: { campaignName: 
 
   return (
     <div className="space-y-4">
-      {/* Filter */}
-      <div className="flex gap-2 flex-wrap">
+      {/* Filter + Add Contacts */}
+      <div className="flex gap-2 flex-wrap items-center">
         {["", "queued", "in_progress", "replied_positive", "replied_negative", "no_response", "bounced", "completed", "unsubscribed"].map((s) => (
           <button
             key={s}
@@ -381,7 +385,44 @@ function ContactsTab({ campaignName, campaignId, onSwitchTab }: { campaignName: 
             {s === "" ? "All" : s.replace(/_/g, " ")}
           </button>
         ))}
+        <button
+          onClick={() => setShowAddContacts(!showAddContacts)}
+          className="ml-auto px-3 py-1 rounded-full text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+        >
+          + Add Contacts
+        </button>
       </div>
+
+      {showAddContacts && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
+          <div className="flex justify-between items-center">
+            <h3 className="text-sm font-medium text-gray-900">Enroll contacts in this campaign</h3>
+            <button onClick={() => setShowAddContacts(false)} className="text-gray-400 hover:text-gray-600 text-xs">Close</button>
+          </div>
+          <CrmContactPicker selectedIds={addContactIds} onSelectionChange={setAddContactIds} />
+          {addContactIds.size > 0 && (
+            <div className="flex items-center gap-3">
+              <button
+                onClick={async () => {
+                  try {
+                    const result = await campaignsApi.enrollContacts(campaignId, Array.from(addContactIds));
+                    queryClient.invalidateQueries({ queryKey: ["campaign-contacts", campaignId] });
+                    queryClient.invalidateQueries({ queryKey: ["campaign-detail"] });
+                    setAddContactIds(new Set());
+                    setShowAddContacts(false);
+                  } catch (err: any) {
+                    alert(err.message || "Failed to enroll contacts");
+                  }
+                }}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+              >
+                Enroll {addContactIds.size} Contact{addContactIds.size !== 1 ? "s" : ""}
+              </button>
+              <span className="text-xs text-gray-500">{addContactIds.size} selected</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {sortedData.length > 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -447,7 +488,17 @@ function ContactsTab({ campaignName, campaignId, onSwitchTab }: { campaignName: 
         </div>
       ) : (
         <div className="text-center py-12 text-sm text-gray-500">
-          {statusFilter ? "No contacts with this status." : "No contacts enrolled yet."}
+          {statusFilter ? "No contacts with this status." : (
+            <div className="space-y-3">
+              <p>No contacts enrolled yet.</p>
+              <button
+                onClick={() => setShowAddContacts(true)}
+                className="px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors"
+              >
+                Add Contacts
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
