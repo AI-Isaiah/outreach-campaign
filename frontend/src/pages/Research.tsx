@@ -180,6 +180,20 @@ function NewJobModal({ onClose }: { onClose: () => void }) {
         {/* Step: Preview */}
         {step === "preview" && preview && (
           <div className="px-6 py-5 space-y-4 max-h-[60vh] overflow-y-auto">
+            {/* Job name (editable on preview step too) */}
+            {!name.trim() && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                <label className="block text-xs font-medium text-amber-700 mb-1">Job Name (required)</label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g., Q1 Family Office Research"
+                  className="w-full rounded-lg border border-amber-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  autoFocus
+                />
+              </div>
+            )}
             {/* Stats bar */}
             <div className="grid grid-cols-4 gap-3">
               <div className="rounded-lg bg-gray-50 px-3 py-2 text-center">
@@ -270,9 +284,40 @@ function NewJobModal({ onClose }: { onClose: () => void }) {
               </p>
             </div>
             {createMutation.isError && (
-              <div className="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700">
-                {createMutation.error.message}
-              </div>
+              createMutation.error.message.includes("already been researched") ? (
+                <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm space-y-3">
+                  <p className="text-amber-800 font-medium">All companies in this CSV have already been researched.</p>
+                  <p className="text-amber-700 text-xs">Would you like to re-research them?</p>
+                  <div className="flex gap-2 justify-center">
+                    <button
+                      onClick={() => {
+                        createMutation.reset();
+                        // Re-run with skip_duplicates=false (forces re-research)
+                        api.createResearchJob(file!, name, method, false).then(() => {
+                          queryClient.invalidateQueries({ queryKey: ["research-jobs"] });
+                          onClose();
+                        }).catch((err) => {
+                          // Show the actual error if it's something else
+                          createMutation.mutate();
+                        });
+                      }}
+                      className="px-3 py-1.5 text-xs font-medium text-white bg-amber-600 rounded-lg hover:bg-amber-700 transition-colors"
+                    >
+                      Re-research all
+                    </button>
+                    <button
+                      onClick={() => createMutation.reset()}
+                      className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700">
+                  {createMutation.error.message}
+                </div>
+              )
             )}
           </div>
         )}

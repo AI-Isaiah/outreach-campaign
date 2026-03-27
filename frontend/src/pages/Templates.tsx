@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { FileText, Plus } from "lucide-react";
+import { FileText, Plus, Sparkles } from "lucide-react";
 import { api } from "../api/client";
 import type { Template } from "../types";
 import { SkeletonTable } from "../components/Skeleton";
@@ -58,6 +58,25 @@ export default function Templates() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["templates"] });
       resetForm();
+    },
+  });
+
+  const aiGenerateMutation = useMutation({
+    mutationFn: () =>
+      api.improveMessage({
+        channel: form.channel,
+        body: form.body_template || "",
+        subject: form.subject || undefined,
+        instruction: form.body_template
+          ? "Improve this outreach template. Make it concise, personal, and compelling for crypto fund allocators. Keep Jinja2 variables like {{ first_name }}."
+          : `Write a ${form.channel === "email" ? "cold email" : "LinkedIn connection"} outreach template for crypto fund allocators. Use Jinja2 variables: {{ first_name }}, {{ company_name }}, {{ calendly_url }}. Be concise and personal.`,
+      }),
+    onSuccess: (result) => {
+      setForm((f) => ({
+        ...f,
+        body_template: result.body,
+        subject: result.subject || f.subject,
+      }));
     },
   });
 
@@ -149,7 +168,21 @@ export default function Templates() {
             )}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">Body Template</label>
+                <div className="flex items-center justify-between">
+                  <label className="block text-sm font-medium text-gray-700">Body Template</label>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    leftIcon={<Sparkles size={14} />}
+                    onClick={() => aiGenerateMutation.mutate()}
+                    loading={aiGenerateMutation.isPending}
+                  >
+                    {form.body_template ? "Improve with AI" : "Generate with AI"}
+                  </Button>
+                </div>
+                {aiGenerateMutation.isError && (
+                  <p className="text-xs text-red-600">{(aiGenerateMutation.error as Error).message}</p>
+                )}
                 <textarea
                   value={form.body_template}
                   onChange={(e) => setForm((f) => ({ ...f, body_template: e.target.value }))}

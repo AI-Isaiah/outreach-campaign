@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   DndContext,
   closestCenter,
@@ -82,6 +82,14 @@ function SortableStepRow({
   const [editBody, setEditBody] = useState(step.template_body || "");
   const [editDelay, setEditDelay] = useState(step.delay_days);
   const [editChannel, setEditChannel] = useState(step.channel);
+  const [showSaveAs, setShowSaveAs] = useState(false);
+  const [newTemplateName, setNewTemplateName] = useState("");
+
+  // Sync editor fields when the step's template changes (e.g., after template dropdown selection)
+  useEffect(() => {
+    setEditSubject(step.template_subject || "");
+    setEditBody(step.template_body || "");
+  }, [step.template_id, step.template_subject, step.template_body]);
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -110,6 +118,36 @@ function SortableStepRow({
     onError: (err: Error) => {
       toast(err.message, "error");
     },
+  });
+
+  // Save as new template: create template + assign to step
+  const saveAsNewMutation = useMutation({
+    mutationFn: async () => {
+      const result = await request<{ id: number }>("/templates", {
+        method: "POST",
+        body: JSON.stringify({
+          name: newTemplateName,
+          channel: step.channel,
+          subject: editSubject,
+          body_template: editBody,
+        }),
+      });
+      // Assign new template to step
+      await request(`/campaigns/${campaignId}/steps/${step.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ template_id: result.id }),
+      });
+      return result;
+    },
+    onSuccess: () => {
+      toast("Saved as new template", "success");
+      setShowSaveAs(false);
+      setNewTemplateName("");
+      queryClient.invalidateQueries({ queryKey: ["campaign-sequence", campaignId] });
+      queryClient.invalidateQueries({ queryKey: ["templates-list"] });
+      onToggleExpand(step.id);
+    },
+    onError: (err: Error) => toast(err.message, "error"),
   });
 
   // Save step properties (delay_days, channel, template_id)
@@ -274,21 +312,56 @@ function SortableStepRow({
                   placeholder="Message body"
                 />
               </div>
-              <div className="flex gap-2 justify-end">
-                <button
-                  onClick={() => onToggleExpand(step.id)}
-                  className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => saveMutation.mutate()}
-                  disabled={saveMutation.isPending}
-                  className="px-3 py-1.5 text-xs font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50"
-                >
-                  {saveMutation.isPending ? "Saving..." : "Save"}
-                </button>
-              </div>
+              {showSaveAs ? (
+                <div className="flex gap-2 items-end">
+                  <div className="flex-1">
+                    <label className="block text-xs font-medium text-gray-500 mb-1">New template name</label>
+                    <input
+                      type="text"
+                      value={newTemplateName}
+                      onChange={(e) => setNewTemplateName(e.target.value)}
+                      placeholder="e.g., Cold outreach v2"
+                      className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                      autoFocus
+                    />
+                  </div>
+                  <button
+                    onClick={() => saveAsNewMutation.mutate()}
+                    disabled={!newTemplateName.trim() || saveAsNewMutation.isPending}
+                    className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                  >
+                    {saveAsNewMutation.isPending ? "Creating..." : "Create"}
+                  </button>
+                  <button
+                    onClick={() => { setShowSaveAs(false); setNewTemplateName(""); }}
+                    className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Back
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-2 justify-end">
+                  <button
+                    onClick={() => onToggleExpand(step.id)}
+                    className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => setShowSaveAs(true)}
+                    className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Save as New
+                  </button>
+                  <button
+                    onClick={() => saveMutation.mutate()}
+                    disabled={saveMutation.isPending}
+                    className="px-3 py-1.5 text-xs font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50"
+                  >
+                    {saveMutation.isPending ? "Saving..." : "Save"}
+                  </button>
+                </div>
+              )}
             </>
           )}
 
