@@ -111,6 +111,32 @@
 **What:** Template edit page should have a back link to the templates overview. Currently no navigation back.
 **Why:** Basic navigation flow. "Back is always from where the user came."
 
+## P1 — QA Findings (2026-03-27)
+
+### Contact detail: edit core fields
+**Priority:** P1
+**Files:** `frontend/src/pages/ContactDetail.tsx`, `src/web/routes/contacts.py`
+**What:** Add inline editing for email, LinkedIn URL, name, and title on the contact detail page. Currently only phone and lifecycle are editable.
+**Why:** If a contact's email is wrong or LinkedIn URL changed, there's no way to fix it.
+
+### Messages tab: rename "Calls Booked" metric
+**Priority:** P2
+**What:** The "Calls Booked" metric card appears on every campaign but is always 0 (no feature to track calls). Either implement call tracking or replace with a useful metric (e.g., "Open Rate" or "Sequence Progress").
+**Why:** Dead weight taking 25% of the metric row.
+
+### Health score badge: show N/A for new campaigns
+**Priority:** P2
+**What:** Health score shows red "0" next to Active badge on campaigns with no sends. Should show gray "N/A" until there's enough data (at least 1 send).
+**Why:** Red 0 looks like an error indicator, confusing for new campaigns.
+
+### Wizard: contact count off-by-one
+**Priority:** P2
+**Files:** `frontend/src/pages/CampaignWizard.tsx`
+**What:** Review step shows 11 contacts when 10 were selected. Draft persistence may be adding an extra contact.
+**Why:** User enrolls more contacts than intended.
+
+---
+
 ## P2 — Backlog (deferred from friction sweep)
 
 ### Phase 5: Campaign kanban
