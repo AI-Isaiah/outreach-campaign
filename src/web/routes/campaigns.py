@@ -275,6 +275,18 @@ def get_campaign(
     return result
 
 
+@router.get("/campaigns/{campaign_id}/sequence")
+def get_campaign_sequence(
+    campaign_id: int,
+    conn=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Get sequence steps for a campaign."""
+    from src.models.enrollment import get_sequence_steps
+    steps = get_sequence_steps(conn, campaign_id, user_id=user["id"])
+    return steps
+
+
 @router.get("/campaigns/{name}/metrics")
 def get_metrics(
     name: str,

@@ -19,6 +19,7 @@ import { campaignsApi } from "../api/campaigns";
 import type { CampaignContact } from "../api/campaigns";
 import { queueApi } from "../api/queue";
 import { api } from "../api/client";
+import { request } from "../api/request";
 import { queryKeys } from "../api/queryKeys";
 import type { CampaignMetricsResponse, TemplatePerformanceItem, QueueItem, QueueResponse } from "../types";
 import MetricCard from "../components/MetricCard";
@@ -286,7 +287,7 @@ export default function CampaignDetail() {
         {activeTab === "contacts" && <ContactsTab campaignName={name!} campaignId={campaign.id} />}
         {activeTab === "queue" && <QueueTab campaignName={name!} />}
         {activeTab === "messages" && <MessagesTab />}
-        {activeTab === "sequence" && <SequenceTab campaignName={campaign.name} />}
+        {activeTab === "sequence" && <SequenceTab campaignName={campaign.name} campaignId={campaign.id} />}
         {activeTab === "analytics" && <AnalyticsTab metricsData={metricsData} campaignName={name!} />}
       </div>
     </div>
@@ -649,22 +650,76 @@ function MessagesTab() {
 
 // ─── Sequence Tab ──────────────────────────────────────────────────
 
-function SequenceTab({ campaignName }: { campaignName: string }) {
-  return (
-    <div className="text-center py-12">
-      <div className="w-12 h-12 rounded-full bg-purple-50 flex items-center justify-center mx-auto mb-3">
-        <ListOrdered size={24} className="text-purple-500" />
+function SequenceTab({ campaignName, campaignId }: { campaignName: string; campaignId: number }) {
+  const { data: steps, isLoading } = useQuery<{ id: number; step_order: number; channel: string; delay_days: number; template_id: number | null; draft_mode: string | null }[]>({
+    queryKey: ["campaign-sequence", campaignId],
+    queryFn: () => request<{ id: number; step_order: number; channel: string; delay_days: number; template_id: number | null; draft_mode: string | null }[]>(`/campaigns/${campaignId}/sequence`),
+    enabled: !!campaignId,
+  });
+
+  if (isLoading) return <SkeletonTable rows={3} cols={4} />;
+
+  if (!steps || steps.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <div className="w-12 h-12 rounded-full bg-purple-50 flex items-center justify-center mx-auto mb-3">
+          <ListOrdered size={24} className="text-purple-500" />
+        </div>
+        <h3 className="text-sm font-semibold text-gray-900 mb-1">No sequence set up</h3>
+        <p className="text-sm text-gray-500 mb-4">
+          Add a message sequence to automate your outreach for this campaign.
+        </p>
+        <a
+          href={`/campaigns/wizard?campaign=${encodeURIComponent(campaignName)}`}
+          className="inline-flex items-center gap-1.5 bg-gray-900 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-800"
+        >
+          Set Up Sequence
+        </a>
       </div>
-      <h3 className="text-sm font-semibold text-gray-900 mb-1">No sequence set up</h3>
-      <p className="text-sm text-gray-500 mb-4">
-        Add a message sequence to automate your outreach for this campaign.
-      </p>
-      <a
-        href={`/campaigns/wizard?campaign=${encodeURIComponent(campaignName)}`}
-        className="inline-flex items-center gap-1.5 bg-gray-900 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-800"
-      >
-        Set Up Sequence
-      </a>
+    );
+  }
+
+  const CHANNEL_LABELS: Record<string, string> = {
+    email: "Email",
+    linkedin_connect: "LinkedIn Connect",
+    linkedin_message: "LinkedIn Message",
+    linkedin_engage: "LinkedIn Engage",
+    linkedin_insight: "LinkedIn Insight",
+    linkedin_final: "LinkedIn Final",
+  };
+
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      <table className="w-full">
+        <thead>
+          <tr className="bg-gray-50 border-b border-gray-200">
+            <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Step</th>
+            <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Channel</th>
+            <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Delay</th>
+            <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Mode</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {steps.map((s) => (
+            <tr key={s.id} className="hover:bg-gray-50 transition-colors">
+              <td className="px-5 py-4 text-sm font-medium text-gray-900">Step {s.step_order}</td>
+              <td className="px-5 py-4">
+                <span className={`text-xs font-medium px-2 py-0.5 rounded ${
+                  s.channel === "email" ? "bg-blue-100 text-blue-700" : "bg-indigo-100 text-indigo-700"
+                }`}>
+                  {CHANNEL_LABELS[s.channel] ?? s.channel}
+                </span>
+              </td>
+              <td className="px-5 py-4 text-sm text-gray-500">
+                {s.delay_days === 0 ? "Same day" : `+${s.delay_days} day${s.delay_days > 1 ? "s" : ""}`}
+              </td>
+              <td className="px-5 py-4 text-sm text-gray-500 capitalize">
+                {s.draft_mode ?? "template"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
