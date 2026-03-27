@@ -18,18 +18,31 @@ Uses default Tailwind palette. No custom config extensions.
 | Text | gray-900 / gray-500 / gray-400 | -- | Primary / secondary / tertiary |
 | Backdrop | black/30 | -- | Modal overlays |
 
-### Status Colors
+### Status Colors (from `constants.ts`)
 
-| Status | Color | Background |
-|--------|-------|------------|
-| queued | gray-600 | gray-100 |
-| in_progress | blue-600 | blue-50 |
-| replied_positive | green-600 | green-50 |
-| replied_negative | red-600 | red-50 |
-| no_response | amber-600 | amber-50 |
-| bounced | red-600 | red-50 |
-| active | green-600 | green-50 |
-| completed | gray-600 | gray-100 |
+| Status | Classes |
+|--------|---------|
+| queued | `bg-gray-100 text-gray-700` |
+| in_progress | `bg-blue-100 text-blue-700` |
+| replied_positive | `bg-green-100 text-green-800` |
+| replied_negative | `bg-red-100 text-red-700` |
+| no_response | `bg-yellow-100 text-yellow-800` |
+| bounced | `bg-red-100 text-red-700` |
+| active | `bg-green-100 text-green-800` |
+| completed | `bg-gray-100 text-gray-700` |
+| drafted | `bg-blue-100 text-blue-700` |
+| sent | `bg-green-100 text-green-800` |
+| paused | `bg-amber-100 text-amber-700` |
+
+### Lifecycle Colors
+
+| Stage | Classes |
+|-------|---------|
+| cold | `bg-gray-100 text-gray-700` |
+| contacted | `bg-blue-100 text-blue-700` |
+| nurturing | `bg-amber-100 text-amber-700` |
+| client | `bg-green-100 text-green-800` |
+| churned | `bg-red-100 text-red-700` |
 
 ### Metric Card Accent Borders
 
@@ -103,7 +116,7 @@ All shared components live in `frontend/src/components/ui/`.
 | accent | `bg-blue-600 text-white hover:bg-blue-700` |
 | secondary | `bg-white border border-gray-200 text-gray-700 hover:bg-gray-50` |
 | danger | `bg-red-600 text-white hover:bg-red-700` |
-| ghost | `text-gray-500 hover:text-gray-700 hover:bg-gray-100` |
+| ghost | `text-gray-600 hover:text-gray-900 hover:bg-gray-100` |
 
 Sizes: `sm` (px-3 py-1.5 text-xs), `md` (px-4 py-2 text-sm), `lg` (px-5 py-2.5 text-sm). All use `rounded-lg`.
 
@@ -192,3 +205,14 @@ Body rows: `divide-y divide-gray-100 hover:bg-gray-50 transition-colors`.
 - Specific numbers: "Found 3 new replies" not "Successfully updated"
 - Concise CTAs: "Open Today's Queue" not "Click here to view"
 - Never use: "revolutionary", "game-changing", "leverage", "synergy"
+
+## Constants (`frontend/src/constants.ts`)
+
+Shared labels and enums consumed across the frontend:
+
+- `STATUS_COLORS` — contact campaign status to Tailwind classes (see Status Colors above)
+- `LIFECYCLE_COLORS` — lifecycle stage to Tailwind classes (see Lifecycle Colors above)
+- `DEAL_STAGE_COLORS` — deal pipeline stages (cold through won/lost)
+- `CHANNEL_LABELS` — email, linkedin_connect, linkedin_message, linkedin_engage, linkedin_insight, linkedin_final
+- `SCHEDULE_PRESETS` — "Send now", "Tomorrow 9am", "Spread: 5/day for 3 days"
+- `DEFAULT_CAMPAIGN` — fallback campaign name
