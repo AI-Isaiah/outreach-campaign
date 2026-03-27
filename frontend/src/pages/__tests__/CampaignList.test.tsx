@@ -56,6 +56,7 @@ function makeCampaign(overrides: Partial<CampaignWithMetrics> = {}): CampaignWit
     replied_count: 8,
     reply_rate: 19,
     calls_booked: 3,
+    emails_sent: 5,
     progress_pct: 65,
     health_score: 72,
     ...overrides,
@@ -226,14 +227,14 @@ describe("CampaignList page", () => {
     expect(screen.getByText("Reply Rate")).toBeInTheDocument();
   });
 
-  it("displays calls booked", async () => {
-    mockListCampaigns.mockResolvedValue([makeCampaign({ calls_booked: 3 })]);
+  it("displays emails sent", async () => {
+    mockListCampaigns.mockResolvedValue([makeCampaign({ emails_sent: 5 })]);
     renderCampaignList();
 
     await waitFor(() => {
-      expect(screen.getByText("3")).toBeInTheDocument();
+      expect(screen.getByText("5")).toBeInTheDocument();
     });
-    expect(screen.getByText("Calls")).toBeInTheDocument();
+    expect(screen.getByText("Sent")).toBeInTheDocument();
   });
 
   it("displays progress bar percentage", async () => {
