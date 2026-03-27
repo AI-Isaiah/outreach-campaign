@@ -251,39 +251,81 @@ def generate_draft(
 
 # ── Sequence-level generation ─────────────────────────────────────────────
 
-SYSTEM_SEQUENCE = """\
-You are a B2B outreach specialist designing a multi-touch outreach sequence \
-targeting crypto fund allocators.
+def _load_outreach_skill() -> str:
+    """Load the outreach skill prompt from outside-skills/ if available.
 
-Channel best practices:
-- linkedin_connect: Short, personal, under 280 chars. One reference + one value prop. No "Hi {name}".
-- linkedin_message: DM tone, specific insight hook, under 400 words. No formal greetings.
-- email: Lead with a specific insight, under 200 words, conversational. No "Dear" or sign-offs.
-- Follow-up emails: Reference prior outreach, add new value, shorter than initial.
+    Falls back to a basic prompt if the files don't exist.
+    """
+    import pathlib
+    base = pathlib.Path(__file__).resolve().parent.parent.parent / "outside-skills"
+    parts = []
+    for name in ("Outreach_GS_SKILL.md", "GS_outreach_example-metaworld.md"):
+        path = base / name
+        if path.exists():
+            parts.append(path.read_text(encoding="utf-8"))
+    if parts:
+        return "\n\n".join(parts)
+    return ""
 
-Sequence design rules:
-- Each step should build on previous ones — avoid repeating the same pitch.
-- Early steps establish credibility, later steps add urgency or new value.
-- LinkedIn connects are warm intros; follow-up messages deepen the conversation.
-- Keep the overall narrative arc: introduce → add value → create urgency → final ask.
 
-Output MUST be valid JSON: an array of objects, one per step, with keys:
-  step_order (int), channel (string), subject (string or null), body (string)
+def _build_sequence_system() -> str:
+    """Build the system prompt for sequence generation.
 
-For email steps, include a subject line. For LinkedIn steps, subject should be null.\
-"""
+    Uses the outreach skill files if available, with JSON output instructions appended.
+    """
+    skill_content = _load_outreach_skill()
+    if skill_content:
+        return (
+            skill_content
+            + "\n\n## CRITICAL OUTPUT FORMAT\n\n"
+            "Output MUST be valid JSON: an array of objects, one per step, with keys:\n"
+            "  step_order (int), channel (string), subject (string or null), body (string)\n\n"
+            "For email steps, include a subject line. For LinkedIn steps, subject should be null.\n"
+            "Use Jinja2 variables: {{ first_name }}, {{ company_name }}, {{ title }}.\n"
+            "Do NOT wrap the JSON in markdown code fences. Return the raw JSON array only."
+        )
+    # Fallback: basic prompt if skill files not found
+    return (
+        "You are a B2B outreach specialist designing a multi-touch outreach sequence "
+        "targeting crypto fund allocators.\n\n"
+        "Channel best practices:\n"
+        "- linkedin_connect: Short, personal, under 280 chars. One reference + one value prop.\n"
+        "- linkedin_message: DM tone, specific insight hook, under 400 words.\n"
+        "- email: Lead with a specific insight, under 200 words, conversational.\n\n"
+        "Sequence design rules:\n"
+        "- Each step builds on previous ones — no repeating the same pitch.\n"
+        "- Early steps establish credibility, later steps add urgency or new value.\n"
+        "- Narrative arc: introduce → add value → create urgency → final ask.\n\n"
+        "Output MUST be valid JSON: an array of objects, one per step, with keys:\n"
+        "  step_order (int), channel (string), subject (string or null), body (string)\n\n"
+        "For email steps, include a subject line. For LinkedIn steps, subject should be null.\n"
+        "Use Jinja2 variables: {{ first_name }}, {{ company_name }}, {{ title }}."
+    )
 
-SYSTEM_IMPROVE = """\
-You are a B2B outreach specialist improving a message for crypto fund allocator outreach.
 
-Rules:
-- Apply the requested improvement while preserving the overall message intent.
-- Maintain channel-appropriate length (email <200 words, LinkedIn connect <280 chars, LinkedIn message <400 words).
-- Keep the tone conversational and professional.
-- Do NOT add greetings, sign-offs, or unsubscribe links.
+SYSTEM_SEQUENCE = _build_sequence_system()
 
-Output the improved message only — no explanations or labels.\
-"""
+def _build_improve_system() -> str:
+    """Build the system prompt for message improvement.
+
+    Uses outreach skill voice guidelines if available.
+    """
+    skill = _load_outreach_skill()
+    base_rules = (
+        "You are improving a single outreach message for crypto fund allocator outreach.\n\n"
+        "Rules:\n"
+        "- Apply the requested improvement while preserving the overall message intent.\n"
+        "- Maintain channel-appropriate length (email <200 words, LinkedIn connect <280 chars, LinkedIn message <400 words).\n"
+        "- Do NOT add greetings, sign-offs, or unsubscribe links.\n\n"
+        "Output the improved message only — no explanations or labels."
+    )
+    if skill:
+        # Prepend voice guidelines, append the technical rules
+        return skill + "\n\n## IMPROVEMENT TASK\n\n" + base_rules
+    return base_rules
+
+
+SYSTEM_IMPROVE = _build_improve_system()
 
 
 ALLOWED_MODELS = {
