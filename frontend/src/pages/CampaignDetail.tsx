@@ -582,7 +582,7 @@ function QueueTab({ campaignName }: { campaignName: string }) {
               : "bg-gray-100 text-gray-600 hover:bg-gray-200"
           }`}
         >
-          {scope === "all" ? "All Queued" : scope === "today" ? "Today" : "Overdue"}
+          {scope === "all" ? "All Queued" : scope === "today" ? `Due today (${new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })})` : "Overdue"}
         </button>
       ))}
     </div>
