@@ -181,6 +181,16 @@ def confirm_reply(
 
         conn.commit()
 
+        # Auto-advance lifecycle on reply confirmation
+        try:
+            from src.services.lifecycle import on_positive_reply, on_email_sent
+            if body.outcome in ("replied_positive", "neutral"):
+                on_positive_reply(conn, reply["contact_id"], user_id=user["id"])
+            else:
+                on_email_sent(conn, reply["contact_id"], user_id=user["id"])
+        except Exception:
+            pass  # lifecycle is non-blocking
+
         return {"success": True, "reply_id": reply_id, "outcome": body.outcome}
 
 

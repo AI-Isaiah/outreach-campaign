@@ -284,7 +284,7 @@ export default function CampaignDetail() {
       </div>
 
       <div role="tabpanel" aria-label={`${activeTab} tab content`}>
-        {activeTab === "contacts" && <ContactsTab campaignName={name!} campaignId={campaign.id} />}
+        {activeTab === "contacts" && <ContactsTab campaignName={name!} campaignId={campaign.id} onSwitchTab={switchTab} />}
         {activeTab === "queue" && <QueueTab campaignName={name!} />}
         {activeTab === "messages" && <MessagesTab />}
         {activeTab === "sequence" && <SequenceTab campaignName={campaign.name} campaignId={campaign.id} />}
@@ -296,7 +296,7 @@ export default function CampaignDetail() {
 
 // ─── Contacts Tab ──────────────────────────────────────────────────
 
-function ContactsTab({ campaignName, campaignId }: { campaignName: string; campaignId: number }) {
+function ContactsTab({ campaignName, campaignId, onSwitchTab }: { campaignName: string; campaignId: number; onSwitchTab: (tab: Tab) => void }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const filterParam = searchParams.get("filter") || "";
   const [statusFilter, setStatusFilter] = useState<string>("");
@@ -408,17 +408,35 @@ function ContactsTab({ campaignName, campaignId }: { campaignName: string; campa
                   </td>
                   <td className="px-5 py-4 text-sm text-gray-500">{c.company_name}</td>
                   <td className="px-5 py-4">
-                    <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
-                      Step {c.current_step} of {c.total_steps}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          onSwitchTab("queue");
+                        }}
+                        className={`text-xs font-medium px-2 py-0.5 rounded cursor-pointer hover:opacity-80 transition-opacity ${
+                          c.current_channel === "email" ? "bg-blue-100 text-blue-700" : c.current_channel?.startsWith("linkedin") ? "bg-indigo-100 text-indigo-700" : "bg-gray-100 text-gray-600"
+                        }`}
+                        title={`View in queue`}
+                      >
+                        {c.current_channel === "email" ? "Email" : c.current_channel === "linkedin_connect" ? "Connect" : c.current_channel === "linkedin_message" ? "Message" : `Step ${c.current_step}`}
+                      </button>
+                      <span className="text-xs text-gray-400">{c.current_step}/{c.total_steps}</span>
+                    </div>
                   </td>
                   <td className="px-5 py-4"><StatusBadge status={c.status} /></td>
-                  <td className="px-5 py-4">
-                    <Link
-                      to={`/contacts/${c.id}?campaign=${campaignName}`}
+                  <td className="px-5 py-4 flex gap-2">
+                    <button
+                      onClick={() => onSwitchTab("queue")}
                       className="text-xs text-blue-600 hover:underline"
                     >
-                      View
+                      Queue
+                    </button>
+                    <Link
+                      to={`/contacts/${c.id}?campaign=${campaignName}`}
+                      className="text-xs text-gray-400 hover:underline"
+                    >
+                      Profile
                     </Link>
                   </td>
                 </tr>

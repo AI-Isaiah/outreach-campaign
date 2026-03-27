@@ -51,7 +51,9 @@ class DealStage(StrEnum):
 class LifecycleStage(StrEnum):
     COLD = "cold"
     CONTACTED = "contacted"
+    ENGAGED = "engaged"
     NURTURING = "nurturing"
+    OPPORTUNITY = "opportunity"
     CLIENT = "client"
     CHURNED = "churned"
 

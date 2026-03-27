@@ -240,11 +240,14 @@ def get_campaign_contacts(
            comp.name AS company_name, comp.id AS company_id,
            ccs.current_step, ccs.status, ccs.next_action_date,
            ccs.assigned_variant,
+           ss_cur.channel AS current_channel,
            (SELECT COUNT(*) FROM sequence_steps ss
             WHERE ss.campaign_id = %s) AS total_steps
     FROM contact_campaign_status ccs
     JOIN contacts c ON c.id = ccs.contact_id
     LEFT JOIN companies comp ON comp.id = c.company_id
+    LEFT JOIN sequence_steps ss_cur ON ss_cur.campaign_id = ccs.campaign_id
+         AND ss_cur.step_order = ccs.current_step
     WHERE ccs.campaign_id = %s AND c.user_id = %s
     {"AND ccs.status = %s" if status else ""}
     ORDER BY {order_by}

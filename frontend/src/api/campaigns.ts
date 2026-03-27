@@ -45,6 +45,7 @@ export interface CampaignContact {
   company_name: string;
   company_id: number;
   current_step: number;
+  current_channel: string | null;
   status: string;
   next_action_date: string;
   total_steps: number;
