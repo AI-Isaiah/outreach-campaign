@@ -467,6 +467,12 @@ export interface AnalysisResponse {
   created_at: string;
 }
 
+export interface BatchValidationErrors {
+  error: string;
+  company_duplicates?: { company_id: number; company_name: string; count: number }[];
+  email_duplicates?: { email: string; count: number }[];
+}
+
 export interface DeferStatsResponse {
   today_count: number;
   total_count: number;
