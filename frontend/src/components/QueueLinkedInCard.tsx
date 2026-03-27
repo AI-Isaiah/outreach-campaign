@@ -12,6 +12,7 @@ import CopyButton from "./CopyButton";
 import ContactEditPanel from "./ContactEditPanel";
 import SkipMenu from "./SkipMenu";
 import { useContactEdit } from "../hooks/useContactEdit";
+import { computeQualityIndicator, qualityDotClass, qualityLabel } from "../utils/qualityIndicator";
 
 function getActionType(channel: string): string {
   if (channel === "linkedin_connect") return "connect";
@@ -36,12 +37,20 @@ function QueueLinkedInCard({
   onDeferred,
   isFocused,
   isApproved,
+  isSelected = false,
+  onToggleSelect,
+  showCheckbox = false,
+  limboSeconds = null,
 }: {
   item: QueueItem;
   campaign: string;
   onDeferred?: () => void;
   isFocused?: boolean;
   isApproved?: boolean;
+  isSelected?: boolean;
+  onToggleSelect?: () => void;
+  showCheckbox?: boolean;
+  limboSeconds?: number | null;
 }) {
   const [done, setDone] = useState(false);
   const [skipped, setSkipped] = useState(false);
@@ -53,6 +62,7 @@ function QueueLinkedInCard({
 
   const queryClient = useQueryClient();
   const contactEdit = useContactEdit(item);
+  const quality = computeQualityIndicator(item);
 
   const generateMutation = useMutation({
     mutationFn: () =>
@@ -119,18 +129,35 @@ function QueueLinkedInCard({
 
   return (
     <div
-      className={`bg-white border rounded-lg shadow-sm overflow-hidden ${
-        isFocused ? "ring-2 ring-blue-500 ring-offset-2 border-blue-300" : "border-gray-200"
+      className={`bg-white border rounded-lg shadow-sm overflow-hidden relative ${
+        isSelected
+          ? "border-l-4 border-blue-400"
+          : isFocused
+            ? "ring-2 ring-blue-500 ring-offset-2 border-blue-300"
+            : "border-gray-200"
       }`}
       aria-label={`LinkedIn: ${item.contact_name}`}
     >
       <div className="bg-blue-50 px-5 py-3 flex items-center justify-between border-b border-blue-100">
         <div className="flex items-center gap-1.5">
+          {showCheckbox && (
+            <input
+              type="checkbox"
+              checked={isSelected}
+              onChange={onToggleSelect}
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              aria-label={`Select ${item.contact_name} for batch send`}
+            />
+          )}
           {isApproved && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
           <Linkedin size={16} className="text-blue-600 flex-shrink-0" />
           <span className="font-semibold text-gray-900">
             {item.contact_name}
           </span>
+          <span
+            className={`w-2 h-2 rounded-full inline-block ${qualityDotClass(quality)}`}
+            title={qualityLabel(quality)}
+          />
           <button
             onClick={() => contactEdit.setShowEdit(!contactEdit.showEdit)}
             className="p-0.5 text-gray-400 hover:text-gray-600 transition-colors"
@@ -246,6 +273,14 @@ function QueueLinkedInCard({
           )}
         </div>
       </div>
+
+      {limboSeconds != null && limboSeconds > 0 && (
+        <div className="absolute inset-0 bg-amber-50/80 flex items-center justify-center pointer-events-none rounded-lg">
+          <span className="text-amber-700 font-medium text-sm">
+            Sending in {limboSeconds}s...
+          </span>
+        </div>
+      )}
     </div>
   );
 }

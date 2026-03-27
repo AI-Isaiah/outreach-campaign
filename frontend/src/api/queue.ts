@@ -52,15 +52,21 @@ export const queueApi = {
       body: JSON.stringify({ items }),
     }),
 
-  batchSend: () =>
+  batchSend: (options?: { contact_ids?: number[]; scheduled_for?: string }) =>
     request<{ sent: number; failed: number; errors: { contact_id: number; campaign_id: number; error: string }[] }>(
       "/queue/batch-send",
-      { method: "POST" },
+      { method: "POST", body: options ? JSON.stringify(options) : undefined },
     ),
 
   scheduleSend: (items: { contact_id: number; campaign_id: number }[], schedule: string) =>
     request<{ scheduled: number }>("/queue/schedule", {
       method: "POST",
       body: JSON.stringify({ items, schedule }),
+    }),
+
+  batchCancel: (contactIds: number[]) =>
+    request<{ cancelled: number }>("/queue/batch-cancel", {
+      method: "POST",
+      body: JSON.stringify({ contact_ids: contactIds }),
     }),
 };

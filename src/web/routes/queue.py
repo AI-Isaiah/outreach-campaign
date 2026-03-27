@@ -40,6 +40,15 @@ class DeferRequest(BaseModel):
     campaign: str = Field(default=DEFAULT_CAMPAIGN, max_length=200)
 
 
+class BatchSendRequest(BaseModel):
+    contact_ids: Optional[List[int]] = None
+    scheduled_for: Optional[str] = None
+
+
+class BatchCancelRequest(BaseModel):
+    contact_ids: List[int]
+
+
 class GenerateDraftRequest(BaseModel):
     campaign_id: int
     step_order: int
@@ -89,15 +98,40 @@ def batch_approve(
 
 @router.post("/queue/batch-send")
 def batch_send(
+    body: Optional[BatchSendRequest] = None,
     conn=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    """Send all approved-but-unsent queue items."""
-    user_id = user["id"]
+    """Send all approved-but-unsent queue items.
 
-    with get_cursor(conn) as cur:
-        cur.execute(
-            """SELECT ccs.contact_id, ccs.campaign_id,
+    Optional body params:
+    - contact_ids: filter to only these contacts (ownership verified)
+    - scheduled_for: set scheduled_for instead of sending immediately
+    """
+    from src.models.database import verify_ownership
+
+    user_id = user["id"]
+    contact_ids = body.contact_ids if body else None
+    scheduled_for_raw = body.scheduled_for if body else None
+
+    # Verify ownership of each requested contact_id
+    if contact_ids:
+        for cid in contact_ids:
+            if not verify_ownership(conn, "contacts", cid, user_id=user_id):
+                raise HTTPException(404, f"Contact {cid} not found")
+
+    # Parse scheduled_for if provided
+    scheduled_for_dt = None
+    if scheduled_for_raw:
+        try:
+            scheduled_for_dt = datetime.fromisoformat(scheduled_for_raw)
+            if scheduled_for_dt.tzinfo is None:
+                scheduled_for_dt = scheduled_for_dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            raise HTTPException(400, f"Invalid scheduled_for format: {scheduled_for_raw}")
+
+    # Build the query with optional contact_ids filter
+    base_query = """SELECT ccs.contact_id, ccs.campaign_id,
                       ss.template_id, ss.channel
                FROM contact_campaign_status ccs
                JOIN campaigns c ON c.id = ccs.campaign_id AND c.user_id = %s
@@ -106,31 +140,108 @@ def batch_send(
                WHERE ccs.approved_at IS NOT NULL
                  AND ccs.sent_at IS NULL
                  AND ccs.status = 'in_progress'
-                 AND ss.channel = 'email'
-               ORDER BY ccs.approved_at
-               LIMIT 10""",
-            (user_id,),
-        )
+                 AND ss.channel = 'email'"""
+    params: list = [user_id]
+
+    if contact_ids:
+        base_query += " AND ccs.contact_id = ANY(%s)"
+        params.append(contact_ids)
+
+    base_query += " ORDER BY ccs.approved_at LIMIT 10"
+
+    with get_cursor(conn) as cur:
+        cur.execute(base_query, params)
         rows = cur.fetchall()
 
     # Count remaining for frontend
-    with get_cursor(conn) as cur:
-        cur.execute(
-            """SELECT COUNT(*) AS cnt FROM contact_campaign_status ccs
+    remaining_query = """SELECT COUNT(*) AS cnt FROM contact_campaign_status ccs
                JOIN campaigns c ON c.id = ccs.campaign_id AND c.user_id = %s
                WHERE ccs.approved_at IS NOT NULL AND ccs.sent_at IS NULL
-                 AND ccs.status = 'in_progress'""",
-            (user_id,),
-        )
+                 AND ccs.status = 'in_progress'"""
+    remaining_params: list = [user_id]
+
+    if contact_ids:
+        remaining_query += " AND ccs.contact_id = ANY(%s)"
+        remaining_params.append(contact_ids)
+
+    with get_cursor(conn) as cur:
+        cur.execute(remaining_query, remaining_params)
         total_remaining = cur.fetchone()["cnt"]
 
     if not rows:
-        return {"sent": 0, "failed": 0, "errors": []}
+        return {"sent": 0, "failed": 0, "errors": [], "remaining": 0}
+
+    # If scheduled_for is provided, set it instead of sending immediately
+    if scheduled_for_dt:
+        scheduled = 0
+        with get_cursor(conn) as cur:
+            for row in rows:
+                cur.execute(
+                    """UPDATE contact_campaign_status
+                       SET scheduled_for = %s
+                       WHERE contact_id = %s AND campaign_id = %s
+                         AND sent_at IS NULL
+                         AND campaign_id IN (SELECT id FROM campaigns WHERE user_id = %s)""",
+                    (scheduled_for_dt, row["contact_id"], row["campaign_id"], user_id),
+                )
+                scheduled += cur.rowcount
+        conn.commit()
+        return {
+            "sent": scheduled,
+            "failed": 0,
+            "errors": [],
+            "remaining": max(0, total_remaining - scheduled),
+        }
 
     config = load_config_safe()
     result = send_email_batch(conn, rows, config, user_id=user_id)
     result["remaining"] = max(0, total_remaining - result["sent"])
     return result
+
+
+@router.post("/queue/batch-cancel")
+@_limiter.limit("10/minute")
+def batch_cancel(
+    request: Request,
+    body: BatchCancelRequest,
+    conn=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Cancel scheduled sends for specified contacts.
+
+    Clears scheduled_for and approved_at on unsent items.
+    """
+    from src.models.database import verify_ownership
+
+    user_id = user["id"]
+
+    if not body.contact_ids:
+        return {"cancelled": 0}
+
+    with get_cursor(conn) as cur:
+        # Verify ownership in a single query
+        cur.execute(
+            "SELECT id FROM contacts WHERE id = ANY(%s) AND user_id = %s",
+            (body.contact_ids, user_id),
+        )
+        owned_ids = {row["id"] for row in cur.fetchall()}
+        missing = set(body.contact_ids) - owned_ids
+        if missing:
+            raise HTTPException(404, f"Contact(s) {sorted(missing)} not found")
+
+        # Cancel all matching rows in a single UPDATE
+        cur.execute(
+            """UPDATE contact_campaign_status
+               SET scheduled_for = NULL, approved_at = NULL
+               WHERE contact_id = ANY(%s)
+                 AND sent_at IS NULL AND scheduled_for IS NOT NULL
+                 AND campaign_id IN (SELECT id FROM campaigns WHERE user_id = %s)""",
+            (body.contact_ids, user_id),
+        )
+        cancelled = cur.rowcount
+    conn.commit()
+
+    return {"cancelled": cancelled}
 
 
 class ScheduleItem(BaseModel):

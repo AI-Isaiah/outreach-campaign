@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { ShortcutProvider } from "./context/ShortcutContext";
 import RequireAuth from "./components/RequireAuth";
 import Layout from "./components/Layout";
 import { SkeletonCard } from "./components/Skeleton";
@@ -61,50 +62,52 @@ export default function App() {
   return (
     <BrowserRouter>
       <ErrorBoundary>
-        <Suspense fallback={<PageFallback />}>
-          <Routes>
-            {/* Public auth routes */}
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            <Route path="/forgot-password" element={<ForgotPassword />} />
-            <Route path="/reset-password" element={<ResetPassword />} />
+        <ShortcutProvider>
+          <Suspense fallback={<PageFallback />}>
+            <Routes>
+              {/* Public auth routes */}
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
 
-            {/* Protected app routes */}
-            <Route
-              element={
-                <RequireAuth>
-                  <Layout />
-                </RequireAuth>
-              }
-            >
-              <Route path="/" element={<Page><CampaignList /></Page>} />
-              <Route path="/queue" element={<Page><Queue /></Page>} />
-              <Route path="/campaigns" element={<Navigate to="/" replace />} />
-              <Route path="/campaigns/new" element={<Page><CampaignWizard /></Page>} />
-              <Route path="/campaigns/wizard" element={<Navigate to="/campaigns/new" replace />} />
-              <Route path="/campaigns/builder" element={<Page><CampaignBuilder /></Page>} />
-              <Route path="/campaigns/:name" element={<Page><CampaignDetail /></Page>} />
-              <Route path="/dashboard" element={<Page><Dashboard /></Page>} />
-              <Route path="/contacts" element={<Page><ContactList /></Page>} />
-              <Route path="/contacts/:id" element={<Page><ContactDetail /></Page>} />
-              <Route path="/templates" element={<Page><Templates /></Page>} />
-              <Route path="/companies/:id" element={<Page><CompanyDetail /></Page>} />
-              <Route path="/settings" element={<Page><Settings /></Page>} />
-              <Route path="/insights" element={<Page><Insights /></Page>} />
-              <Route path="/pipeline" element={<Page><Pipeline /></Page>} />
-              <Route path="/inbox" element={<Page><Inbox /></Page>} />
-              <Route path="/newsletters" element={<Page><NewsletterList /></Page>} />
-              <Route path="/newsletters/new" element={<Page><NewsletterComposer /></Page>} />
-              <Route path="/newsletters/:id" element={<Page><NewsletterComposer /></Page>} />
-              <Route path="/research" element={<Page><Research /></Page>} />
-              <Route path="/research/:id" element={<Page><ResearchJobDetail /></Page>} />
-              <Route path="/research/results/:id" element={<Page><ResearchResultDetail /></Page>} />
-              <Route path="/import" element={<Page><ImportWizard /></Page>} />
-              <Route path="/import/smart" element={<Page><SmartImport /></Page>} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Route>
-          </Routes>
-        </Suspense>
+              {/* Protected app routes */}
+              <Route
+                element={
+                  <RequireAuth>
+                    <Layout />
+                  </RequireAuth>
+                }
+              >
+                <Route path="/" element={<Page><CampaignList /></Page>} />
+                <Route path="/queue" element={<Page><Queue /></Page>} />
+                <Route path="/campaigns" element={<Navigate to="/" replace />} />
+                <Route path="/campaigns/new" element={<Page><CampaignWizard /></Page>} />
+                <Route path="/campaigns/wizard" element={<Navigate to="/campaigns/new" replace />} />
+                <Route path="/campaigns/builder" element={<Page><CampaignBuilder /></Page>} />
+                <Route path="/campaigns/:name" element={<Page><CampaignDetail /></Page>} />
+                <Route path="/dashboard" element={<Page><Dashboard /></Page>} />
+                <Route path="/contacts" element={<Page><ContactList /></Page>} />
+                <Route path="/contacts/:id" element={<Page><ContactDetail /></Page>} />
+                <Route path="/templates" element={<Page><Templates /></Page>} />
+                <Route path="/companies/:id" element={<Page><CompanyDetail /></Page>} />
+                <Route path="/settings" element={<Page><Settings /></Page>} />
+                <Route path="/insights" element={<Page><Insights /></Page>} />
+                <Route path="/pipeline" element={<Page><Pipeline /></Page>} />
+                <Route path="/inbox" element={<Page><Inbox /></Page>} />
+                <Route path="/newsletters" element={<Page><NewsletterList /></Page>} />
+                <Route path="/newsletters/new" element={<Page><NewsletterComposer /></Page>} />
+                <Route path="/newsletters/:id" element={<Page><NewsletterComposer /></Page>} />
+                <Route path="/research" element={<Page><Research /></Page>} />
+                <Route path="/research/:id" element={<Page><ResearchJobDetail /></Page>} />
+                <Route path="/research/results/:id" element={<Page><ResearchResultDetail /></Page>} />
+                <Route path="/import" element={<Page><ImportWizard /></Page>} />
+                <Route path="/import/smart" element={<Page><SmartImport /></Page>} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Route>
+            </Routes>
+          </Suspense>
+        </ShortcutProvider>
       </ErrorBoundary>
     </BrowserRouter>
   );
