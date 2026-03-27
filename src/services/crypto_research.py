@@ -801,12 +801,20 @@ def _research_single_company(conn, result: dict, method: str) -> None:
     web_raw = None
     crawl_raw = None
 
+    has_website = bool(result.get("company_website"))
+
     if method in ("web_search", "hybrid"):
         web_raw = research_company_web_search(
             result["company_name"], result.get("company_website")
         )
-    if method in ("website_crawl", "hybrid") and result.get("company_website"):
+    if method in ("website_crawl", "hybrid") and has_website:
         crawl_raw = crawl_company_website(result["company_website"])
+
+    # Fallback: if website_crawl was chosen but company has no website,
+    # do a web search instead so the classifier has something to work with
+    if method == "website_crawl" and not has_website:
+        logger.info("No website for %s, falling back to web search", result["company_name"])
+        web_raw = research_company_web_search(result["company_name"], None)
 
     result["web_search_raw"] = web_raw
     result["website_crawl_raw"] = crawl_raw
