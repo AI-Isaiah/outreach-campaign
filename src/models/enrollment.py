@@ -242,7 +242,10 @@ def update_contact_campaign_status(
     if current_step is not None:
         fields.append("current_step = %s")
         params.append(current_step)
+        # Reset send-cycle fields so the contact re-enters the approval queue
         fields.append("sent_at = NULL")
+        fields.append("approved_at = NULL")
+        fields.append("scheduled_for = NULL")
     if current_step_id is not None:
         fields.append("current_step_id = %s")
         params.append(current_step_id)

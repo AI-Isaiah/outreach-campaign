@@ -11,6 +11,7 @@ import logging
 import re
 import smtplib
 import time
+from datetime import date, timedelta
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -484,17 +485,22 @@ def send_campaign_email(
         channel=template_row["channel"],
     )
 
-    # Lookup-based advancement (safe for non-consecutive step_order)
+    # Auto-advance: move to next step with scheduled next_action_date.
+    # Clearing approved_at/scheduled_for/sent_at is handled by
+    # update_contact_campaign_status when current_step changes.
     steps = get_sequence_steps(conn, campaign_id, user_id=user_id)
     next_step = find_next_step(steps, current_step)
     if next_step:
+        delay = next_step.get("delay_days", 0) or 0
+        next_date = (date.today() + timedelta(days=delay)).isoformat()
         update_contact_campaign_status(
             conn, contact_id, campaign_id,
             current_step=next_step["step_order"],
             current_step_id=str(next_step["stable_id"]),
+            next_action_date=next_date,
             user_id=user_id,
         )
-    # If no next step, contact has completed the sequence (don't advance)
+    # If no next step, contact stays in_progress for reply detection
 
     conn.commit()
 

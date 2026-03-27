@@ -16,6 +16,8 @@ _FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
 _limiter = Limiter(key_func=get_remote_address)
 
+from datetime import date, timedelta
+
 from src.config import DEFAULT_CAMPAIGN, load_config_safe
 from src.models.campaigns import get_campaign_by_name
 from src.models.enrollment import get_sequence_steps, record_template_usage, update_contact_campaign_status
@@ -302,7 +304,7 @@ def check_draft_status(
                             draft_row["template_id"], channel="email",
                         )
 
-                    # Advance to next step (single targeted query, no full sequence load)
+                    # Advance to next step with scheduled next_action_date
                     cur.execute(
                         """SELECT current_step FROM contact_campaign_status
                            WHERE contact_id = %s AND campaign_id = %s""",
@@ -311,17 +313,21 @@ def check_draft_status(
                     status_row = cur.fetchone()
                     if status_row:
                         cur.execute(
-                            """SELECT step_order, stable_id FROM sequence_steps
+                            """SELECT step_order, stable_id, delay_days
+                               FROM sequence_steps
                                WHERE campaign_id = %s AND step_order > %s
                                ORDER BY step_order LIMIT 1""",
                             (camp["id"], status_row["current_step"]),
                         )
                         next_step = cur.fetchone()
                         if next_step:
+                            delay = next_step.get("delay_days", 0) or 0
+                            next_date = (date.today() + timedelta(days=delay)).isoformat()
                             update_contact_campaign_status(
                                 conn, contact_id, camp["id"],
                                 current_step=next_step["step_order"],
                                 current_step_id=str(next_step["stable_id"]),
+                                next_action_date=next_date,
                                 user_id=user["id"],
                             )
 
