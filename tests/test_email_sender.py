@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+from datetime import date, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -1002,6 +1003,14 @@ class TestLinkedInTemplates:
 # Auto-sequence advancement tests
 # ---------------------------------------------------------------------------
 
+def _mock_smtp(mock_smtp_class):
+    """Configure SMTP mock for send_campaign_email tests."""
+    mock_server = MagicMock()
+    mock_smtp_class.return_value.__enter__ = MagicMock(return_value=mock_server)
+    mock_smtp_class.return_value.__exit__ = MagicMock(return_value=False)
+    return mock_server
+
+
 class TestAutoSequenceAdvancement:
     """After sending an email, the contact should auto-advance to the next step
     with the correct next_action_date, and approval state should be reset."""
@@ -1030,10 +1039,7 @@ class TestAutoSequenceAdvancement:
         self, mock_smtp_class, conn, sample_contact, multi_step_campaign,
         sample_template, sample_config,
     ):
-        mock_server = MagicMock()
-        mock_smtp_class.return_value.__enter__ = MagicMock(return_value=mock_server)
-        mock_smtp_class.return_value.__exit__ = MagicMock(return_value=False)
-
+        _mock_smtp(mock_smtp_class)
         enroll_contact(conn, sample_contact, multi_step_campaign, user_id=TEST_USER_ID)
         send_campaign_email(
             conn, sample_contact, multi_step_campaign, sample_template, sample_config, user_id=1,
@@ -1041,8 +1047,6 @@ class TestAutoSequenceAdvancement:
 
         status = get_contact_campaign_status(conn, sample_contact, multi_step_campaign, user_id=1)
         assert status["current_step"] == 2
-
-        from datetime import date, timedelta
         expected_date = date.today() + timedelta(days=3)
         assert str(status["next_action_date"]) == expected_date.isoformat()
 
@@ -1051,12 +1055,8 @@ class TestAutoSequenceAdvancement:
         self, mock_smtp_class, conn, sample_contact, multi_step_campaign,
         sample_template, sample_config,
     ):
-        mock_server = MagicMock()
-        mock_smtp_class.return_value.__enter__ = MagicMock(return_value=mock_server)
-        mock_smtp_class.return_value.__exit__ = MagicMock(return_value=False)
-
+        _mock_smtp(mock_smtp_class)
         enroll_contact(conn, sample_contact, multi_step_campaign, user_id=TEST_USER_ID)
-        # Simulate approval
         cursor = conn.cursor()
         cursor.execute(
             "UPDATE contact_campaign_status SET approved_at = NOW() WHERE contact_id = %s AND campaign_id = %s",
@@ -1077,10 +1077,7 @@ class TestAutoSequenceAdvancement:
         self, mock_smtp_class, conn, sample_contact, multi_step_campaign,
         sample_template, sample_config,
     ):
-        mock_server = MagicMock()
-        mock_smtp_class.return_value.__enter__ = MagicMock(return_value=mock_server)
-        mock_smtp_class.return_value.__exit__ = MagicMock(return_value=False)
-
+        _mock_smtp(mock_smtp_class)
         enroll_contact(conn, sample_contact, multi_step_campaign, user_id=TEST_USER_ID)
         cursor = conn.cursor()
         cursor.execute(
@@ -1101,10 +1098,7 @@ class TestAutoSequenceAdvancement:
         self, mock_smtp_class, conn, sample_contact, sample_config,
     ):
         """Contact at the last step should stay in_progress for reply detection."""
-        mock_server = MagicMock()
-        mock_smtp_class.return_value.__enter__ = MagicMock(return_value=mock_server)
-        mock_smtp_class.return_value.__exit__ = MagicMock(return_value=False)
-
+        _mock_smtp(mock_smtp_class)
         camp_id = create_campaign(conn, "Single Step", user_id=TEST_USER_ID)
         tmpl = create_template(
             conn, name="Only Email", channel="email",
@@ -1118,17 +1112,13 @@ class TestAutoSequenceAdvancement:
 
         status = get_contact_campaign_status(conn, sample_contact, camp_id, user_id=1)
         assert status["current_step"] == 1, "Should stay at step 1 (no next step)"
-        # Status stays as-is (send_campaign_email doesn't handle status transitions)
 
     @patch("src.services.email_sender.smtplib.SMTP")
     def test_delay_zero_sets_today(
         self, mock_smtp_class, conn, sample_contact, sample_config,
     ):
         """A next step with delay_days=0 should set next_action_date to today."""
-        mock_server = MagicMock()
-        mock_smtp_class.return_value.__enter__ = MagicMock(return_value=mock_server)
-        mock_smtp_class.return_value.__exit__ = MagicMock(return_value=False)
-
+        _mock_smtp(mock_smtp_class)
         camp_id = create_campaign(conn, "Zero Delay", user_id=TEST_USER_ID)
         t1 = create_template(conn, name="Step1", channel="email",
                              body_template="Hi {{ first_name }}.", subject="S1", user_id=TEST_USER_ID)
@@ -1141,5 +1131,4 @@ class TestAutoSequenceAdvancement:
         send_campaign_email(conn, sample_contact, camp_id, t1, sample_config, user_id=1)
 
         status = get_contact_campaign_status(conn, sample_contact, camp_id, user_id=1)
-        from datetime import date
         assert str(status["next_action_date"]) == date.today().isoformat()

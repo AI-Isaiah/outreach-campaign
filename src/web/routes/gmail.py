@@ -16,12 +16,11 @@ _FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
 _limiter = Limiter(key_func=get_remote_address)
 
-from datetime import date, timedelta
-
 from src.config import DEFAULT_CAMPAIGN, load_config_safe
+from src.enums import EventType
 from src.models.campaigns import get_campaign_by_name
-from src.models.enrollment import get_sequence_steps, record_template_usage, update_contact_campaign_status
-from src.services.sequence_utils import find_next_step
+from src.models.enrollment import get_sequence_steps, record_template_usage
+from src.services.sequence_utils import advance_to_next_step
 from src.models.events import log_event
 from src.services.email_sender import render_campaign_email
 from src.services.gmail_drafter import GmailDrafter
@@ -288,48 +287,33 @@ def check_draft_status(
                     )
                     conn.commit()
 
-                    # Log the email_sent event and advance step
                     log_event(
-                        conn, contact_id, "email_sent",
+                        conn, contact_id, EventType.EMAIL_SENT,
                         campaign_id=camp["id"],
                         template_id=draft_row.get("template_id"),
                         metadata=json.dumps({"source": "gmail", "subject": draft_row["subject"]}),
                         user_id=user["id"],
                     )
 
-                    # Record template usage for performance tracking
                     if draft_row.get("template_id"):
                         record_template_usage(
                             conn, contact_id, camp["id"],
                             draft_row["template_id"], channel="email",
                         )
 
-                    # Advance to next step with scheduled next_action_date
+                    # Advance to next step (sets next_action_date, clears approval state)
+                    steps = get_sequence_steps(conn, camp["id"], user_id=user["id"])
                     cur.execute(
-                        """SELECT current_step FROM contact_campaign_status
-                           WHERE contact_id = %s AND campaign_id = %s""",
+                        "SELECT current_step FROM contact_campaign_status WHERE contact_id = %s AND campaign_id = %s",
                         (contact_id, camp["id"]),
                     )
                     status_row = cur.fetchone()
                     if status_row:
-                        cur.execute(
-                            """SELECT step_order, stable_id, delay_days
-                               FROM sequence_steps
-                               WHERE campaign_id = %s AND step_order > %s
-                               ORDER BY step_order LIMIT 1""",
-                            (camp["id"], status_row["current_step"]),
+                        advance_to_next_step(
+                            conn, contact_id, camp["id"],
+                            status_row["current_step"], steps,
+                            user_id=user["id"],
                         )
-                        next_step = cur.fetchone()
-                        if next_step:
-                            delay = next_step.get("delay_days", 0) or 0
-                            next_date = (date.today() + timedelta(days=delay)).isoformat()
-                            update_contact_campaign_status(
-                                conn, contact_id, camp["id"],
-                                current_step=next_step["step_order"],
-                                current_step_id=str(next_step["stable_id"]),
-                                next_action_date=next_date,
-                                user_id=user["id"],
-                            )
 
                     conn.commit()
                     return {"status": "sent", "draft_id": draft_row["gmail_draft_id"]}
