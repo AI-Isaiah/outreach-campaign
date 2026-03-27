@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
 import { api } from "../api/client";
@@ -20,6 +20,10 @@ export default function ContactDetail() {
   const { id } = useParams<{ id: string }>();
   const contactId = Number(id);
   const queryClient = useQueryClient();
+  const [urlParams] = useSearchParams();
+  const fromCampaign = urlParams.get("campaign");
+  const backTo = fromCampaign ? `/campaigns/${fromCampaign}` : "/contacts";
+  const backLabel = fromCampaign ? fromCampaign : "Contacts";
 
   const { data, isLoading, isError, error, refetch } = useQuery<ContactDetailResponse>({
     queryKey: ["contact", contactId],
@@ -108,8 +112,8 @@ export default function ContactDetail() {
   if (isError) {
     return (
       <div className="space-y-4">
-        <Link to="/contacts" className="text-sm text-gray-400 hover:text-gray-600 inline-flex items-center gap-1">
-          <ArrowLeft size={14} /> Contacts
+        <Link to={backTo} className="text-sm text-gray-400 hover:text-gray-600 inline-flex items-center gap-1">
+          <ArrowLeft size={14} /> {backLabel}
         </Link>
         <ErrorCard message={(error as Error).message} onRetry={() => refetch()} />
       </div>
