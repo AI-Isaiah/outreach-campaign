@@ -744,8 +744,8 @@ function MessagesTab({ campaignId }: { campaignId: number }) {
         <thead className="bg-gray-50 border-b border-gray-200">
           <tr>
             <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Contact</th>
-            <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Company</th>
-            <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Template</th>
+            <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Channel</th>
+            <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Subject / Action</th>
             <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Sent</th>
             <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Reply</th>
           </tr>
@@ -754,7 +754,9 @@ function MessagesTab({ campaignId }: { campaignId: number }) {
           {messages.map((msg: any) => (
             <tr key={msg.id} className="hover:bg-gray-50 transition-colors">
               <td className="px-5 py-4 text-sm font-medium text-gray-900">{msg.contact_name}</td>
-              <td className="px-5 py-4 text-sm text-gray-500">{msg.company_name}</td>
+              <td className="px-5 py-4 text-sm text-gray-500">
+                {msg.event_type === "email_sent" ? "Email" : msg.event_type === "linkedin_connect" ? "LinkedIn Connect" : msg.event_type === "linkedin_message" ? "LinkedIn Message" : msg.event_type?.replace(/_/g, " ") || "\u2014"}
+              </td>
               <td className="px-5 py-4 text-sm text-gray-500">{msg.template_subject || "\u2014"}</td>
               <td className="px-5 py-4 text-sm text-gray-500">{new Date(msg.sent_at).toLocaleDateString()}</td>
               <td className="px-5 py-4">

@@ -610,7 +610,7 @@ def get_campaign_messages(
         # Single query with window function for count + pagination
         cursor.execute("""
             SELECT
-                e.id, e.contact_id, e.created_at AS sent_at,
+                e.id, e.contact_id, e.event_type, e.created_at AS sent_at,
                 COALESCE(c.full_name,
                     TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')),
                     '') AS contact_name,
@@ -624,7 +624,8 @@ def get_campaign_messages(
             LEFT JOIN templates t ON t.id = e.template_id
             LEFT JOIN contact_campaign_status ccs
               ON ccs.contact_id = e.contact_id AND ccs.campaign_id = e.campaign_id
-            WHERE e.campaign_id = %s AND e.event_type = 'email_sent'
+            WHERE e.campaign_id = %s
+              AND e.event_type IN ('email_sent', 'linkedin_connect', 'linkedin_message', 'linkedin_sent')
               AND e.user_id = %s
             ORDER BY e.created_at DESC
             LIMIT %s OFFSET %s
