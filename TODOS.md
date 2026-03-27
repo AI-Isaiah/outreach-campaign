@@ -162,19 +162,13 @@
 
 ---
 
-## Design Debt
+## ~~Design Debt~~
 
-### DESIGN.md
-- Create formal design system document (currently implicit in CLAUDE.md)
-- Extract design tokens, component patterns, spacing scale into standalone file
-- Run `/design-consultation` to generate comprehensive design system
-- **Why:** No DESIGN.md exists. Design decisions are scattered across CLAUDE.md and component code.
+### ~~DESIGN.md~~
+- **Status:** Complete. Created `DESIGN.md` with color tokens, typography, spacing, components, layout, and brand voice.
 
-### Adopt existing UI components in SmartImport
-- Replace 3x inline error banners with `<ErrorCard>` from `components/ui/ErrorCard.tsx`
-- Replace ~15 raw `<button>` elements with `<Button>` from `components/ui/Button.tsx`
-- Replace inline `<select>` and `<input>` with `<Select>` and `<Input>` components
-- **Why:** SmartImport bypasses the design system. Identified by /simplify code reuse review.
+### ~~Adopt existing UI components in SmartImport~~
+- **Status:** Complete. Replaced 3 inline error banners with `<ErrorCard>`, 5 raw buttons with `<Button>`. (-60 lines)
 
 ---
 
