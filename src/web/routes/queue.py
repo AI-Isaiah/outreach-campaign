@@ -208,9 +208,10 @@ def undo_send(conn=Depends(get_db), user=Depends(get_current_user)):
                 cur.execute(
                     """DELETE FROM events
                        WHERE contact_id = %s AND campaign_id = %s
+                         AND user_id = %s
                          AND created_at > NOW() - interval '30 seconds'
                          AND event_type = 'email_sent'""",
-                    (row["contact_id"], row["campaign_id"]),
+                    (row["contact_id"], row["campaign_id"], user_id),
                 )
 
         if undone > 0:

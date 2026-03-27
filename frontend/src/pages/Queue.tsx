@@ -325,6 +325,11 @@ export default function Queue() {
     }
   }, []);
 
+  const selectedItems = useMemo(
+    () => flatItems.filter((i) => selectedIds.has(i.contact_id)),
+    [flatItems, selectedIds],
+  );
+
   const hasSelections = selectedIds.size > 0;
   const showStickyBar = hasSelections || sendPhase !== "idle";
 
@@ -460,7 +465,7 @@ export default function Queue() {
                   campaign={item.campaign_name || ""}
                   onDeferred={handleDeferred}
                   isFocused={focusedIndex === i}
-                  isApproved={false}
+                  
                   isSelected={selectedIds.has(item.contact_id)}
                   onToggle={toggleSelected}
                 />
@@ -487,7 +492,7 @@ export default function Queue() {
                     campaign={item.campaign_name || ""}
                     onDeferred={handleDeferred}
                     isFocused={focusedIndex === flatIdx}
-                    isApproved={false}
+                    
                     isSelected={selectedIds.has(item.contact_id)}
                     onToggle={toggleSelected}
                   />
@@ -502,7 +507,7 @@ export default function Queue() {
       <ReviewGateModal
         open={showReviewModal}
         onClose={() => { setShowReviewModal(false); }}
-        selectedItems={flatItems.filter((i) => selectedIds.has(i.contact_id))}
+        selectedItems={selectedItems}
         onConfirmSend={(force) => {
           setShowReviewModal(false);
           handleConfirmSend(force, flatItems, selectedIds);

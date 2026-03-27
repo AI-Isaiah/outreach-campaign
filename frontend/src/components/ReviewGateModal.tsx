@@ -185,28 +185,31 @@ function ReviewGateModal({
                     <p className="text-sm font-medium text-gray-900 mt-1">
                       {item.rendered_email?.subject || item.message_draft?.draft_subject || "(no subject)"}
                     </p>
-                    <p className="text-xs text-gray-600 mt-1 leading-relaxed">
-                      {(() => {
-                        const body = item.rendered_email?.body_text || item.message_draft?.draft_text || "";
-                        const lines = body.split("\n").slice(0, 3).join("\n");
-                        const truncated = body.split("\n").length > 3;
-                        if (expandedSamples.has(idx)) return body;
-                        return lines + (truncated ? "..." : "");
-                      })()}
-                    </p>
-                    {(item.rendered_email?.body_text || item.message_draft?.draft_text || "").split("\n").length > 3 && (
-                      <button
-                        onClick={() => {
-                          const next = new Set(expandedSamples);
-                          next.has(idx) ? next.delete(idx) : next.add(idx);
-                          setExpandedSamples(next);
-                        }}
-                        className="text-xs text-blue-600 hover:text-blue-700 mt-1"
-                        aria-expanded={expandedSamples.has(idx)}
-                      >
-                        {expandedSamples.has(idx) ? "Show less" : "Show more"}
-                      </button>
-                    )}
+                    {(() => {
+                      const body = item.rendered_email?.body_text || item.message_draft?.draft_text || "";
+                      const bodyLines = body.split("\n");
+                      const truncated = bodyLines.length > 3;
+                      return (
+                        <>
+                          <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+                            {expandedSamples.has(idx) ? body : bodyLines.slice(0, 3).join("\n") + (truncated ? "..." : "")}
+                          </p>
+                          {truncated && (
+                            <button
+                              onClick={() => {
+                                const next = new Set(expandedSamples);
+                                next.has(idx) ? next.delete(idx) : next.add(idx);
+                                setExpandedSamples(next);
+                              }}
+                              className="text-xs text-blue-600 hover:text-blue-700 mt-1"
+                              aria-expanded={expandedSamples.has(idx)}
+                            >
+                              {expandedSamples.has(idx) ? "Show less" : "Show more"}
+                            </button>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 ))}
               </div>
