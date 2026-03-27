@@ -98,19 +98,24 @@ def launch_campaign(
         # 3. Enroll contacts if status is active
         contacts_enrolled = 0
         if status == "active" and contact_ids:
-            # Find step 1 delay_days for next_action_date
-            step_1 = next((s for s in steps if s["step_order"] == 1), None)
-            delay = step_1["delay_days"] if step_1 else 0
+            # Find step 1 delay_days + stable_id for enrollment
+            cur.execute(
+                "SELECT stable_id, delay_days FROM sequence_steps WHERE campaign_id = %s AND step_order = 1",
+                (campaign_id,),
+            )
+            step_1_row = cur.fetchone()
+            delay = step_1_row["delay_days"] if step_1_row else 0
+            step_1_stable_id = str(step_1_row["stable_id"]) if step_1_row else None
             next_action = date.today() + timedelta(days=delay)
 
             rows = [
-                (cid, campaign_id, 1, "queued", next_action)
+                (cid, campaign_id, 1, step_1_stable_id, "queued", next_action)
                 for cid in contact_ids
             ]
             psycopg2.extras.execute_values(
                 cur,
                 """INSERT INTO contact_campaign_status
-                   (contact_id, campaign_id, current_step, status, next_action_date)
+                   (contact_id, campaign_id, current_step, current_step_id, status, next_action_date)
                    VALUES %s""",
                 rows,
             )

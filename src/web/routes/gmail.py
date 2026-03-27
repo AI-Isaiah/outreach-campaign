@@ -18,7 +18,8 @@ _limiter = Limiter(key_func=get_remote_address)
 
 from src.config import DEFAULT_CAMPAIGN, load_config_safe
 from src.models.campaigns import get_campaign_by_name
-from src.models.enrollment import record_template_usage, update_contact_campaign_status
+from src.models.enrollment import get_sequence_steps, record_template_usage, update_contact_campaign_status
+from src.services.sequence_utils import find_next_step
 from src.models.events import log_event
 from src.services.email_sender import render_campaign_email
 from src.services.gmail_drafter import GmailDrafter
@@ -301,7 +302,7 @@ def check_draft_status(
                             draft_row["template_id"], channel="email",
                         )
 
-                    # Advance step
+                    # Advance to next step (single targeted query, no full sequence load)
                     cur.execute(
                         """SELECT current_step FROM contact_campaign_status
                            WHERE contact_id = %s AND campaign_id = %s""",
@@ -309,11 +310,20 @@ def check_draft_status(
                     )
                     status_row = cur.fetchone()
                     if status_row:
-                        update_contact_campaign_status(
-                            conn, contact_id, camp["id"],
-                            current_step=status_row["current_step"] + 1,
-                            user_id=user["id"],
+                        cur.execute(
+                            """SELECT step_order, stable_id FROM sequence_steps
+                               WHERE campaign_id = %s AND step_order > %s
+                               ORDER BY step_order LIMIT 1""",
+                            (camp["id"], status_row["current_step"]),
                         )
+                        next_step = cur.fetchone()
+                        if next_step:
+                            update_contact_campaign_status(
+                                conn, contact_id, camp["id"],
+                                current_step=next_step["step_order"],
+                                current_step_id=str(next_step["stable_id"]),
+                                user_id=user["id"],
+                            )
 
                     conn.commit()
                     return {"status": "sent", "draft_id": draft_row["gmail_draft_id"]}

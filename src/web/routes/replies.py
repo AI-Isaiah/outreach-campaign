@@ -312,7 +312,7 @@ def cron_send_scheduled(conn=Depends(get_db), _=Depends(verify_cron_secret)):
                FROM contact_campaign_status ccs
                JOIN campaigns c ON c.id = ccs.campaign_id
                JOIN sequence_steps ss
-                 ON ss.campaign_id = ccs.campaign_id AND ss.step_order = ccs.current_step
+                 ON ss.campaign_id = ccs.campaign_id AND ss.stable_id = ccs.current_step_id
                WHERE ccs.approved_at IS NOT NULL
                  AND ccs.scheduled_for IS NOT NULL
                  AND ccs.scheduled_for <= NOW()

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 import psycopg2
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -16,9 +16,11 @@ from starlette.responses import JSONResponse
 from src.application.queue_service import apply_cross_campaign_email_dedup, get_enriched_queue, send_email_batch
 from src.config import DEFAULT_CAMPAIGN, load_config_safe
 from src.models.campaigns import get_campaign_by_name
+from src.models.enrollment import get_sequence_steps, update_contact_campaign_status
 from src.models.templates import get_template
 from src.services.linkedin_actions import complete_linkedin_action
 from src.services.priority_queue import defer_contact, get_defer_stats
+from src.services.sequence_utils import find_previous_step
 from src.web.dependencies import get_current_user, get_db, handle_llm_errors
 from src.models.database import get_cursor
 
@@ -151,7 +153,7 @@ def batch_send(
                FROM contact_campaign_status ccs
                JOIN campaigns c ON c.id = ccs.campaign_id AND c.user_id = %s
                JOIN sequence_steps ss
-                 ON ss.campaign_id = ccs.campaign_id AND ss.step_order = ccs.current_step
+                 ON ss.campaign_id = ccs.campaign_id AND ss.stable_id = ccs.current_step_id
                WHERE ccs.approved_at IS NOT NULL
                  AND ccs.sent_at IS NULL
                  AND ccs.status = 'in_progress'
@@ -168,7 +170,7 @@ def batch_send(
             """SELECT COUNT(*) AS cnt FROM contact_campaign_status ccs
                JOIN campaigns c ON c.id = ccs.campaign_id AND c.user_id = %s
                JOIN sequence_steps ss ON ss.campaign_id = ccs.campaign_id
-                 AND ss.step_order = ccs.current_step
+                 AND ss.stable_id = ccs.current_step_id
                WHERE ccs.approved_at IS NOT NULL AND ccs.sent_at IS NULL
                  AND ccs.status = 'in_progress'
                  AND ss.channel = 'email'""",
@@ -190,29 +192,61 @@ def undo_send(conn=Depends(get_db), user=Depends(get_current_user)):
     """Undo recently sent items (30s window). Resets DB state + step regression. Cannot recall SMTP."""
     user_id = user["id"]
     with get_cursor(conn) as cur:
+        # Find recently-sent enrollments eligible for undo
         cur.execute(
-            """UPDATE contact_campaign_status ccs
-               SET sent_at = NULL, approved_at = NULL,
-                   current_step = GREATEST(current_step - 1, 1)
-               FROM campaigns c
-               WHERE c.id = ccs.campaign_id AND c.user_id = %s
-                 AND ccs.sent_at > NOW() - interval '30 seconds'
-               RETURNING ccs.contact_id, ccs.campaign_id""",
+            """SELECT ccs.contact_id, ccs.campaign_id, ccs.current_step
+               FROM contact_campaign_status ccs
+               JOIN campaigns c ON c.id = ccs.campaign_id
+               WHERE c.user_id = %s
+                 AND ccs.sent_at > NOW() - interval '30 seconds'""",
             (user_id,),
         )
-        undone_rows = cur.fetchall()
-        undone = len(undone_rows)
+        candidates = cur.fetchall()
 
-        if undone_rows:
-            for row in undone_rows:
-                cur.execute(
-                    """DELETE FROM events
-                       WHERE contact_id = %s AND campaign_id = %s
-                         AND user_id = %s
-                         AND created_at > NOW() - interval '30 seconds'
-                         AND event_type = 'email_sent'""",
-                    (row["contact_id"], row["campaign_id"], user_id),
-                )
+        undone = 0
+        steps_cache: dict = {}
+        for row in candidates:
+            contact_id = row["contact_id"]
+            campaign_id = row["campaign_id"]
+            current_step_order = row["current_step"]
+
+            # Lookup-based regression (safe for non-consecutive step_order)
+            if campaign_id not in steps_cache:
+                steps_cache[campaign_id] = get_sequence_steps(conn, campaign_id, user_id=user_id)
+            steps = steps_cache[campaign_id]
+            prev_step = find_previous_step(steps, current_step_order)
+
+            if prev_step:
+                prev_order = prev_step["step_order"]
+                prev_step_id = str(prev_step["stable_id"])
+            else:
+                # Already at first step — keep current step_order
+                prev_order = current_step_order
+                prev_step_id = None
+
+            # Reset sent/approved state and regress step
+            cur.execute(
+                """UPDATE contact_campaign_status ccs
+                   SET sent_at = NULL, approved_at = NULL,
+                       current_step = %s,
+                       current_step_id = COALESCE(%s, current_step_id),
+                       updated_at = NOW()
+                   FROM campaigns c
+                   WHERE c.id = ccs.campaign_id AND c.user_id = %s
+                     AND ccs.contact_id = %s AND ccs.campaign_id = %s""",
+                (prev_order, prev_step_id, user_id, contact_id, campaign_id),
+            )
+
+            # Delete recent email_sent events for this contact
+            cur.execute(
+                """DELETE FROM events
+                   WHERE contact_id = %s AND campaign_id = %s
+                     AND user_id = %s
+                     AND created_at > NOW() - interval '30 seconds'
+                     AND event_type = 'email_sent'""",
+                (contact_id, campaign_id, user_id),
+            )
+            undone += 1
 
         if undone > 0:
             logger.info("Undo send: user %s undid %d items", user_id, undone)
@@ -323,10 +357,14 @@ def defer_statistics(
 def get_all_queues(
     date: Optional[str] = None,
     limit: int = Query(default=50, ge=1, le=200),
+    scope: Literal["today", "all", "overdue"] = Query(default="today"),
     conn=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    """Get today's action queue across ALL active campaigns for the user."""
+    """Get today's action queue across ALL active campaigns for the user.
+
+    scope: "today" (default) = due today or earlier, "all" = all pending, "overdue" = strictly past due
+    """
     # Find all active campaigns for this user
     with get_cursor(conn) as cur:
         cur.execute(
@@ -343,7 +381,7 @@ def get_all_queues(
     for camp in active_campaigns:
         try:
             result = get_enriched_queue(
-                conn, camp["name"], date=date, limit=limit, user_id=user["id"],
+                conn, camp["name"], date=date, limit=limit, scope=scope, user_id=user["id"],
             )
         except ValueError:
             continue
@@ -375,16 +413,20 @@ def get_queue(
     aum_min: Optional[float] = Query(default=None),
     aum_max: Optional[float] = Query(default=None),
     diverse: bool = Query(default=True),
+    scope: Literal["today", "all", "overdue"] = Query(default="today"),
     conn=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    """Get today's action queue with rendered messages."""
+    """Get today's action queue with rendered messages.
+
+    scope: "today" (default) = due today or earlier, "all" = all pending, "overdue" = strictly past due
+    """
     try:
         return get_enriched_queue(
             conn, campaign,
             date=date, limit=limit, mode=mode,
             firm_type=firm_type, aum_min=aum_min, aum_max=aum_max,
-            diverse=diverse,
+            diverse=diverse, scope=scope,
             user_id=user["id"],
         )
     except ValueError as e:

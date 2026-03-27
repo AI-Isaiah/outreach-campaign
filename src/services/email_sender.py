@@ -18,7 +18,8 @@ from pathlib import Path
 from typing import Optional
 
 from src.enums import EventType
-from src.models.enrollment import record_template_usage, update_contact_campaign_status
+from src.models.enrollment import get_sequence_steps, record_template_usage, update_contact_campaign_status
+from src.services.sequence_utils import find_next_step
 from src.models.events import log_event
 from src.models.templates import get_template
 from src.services.compliance import (
@@ -483,11 +484,17 @@ def send_campaign_email(
         channel=template_row["channel"],
     )
 
-    update_contact_campaign_status(
-        conn, contact_id, campaign_id,
-        current_step=current_step + 1,
-        user_id=user_id,
-    )
+    # Lookup-based advancement (safe for non-consecutive step_order)
+    steps = get_sequence_steps(conn, campaign_id, user_id=user_id)
+    next_step = find_next_step(steps, current_step)
+    if next_step:
+        update_contact_campaign_status(
+            conn, contact_id, campaign_id,
+            current_step=next_step["step_order"],
+            current_step_id=str(next_step["stable_id"]),
+            user_id=user_id,
+        )
+    # If no next step, contact has completed the sequence (don't advance)
 
     conn.commit()
 
