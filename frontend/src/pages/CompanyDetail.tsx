@@ -1,4 +1,4 @@
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
 import type { CompanyDetailResponse, Contact } from "../types";
@@ -9,6 +9,7 @@ import DeepResearchBrief from "../components/DeepResearchBrief";
 export default function CompanyDetail() {
   const { id } = useParams<{ id: string }>();
   const companyId = Number(id);
+  const navigate = useNavigate();
 
   const { data, isLoading, error } = useQuery<CompanyDetailResponse>({
     queryKey: ["company", companyId],
@@ -32,9 +33,9 @@ export default function CompanyDetail() {
     <div className="space-y-8">
       {/* Header */}
       <div>
-        <Link to="/contacts" className="text-sm text-gray-400 hover:text-gray-600">
+        <button onClick={() => navigate(-1)} className="text-sm text-gray-400 hover:text-gray-600">
           &larr; Back
-        </Link>
+        </button>
         <h1 className="text-2xl font-bold text-gray-900 mt-2">{company.name}</h1>
         {company.firm_type && (
           <p className="text-gray-500 mt-0.5">{company.firm_type}</p>

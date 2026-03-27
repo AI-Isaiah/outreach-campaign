@@ -57,11 +57,18 @@ export function ResultRow({ result, selected, onSelect, onExpand }: {
         <p className="text-sm text-gray-600 line-clamp-2 max-w-xs">{result.evidence_summary || "\u2014"}</p>
       </td>
       <td className="px-4 py-4">
-        {contactCount > 0 && (
+        {contactCount > 0 && result.company_id ? (
+          <Link
+            to={`/companies/${result.company_id}`}
+            className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline"
+          >
+            <Users size={13} /> {contactCount}
+          </Link>
+        ) : contactCount > 0 ? (
           <span className="inline-flex items-center gap-1 text-xs font-medium text-gray-600">
             <Users size={13} /> {contactCount}
           </span>
-        )}
+        ) : null}
       </td>
       <td className="px-4 py-4">
         {hasWarmIntros && (
