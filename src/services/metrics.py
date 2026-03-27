@@ -115,11 +115,11 @@ def get_campaign_metrics(conn, campaign_id: int) -> dict:
 
 def compute_health_score(metrics: dict) -> Optional[int]:
     total_enrolled = metrics.get("total_enrolled", 0)
-    if total_enrolled == 0:
+    emails_sent = metrics.get("emails_sent", 0)
+    if total_enrolled == 0 or emails_sent == 0:
         return None
 
     by_status = metrics.get("by_status", {})
-    emails_sent = metrics.get("emails_sent", 0)
 
     positive_reply_rate = by_status.get("replied_positive", 0) / total_enrolled
     send_velocity_pct = emails_sent / total_enrolled
