@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 import httpx
 
@@ -81,9 +82,18 @@ def classify_crypto_interest(
         resp.raise_for_status()
         data = resp.json()
         text = data["content"][0]["text"]
+        # Extract JSON from markdown code fences if present
+        json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+        if json_match:
+            text = json_match.group(1)
+        # Also try extracting first { ... } block if response has preamble text
+        elif not text.strip().startswith("{"):
+            brace_match = re.search(r"\{.*\}", text, re.DOTALL)
+            if brace_match:
+                text = brace_match.group(0)
         return json.loads(text)
     except (json.JSONDecodeError, KeyError):
-        logger.warning("Failed to parse classification for %s", company_name)
+        logger.warning("Failed to parse classification for %s: %s", company_name, text[:200] if 'text' in dir() else "no text")
         return {
             "crypto_score": 20,
             "category": "no_signal",
