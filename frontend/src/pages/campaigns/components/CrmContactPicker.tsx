@@ -235,6 +235,14 @@ export default function CrmContactPicker({
             <span className="text-sm text-gray-500">
               {selectedIds.size} selected
               {total > 0 && ` of ${total}`}
+              {selectedIds.size > 0 && (
+                <button
+                  onClick={() => onSelectionChange(new Set())}
+                  className="ml-2 text-xs text-blue-600 hover:text-blue-800 hover:underline"
+                >
+                  Clear all
+                </button>
+              )}
             </span>
             {totalPages > 1 && (
               <div className="flex items-center gap-2">
