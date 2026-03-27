@@ -12,6 +12,7 @@ import { SkeletonCard, SkeletonMetricCard } from "../components/Skeleton";
 import ErrorCard from "../components/ui/ErrorCard";
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
+import Input from "../components/ui/Input";
 import ContactProducts from "../components/contact/ContactProducts";
 import ContactConversations from "../components/contact/ContactConversations";
 import { LIFECYCLE_STAGES } from "../constants";
@@ -189,64 +190,43 @@ export default function ContactDetail() {
           </div>
 
           {isEditing ? (
-            <div className="space-y-3">
+            <div className="space-y-3" onKeyDown={(e) => { if (e.key === "Escape") { setIsEditing(false); setEditError(""); } }}>
               <div>
                 <label className="text-xs text-gray-500 block mb-1">Name</label>
                 <div className="flex gap-2">
-                  <input
-                    type="text"
+                  <Input
                     value={editForm.first_name}
                     onChange={(e) => setEditForm((f) => ({ ...f, first_name: e.target.value }))}
                     placeholder="First name"
-                    className="flex-1 px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    onKeyDown={(e) => { if (e.key === "Escape") { setIsEditing(false); setEditError(""); } }}
                   />
-                  <input
-                    type="text"
+                  <Input
                     value={editForm.last_name}
                     onChange={(e) => setEditForm((f) => ({ ...f, last_name: e.target.value }))}
                     placeholder="Last name"
-                    className="flex-1 px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    onKeyDown={(e) => { if (e.key === "Escape") { setIsEditing(false); setEditError(""); } }}
                   />
                 </div>
               </div>
-              <div>
-                <label className="text-xs text-gray-500 block mb-1">Email</label>
-                <input
-                  type="email"
-                  value={editForm.email}
-                  onChange={(e) => setEditForm((f) => ({ ...f, email: e.target.value }))}
-                  placeholder="you@example.com"
-                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  onKeyDown={(e) => { if (e.key === "Escape") { setIsEditing(false); setEditError(""); } }}
-                />
-                {editForm.email !== (contact.email || "") && editForm.email && (
-                  <p className="text-xs text-amber-600 mt-1">Email verification status will reset</p>
-                )}
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 block mb-1">LinkedIn URL</label>
-                <input
-                  type="url"
-                  value={editForm.linkedin_url}
-                  onChange={(e) => setEditForm((f) => ({ ...f, linkedin_url: e.target.value }))}
-                  placeholder="https://linkedin.com/in/..."
-                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  onKeyDown={(e) => { if (e.key === "Escape") { setIsEditing(false); setEditError(""); } }}
-                />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 block mb-1">Title</label>
-                <input
-                  type="text"
-                  value={editForm.title}
-                  onChange={(e) => setEditForm((f) => ({ ...f, title: e.target.value }))}
-                  placeholder="e.g. Portfolio Manager"
-                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  onKeyDown={(e) => { if (e.key === "Escape") { setIsEditing(false); setEditError(""); } }}
-                />
-              </div>
+              <Input
+                label="Email"
+                type="email"
+                value={editForm.email}
+                onChange={(e) => setEditForm((f) => ({ ...f, email: e.target.value }))}
+                placeholder="you@example.com"
+                helpText={editForm.email !== (contact.email || "") && editForm.email ? "Email verification status will reset" : undefined}
+              />
+              <Input
+                label="LinkedIn URL"
+                type="url"
+                value={editForm.linkedin_url}
+                onChange={(e) => setEditForm((f) => ({ ...f, linkedin_url: e.target.value }))}
+                placeholder="https://linkedin.com/in/..."
+              />
+              <Input
+                label="Title"
+                value={editForm.title}
+                onChange={(e) => setEditForm((f) => ({ ...f, title: e.target.value }))}
+                placeholder="e.g. Portfolio Manager"
+              />
               {editError && <p className="text-xs text-red-600">{editError}</p>}
               <div className="flex gap-2 pt-1">
                 <Button

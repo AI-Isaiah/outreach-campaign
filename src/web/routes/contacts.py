@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -30,6 +31,9 @@ _limiter = Limiter(
     enabled=os.getenv("RATE_LIMIT_ENABLED", "true").lower() != "false",
 )
 router = APIRouter(tags=["contacts"])
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
 
 
 LIFECYCLE_STAGES = set(LifecycleStage)
@@ -543,12 +547,6 @@ def update_contact_name(
             "contact_id": contact_id,
             "full_name": full_name,
         }
-
-
-import re as _re
-
-_EMAIL_RE = _re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-_HTML_TAG_RE = _re.compile(r"<[^>]+>")
 
 
 @router.patch("/contacts/{contact_id}")
