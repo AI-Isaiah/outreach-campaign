@@ -60,7 +60,8 @@ export interface GeneratedStep {
 }
 
 export const campaignsApi = {
-  listCampaigns: () => request<CampaignWithMetrics[]>("/campaigns"),
+  listCampaigns: (status?: string) =>
+    request<CampaignWithMetrics[]>(`/campaigns${status ? `?status=${status}` : ""}`),
   createCampaign: (data: { name: string; description?: string; status?: string }) =>
     request<{ id: number; success: boolean }>("/campaigns", {
       method: "POST", body: JSON.stringify(data),
