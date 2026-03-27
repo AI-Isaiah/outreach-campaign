@@ -37,11 +37,10 @@
 
 ## P1 — Friction Sweep (Sprint 3-4)
 
-### Batch send with review gate
-**Priority:** P1 | **Sprint:** 3
-**Files:** `frontend/src/pages/Queue.tsx`, `src/web/routes/queue.py`, migration `025_batch_send.sql`
-**What:** Two-mode queue: Review mode (cards + approve checkboxes) → sticky bottom bar when 1+ approved ("Send N approved" + Schedule dropdown). Schedule presets: Send now | Tomorrow 9am | Spread 5/day for 3 days | Custom.
-**Migration:** `approved_at TIMESTAMPTZ`, `scheduled_for TIMESTAMPTZ` on `contact_campaign_status`.
+### ~~Batch send with review gate~~
+**Priority:** P1 | **Sprint:** 3 | **Status:** Complete
+**Files:** `frontend/src/pages/Queue.tsx`, `src/web/routes/queue.py`, `frontend/src/components/ReviewGateModal.tsx`, `frontend/src/hooks/useBatchSendLoop.ts`
+**What:** Select All + card checkboxes → review gate modal (stats, safety checks, random samples) → abortable send loop with progress → 30s undo. Server-side 1-per-company + dedup validation. Migration columns (approved_at, scheduled_for, sent_at) already shipped in migration 024.
 **Why:** Approving and sending each card individually is the biggest daily friction.
 
 ### Post-import campaign creation flow
