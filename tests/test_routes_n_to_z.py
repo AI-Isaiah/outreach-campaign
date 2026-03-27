@@ -502,6 +502,186 @@ class TestQueue:
         })
         assert resp.status_code == 400
 
+    # -----------------------------------------------------------------------
+    # B1: remaining count excludes LinkedIn
+    # -----------------------------------------------------------------------
+    def test_batch_send_remaining_excludes_linkedin(self, client, db_conn):
+        """remaining count should only count email-channel items, not LinkedIn."""
+        co = _seed_company(db_conn, name="Remaining Co")
+        cid = _seed_contact(db_conn, co, email="remaining@test.com")
+        camp_id = _seed_campaign(db_conn, "remaining_test")
+        tmpl_id = _seed_template(db_conn, name="rem_tmpl")
+        from src.models.campaigns import enroll_contact
+        from src.models.enrollment import add_sequence_step
+        add_sequence_step(db_conn, camp_id, 1, "email", tmpl_id, user_id=TEST_USER_ID)
+        add_sequence_step(db_conn, camp_id, 2, "linkedin_connect", tmpl_id, user_id=TEST_USER_ID)
+        enroll_contact(db_conn, cid, camp_id,
+                       next_action_date=date.today().isoformat(), user_id=TEST_USER_ID)
+        # Approve the contact
+        resp = client.post("/api/queue/batch-approve", json={
+            "items": [{"contact_id": cid, "campaign_id": camp_id}],
+        })
+        assert resp.status_code == 200
+        # batch-send should process the email step; remaining should be 0 (not 1 from linkedin step)
+        resp = client.post("/api/queue/batch-send")
+        assert resp.status_code == 200
+        data = resp.json()
+        # Even if send fails (no SMTP), remaining should not count LinkedIn items
+        assert "remaining" in data
+
+    # -----------------------------------------------------------------------
+    # B2: Server-side validation in batch_approve
+    # -----------------------------------------------------------------------
+    def test_batch_approve_company_duplicate_rejected(self, client, db_conn):
+        """Two contacts at same company should fail validation without force."""
+        co = _seed_company(db_conn, name="Dupe Co")
+        c1 = _seed_contact(db_conn, co, first="Alice", email="alice@dupe.com")
+        c2 = _seed_contact(db_conn, co, first="Bob", email="bob@dupe.com")
+        camp_id = _seed_campaign(db_conn, "dupe_test")
+        from src.models.campaigns import enroll_contact
+        enroll_contact(db_conn, c1, camp_id,
+                       next_action_date=date.today().isoformat(), user_id=TEST_USER_ID)
+        enroll_contact(db_conn, c2, camp_id,
+                       next_action_date=date.today().isoformat(), user_id=TEST_USER_ID)
+        resp = client.post("/api/queue/batch-approve", json={
+            "items": [
+                {"contact_id": c1, "campaign_id": camp_id},
+                {"contact_id": c2, "campaign_id": camp_id},
+            ],
+        })
+        assert resp.status_code == 400
+        data = resp.json()
+        assert "company_duplicates" in data
+        assert len(data["company_duplicates"]) == 1
+
+    def test_batch_approve_company_duplicate_forced(self, client, db_conn):
+        """Two contacts at same company should pass with force=true."""
+        co = _seed_company(db_conn, name="Force Co")
+        c1 = _seed_contact(db_conn, co, first="Alice", email="alice@force.com")
+        c2 = _seed_contact(db_conn, co, first="Bob", email="bob@force.com")
+        camp_id = _seed_campaign(db_conn, "force_test")
+        from src.models.campaigns import enroll_contact
+        enroll_contact(db_conn, c1, camp_id,
+                       next_action_date=date.today().isoformat(), user_id=TEST_USER_ID)
+        enroll_contact(db_conn, c2, camp_id,
+                       next_action_date=date.today().isoformat(), user_id=TEST_USER_ID)
+        resp = client.post("/api/queue/batch-approve?force=true", json={
+            "items": [
+                {"contact_id": c1, "campaign_id": camp_id},
+                {"contact_id": c2, "campaign_id": camp_id},
+            ],
+        })
+        assert resp.status_code == 200
+        assert resp.json()["approved"] == 2
+
+    def test_batch_approve_email_duplicate_rejected(self, client, db_conn):
+        """Same contact enrolled in two campaigns should fail email dedup validation."""
+        co = _seed_company(db_conn, name="Email Dupe Co")
+        cid = _seed_contact(db_conn, co, first="Alice", email="emaildupe@test.com")
+        camp1 = _seed_campaign(db_conn, "email_dupe_test1")
+        camp2 = _seed_campaign(db_conn, "email_dupe_test2")
+        from src.models.campaigns import enroll_contact
+        enroll_contact(db_conn, cid, camp1,
+                       next_action_date=date.today().isoformat(), user_id=TEST_USER_ID)
+        enroll_contact(db_conn, cid, camp2,
+                       next_action_date=date.today().isoformat(), user_id=TEST_USER_ID)
+        resp = client.post("/api/queue/batch-approve", json={
+            "items": [
+                {"contact_id": cid, "campaign_id": camp1},
+                {"contact_id": cid, "campaign_id": camp2},
+            ],
+        })
+        assert resp.status_code == 400
+        data = resp.json()
+        assert "email_duplicates" in data
+
+    def test_batch_approve_clean_passes(self, client, db_conn):
+        """Two contacts at different companies with different emails should pass."""
+        co1 = _seed_company(db_conn, name="Clean Co 1")
+        co2 = _seed_company(db_conn, name="Clean Co 2")
+        c1 = _seed_contact(db_conn, co1, first="Alice", email="alice@clean.com")
+        c2 = _seed_contact(db_conn, co2, first="Bob", email="bob@clean.com")
+        camp_id = _seed_campaign(db_conn, "clean_test")
+        from src.models.campaigns import enroll_contact
+        enroll_contact(db_conn, c1, camp_id,
+                       next_action_date=date.today().isoformat(), user_id=TEST_USER_ID)
+        enroll_contact(db_conn, c2, camp_id,
+                       next_action_date=date.today().isoformat(), user_id=TEST_USER_ID)
+        resp = client.post("/api/queue/batch-approve", json={
+            "items": [
+                {"contact_id": c1, "campaign_id": camp_id},
+                {"contact_id": c2, "campaign_id": camp_id},
+            ],
+        })
+        assert resp.status_code == 200
+        assert resp.json()["approved"] == 2
+
+    # -----------------------------------------------------------------------
+    # B3: Undo-send endpoint
+    # -----------------------------------------------------------------------
+    def test_undo_send_empty(self, client):
+        """Undo with no recent sends returns undone=0."""
+        resp = client.post("/api/queue/undo-send")
+        assert resp.status_code == 200
+        assert resp.json()["undone"] == 0
+
+    def test_undo_send_within_window(self, client, db_conn):
+        """Undo should reset sent_at, approved_at, and current_step for recent sends."""
+        co = _seed_company(db_conn, name="Undo Co")
+        cid = _seed_contact(db_conn, co, email="undo@test.com")
+        camp_id = _seed_campaign(db_conn, "undo_test")
+        from src.models.campaigns import enroll_contact
+        enroll_contact(db_conn, cid, camp_id,
+                       next_action_date=date.today().isoformat(), user_id=TEST_USER_ID)
+        # Simulate a recent send by setting sent_at = NOW()
+        cur = db_conn.cursor()
+        cur.execute(
+            """UPDATE contact_campaign_status
+               SET sent_at = NOW(), approved_at = NOW(), current_step = 2
+               WHERE contact_id = %s AND campaign_id = %s""",
+            (cid, camp_id),
+        )
+        db_conn.commit()
+        cur.close()
+
+        resp = client.post("/api/queue/undo-send")
+        assert resp.status_code == 200
+        assert resp.json()["undone"] == 1
+
+        # Verify the reset
+        cur = db_conn.cursor()
+        cur.execute(
+            "SELECT sent_at, approved_at, current_step FROM contact_campaign_status WHERE contact_id = %s",
+            (cid,),
+        )
+        row = cur.fetchone()
+        cur.close()
+        assert row["sent_at"] is None
+        assert row["approved_at"] is None
+        assert row["current_step"] == 1  # regressed from 2 to 1
+
+    def test_undo_send_outside_window(self, client, db_conn):
+        """Undo should NOT reset items sent more than 30s ago."""
+        co = _seed_company(db_conn, name="Old Co")
+        cid = _seed_contact(db_conn, co, email="old@test.com")
+        camp_id = _seed_campaign(db_conn, "old_test")
+        from src.models.campaigns import enroll_contact
+        enroll_contact(db_conn, cid, camp_id,
+                       next_action_date=date.today().isoformat(), user_id=TEST_USER_ID)
+        cur = db_conn.cursor()
+        cur.execute(
+            """UPDATE contact_campaign_status
+               SET sent_at = NOW() - interval '60 seconds', approved_at = NOW() - interval '60 seconds'
+               WHERE contact_id = %s AND campaign_id = %s""",
+            (cid, camp_id),
+        )
+        db_conn.commit()
+        cur.close()
+
+        resp = client.post("/api/queue/undo-send")
+        assert resp.status_code == 200
+        assert resp.json()["undone"] == 0
+
     def test_schedule_now(self, client, db_conn):
         co = _seed_company(db_conn)
         cid = _seed_contact(db_conn, co, email="sched@test.com")

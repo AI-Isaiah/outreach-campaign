@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from starlette.responses import JSONResponse
 
 from src.application.queue_service import apply_cross_campaign_email_dedup, get_enriched_queue, send_email_batch
 from src.config import DEFAULT_CAMPAIGN, load_config_safe
@@ -66,11 +67,57 @@ class BatchApproveRequest(BaseModel):
 @router.post("/queue/batch-approve")
 def batch_approve(
     body: BatchApproveRequest,
+    force: bool = Query(default=False),
     conn=Depends(get_db),
     user=Depends(get_current_user),
 ):
     """Set approved_at on specified contact_campaign_status rows."""
     user_id = user["id"]
+
+    contact_ids = [item.contact_id for item in body.items]
+
+    if not force and contact_ids:
+        with get_cursor(conn) as cur:
+            cur.execute(
+                """SELECT ccs.contact_id, co.id AS company_id, co.name AS company_name,
+                          c.email
+                   FROM contact_campaign_status ccs
+                   JOIN contacts c ON c.id = ccs.contact_id
+                   JOIN companies co ON co.id = c.company_id
+                   WHERE ccs.contact_id = ANY(%s)
+                     AND ccs.campaign_id IN (SELECT id FROM campaigns WHERE user_id = %s)""",
+                (contact_ids, user_id),
+            )
+            rows = cur.fetchall()
+
+        # Check 1-per-company
+        company_groups = {}
+        for r in rows:
+            company_groups.setdefault(r["company_id"], []).append(r)
+        company_dupes = [
+            {"company_id": cid, "company_name": items[0]["company_name"], "count": len(items)}
+            for cid, items in company_groups.items() if len(items) > 1
+        ]
+
+        # Check duplicate emails
+        email_groups = {}
+        for r in rows:
+            if r["email"]:
+                email_groups.setdefault(r["email"], []).append(r)
+        email_dupes = [
+            {"email": email, "count": len(items)}
+            for email, items in email_groups.items() if len(items) > 1
+        ]
+
+        if company_dupes or email_dupes:
+            logger.info("Batch approve validation failed for user %s: %d company dupes, %d email dupes",
+                         user_id, len(company_dupes), len(email_dupes))
+            return JSONResponse(status_code=400, content={
+                "error": "Validation failed",
+                "company_duplicates": company_dupes,
+                "email_duplicates": email_dupes,
+            })
+
     approved = 0
     for item in body.items:
         with get_cursor(conn) as cur:
@@ -84,6 +131,8 @@ def batch_approve(
             )
             approved += cur.rowcount
     conn.commit()
+    if force:
+        logger.info("Batch approve force override: user %s approved %d items bypassing validation", user_id, approved)
     return {"approved": approved}
 
 
@@ -118,19 +167,56 @@ def batch_send(
         cur.execute(
             """SELECT COUNT(*) AS cnt FROM contact_campaign_status ccs
                JOIN campaigns c ON c.id = ccs.campaign_id AND c.user_id = %s
+               JOIN sequence_steps ss ON ss.campaign_id = ccs.campaign_id
+                 AND ss.step_order = ccs.current_step
                WHERE ccs.approved_at IS NOT NULL AND ccs.sent_at IS NULL
-                 AND ccs.status = 'in_progress'""",
+                 AND ccs.status = 'in_progress'
+                 AND ss.channel = 'email'""",
             (user_id,),
         )
         total_remaining = cur.fetchone()["cnt"]
 
     if not rows:
-        return {"sent": 0, "failed": 0, "errors": []}
+        return {"sent": 0, "failed": 0, "remaining": total_remaining, "errors": []}
 
     config = load_config_safe()
     result = send_email_batch(conn, rows, config, user_id=user_id)
     result["remaining"] = max(0, total_remaining - result["sent"])
     return result
+
+
+@router.post("/queue/undo-send")
+def undo_send(conn=Depends(get_db), user=Depends(get_current_user)):
+    """Undo recently sent items (30s window). Resets DB state + step regression. Cannot recall SMTP."""
+    user_id = user["id"]
+    with get_cursor(conn) as cur:
+        cur.execute(
+            """UPDATE contact_campaign_status ccs
+               SET sent_at = NULL, approved_at = NULL,
+                   current_step = GREATEST(current_step - 1, 1)
+               FROM campaigns c
+               WHERE c.id = ccs.campaign_id AND c.user_id = %s
+                 AND ccs.sent_at > NOW() - interval '30 seconds'
+               RETURNING ccs.contact_id, ccs.campaign_id""",
+            (user_id,),
+        )
+        undone_rows = cur.fetchall()
+        undone = len(undone_rows)
+
+        if undone_rows:
+            for row in undone_rows:
+                cur.execute(
+                    """DELETE FROM events
+                       WHERE contact_id = %s AND campaign_id = %s
+                         AND created_at > NOW() - interval '30 seconds'
+                         AND event_type = 'email_sent'""",
+                    (row["contact_id"], row["campaign_id"]),
+                )
+
+        if undone > 0:
+            logger.info("Undo send: user %s undid %d items", user_id, undone)
+    conn.commit()
+    return {"undone": undone}
 
 
 class ScheduleItem(BaseModel):
