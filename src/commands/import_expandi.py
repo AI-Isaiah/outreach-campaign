@@ -221,6 +221,7 @@ def import_expandi_results(
                         campaign_id,
                         status="in_progress",
                         current_step=next_step["step_order"],
+                        current_step_id=str(next_step["stable_id"]),
                         next_action_date=next_date,
                         user_id=1,
                     )

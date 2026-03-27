@@ -71,7 +71,7 @@ def generate_weekly_plan(conn, campaign_name: str) -> dict:
             FROM contact_campaign_status ccs
             JOIN sequence_steps ss
               ON ss.campaign_id = ccs.campaign_id
-             AND ss.step_order = ccs.current_step
+             AND ss.stable_id = ccs.current_step_id
             WHERE ccs.campaign_id = %s
               AND ccs.status IN ('queued', 'in_progress')
               AND (ccs.next_action_date IS NULL OR ccs.next_action_date <= %s)

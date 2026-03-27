@@ -19,7 +19,7 @@ from src.services.metrics import (
 )
 from src.services.response_analyzer import annotate_is_winning, get_template_performance
 from src.web.dependencies import get_current_user, get_db
-from src.models.database import get_cursor
+from src.models.database import get_cursor, verify_ownership
 
 router = APIRouter(tags=["campaigns"])
 
@@ -247,7 +247,7 @@ def get_campaign_contacts(
     JOIN contacts c ON c.id = ccs.contact_id
     LEFT JOIN companies comp ON comp.id = c.company_id
     LEFT JOIN sequence_steps ss_cur ON ss_cur.campaign_id = ccs.campaign_id
-         AND ss_cur.step_order = ccs.current_step
+         AND ss_cur.stable_id = ccs.current_step_id
     WHERE ccs.campaign_id = %s AND c.user_id = %s
     {"AND ccs.status = %s" if status else ""}
     ORDER BY {order_by}
@@ -369,3 +369,365 @@ def get_campaign_template_performance(
 
     results = get_template_performance(conn, camp["id"], user_id=user["id"])
     return annotate_is_winning(results)
+
+
+# ---------------------------------------------------------------------------
+# Sequence Editor v2 endpoints
+# ---------------------------------------------------------------------------
+
+class ReorderStep(BaseModel):
+    step_id: int
+    step_order: int
+
+
+class ReorderRequest(BaseModel):
+    steps: list[ReorderStep]
+
+
+@router.put("/campaigns/{campaign_id}/sequence/reorder")
+def reorder_sequence(
+    campaign_id: int,
+    body: ReorderRequest,
+    conn=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Reorder sequence steps for a campaign. Recalculates next_action_date for affected contacts."""
+    user_id = user["id"]
+    with get_cursor(conn) as cursor:
+        if not verify_ownership(conn, "campaigns", campaign_id, user_id):
+            raise HTTPException(404, "Campaign not found")
+
+        # Verify all steps belong to this campaign
+        step_ids = [s.step_id for s in body.steps]
+        placeholders = ",".join(["%s"] * len(step_ids))
+        cursor.execute(
+            f"SELECT id FROM sequence_steps WHERE campaign_id = %s AND id IN ({placeholders})",
+            [campaign_id] + step_ids,
+        )
+        found = {r["id"] for r in cursor.fetchall()}
+        if found != set(step_ids):
+            raise HTTPException(422, "Some step_ids do not belong to this campaign")
+
+        # Temp-slot reorder: phase 1 - offset all to temp range
+        cursor.execute(
+            "UPDATE sequence_steps SET step_order = step_order + 10000 WHERE campaign_id = %s",
+            (campaign_id,),
+        )
+
+        # Phase 2: set final values via parameterized CASE
+        case_sql = " ".join("WHEN %s THEN %s" for _ in body.steps)
+        case_params = [v for s in body.steps for v in (s.step_id, s.step_order)]
+        cursor.execute(
+            f"UPDATE sequence_steps SET step_order = CASE id {case_sql} END "
+            f"WHERE campaign_id = %s AND id IN ({placeholders})",
+            case_params + [campaign_id] + step_ids,
+        )
+
+        # Count affected contacts
+        cursor.execute(
+            "SELECT COUNT(*) as cnt FROM contact_campaign_status "
+            "WHERE campaign_id = %s AND status IN ('queued', 'in_progress')",
+            (campaign_id,),
+        )
+        affected_count = cursor.fetchone()["cnt"]
+
+        # Recalculate next_action_date for affected contacts
+        if affected_count > 0:
+            cursor.execute("""
+                UPDATE contact_campaign_status ccs
+                SET next_action_date = (
+                    SELECT CURRENT_DATE + (ss_next.delay_days || ' days')::interval
+                    FROM sequence_steps ss_cur
+                    JOIN sequence_steps ss_next
+                      ON ss_next.campaign_id = ss_cur.campaign_id
+                      AND ss_next.step_order = (
+                        SELECT MIN(step_order) FROM sequence_steps
+                        WHERE campaign_id = ss_cur.campaign_id AND step_order > ss_cur.step_order
+                      )
+                    WHERE ss_cur.stable_id = ccs.current_step_id
+                )
+                WHERE ccs.campaign_id = %s
+                  AND ccs.status IN ('queued', 'in_progress')
+                  AND ccs.current_step_id IS NOT NULL
+            """, (campaign_id,))
+
+        conn.commit()
+
+        # Return updated sequence
+        cursor.execute(
+            """SELECT ss.*, t.subject AS template_subject, t.body_template AS template_body
+               FROM sequence_steps ss
+               LEFT JOIN templates t ON ss.template_id = t.id
+               WHERE ss.campaign_id = %s ORDER BY ss.step_order""",
+            (campaign_id,),
+        )
+        steps = [_row_to_dict(r) for r in cursor.fetchall()]
+
+    return {"steps": steps, "affected_count": affected_count}
+
+
+class StepUpdateRequest(BaseModel):
+    channel: Optional[str] = None
+    delay_days: Optional[int] = None
+    template_id: Optional[int] = None
+
+
+@router.patch("/campaigns/{campaign_id}/sequence/{step_id}")
+def update_sequence_step(
+    campaign_id: int,
+    step_id: int,
+    body: StepUpdateRequest,
+    conn=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Update a single sequence step (channel, delay_days, or template_id)."""
+    user_id = user["id"]
+    with get_cursor(conn) as cursor:
+        # Verify campaign + step ownership
+        cursor.execute(
+            "SELECT ss.id, ss.step_order FROM sequence_steps ss "
+            "JOIN campaigns c ON c.id = ss.campaign_id "
+            "WHERE ss.id = %s AND ss.campaign_id = %s AND c.user_id = %s",
+            (step_id, campaign_id, user_id),
+        )
+        step = cursor.fetchone()
+        if not step:
+            raise HTTPException(404, "Step not found")
+
+        fields: list[str] = []
+        params: list = []
+
+        if body.channel is not None:
+            # Enforce only one linkedin_connect
+            if body.channel == "linkedin_connect":
+                cursor.execute(
+                    "SELECT id FROM sequence_steps "
+                    "WHERE campaign_id = %s AND channel = 'linkedin_connect' AND id != %s",
+                    (campaign_id, step_id),
+                )
+                if cursor.fetchone():
+                    raise HTTPException(
+                        422, "Only one linkedin_connect step allowed per sequence"
+                    )
+            fields.append("channel = %s")
+            params.append(body.channel)
+
+        if body.delay_days is not None:
+            if body.delay_days < 0:
+                raise HTTPException(422, "delay_days must be >= 0")
+            fields.append("delay_days = %s")
+            params.append(body.delay_days)
+
+        if body.template_id is not None:
+            fields.append("template_id = %s")
+            params.append(body.template_id)
+
+        if not fields:
+            raise HTTPException(422, "No fields to update")
+
+        params.extend([step_id, campaign_id])
+        cursor.execute(
+            f"UPDATE sequence_steps SET {', '.join(fields)} "
+            f"WHERE id = %s AND campaign_id = %s RETURNING *",
+            params,
+        )
+        updated = cursor.fetchone()
+
+        # If delay_days changed, recalculate next_action_date for affected contacts
+        if body.delay_days is not None:
+            cursor.execute("""
+                UPDATE contact_campaign_status ccs
+                SET next_action_date = (
+                    SELECT CURRENT_DATE + (ss_next.delay_days || ' days')::interval
+                    FROM sequence_steps ss_cur
+                    JOIN sequence_steps ss_next
+                      ON ss_next.campaign_id = ss_cur.campaign_id
+                      AND ss_next.step_order = (
+                        SELECT MIN(step_order) FROM sequence_steps
+                        WHERE campaign_id = ss_cur.campaign_id AND step_order > ss_cur.step_order
+                      )
+                    WHERE ss_cur.stable_id = ccs.current_step_id
+                )
+                WHERE ccs.campaign_id = %s
+                  AND ccs.status IN ('queued', 'in_progress')
+                  AND ccs.current_step_id IS NOT NULL
+            """, (campaign_id,))
+
+        conn.commit()
+
+    return _row_to_dict(updated)
+
+
+@router.get("/campaigns/{campaign_id}/messages")
+def get_campaign_messages(
+    campaign_id: int,
+    limit: int = 25,
+    offset: int = 0,
+    conn=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Get sent messages for a campaign with contact and template info."""
+    user_id = user["id"]
+    with get_cursor(conn) as cursor:
+        if not verify_ownership(conn, "campaigns", campaign_id, user_id):
+            raise HTTPException(404, "Campaign not found")
+
+        # Single query with window function for count + pagination
+        cursor.execute("""
+            SELECT
+                e.id, e.contact_id, e.created_at AS sent_at,
+                COALESCE(c.full_name,
+                    TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')),
+                    '') AS contact_name,
+                comp.name AS company_name,
+                t.subject AS template_subject,
+                ccs.status AS reply_status,
+                COUNT(*) OVER () AS total
+            FROM events e
+            JOIN contacts c ON c.id = e.contact_id
+            LEFT JOIN companies comp ON comp.id = c.company_id
+            LEFT JOIN templates t ON t.id = e.template_id
+            LEFT JOIN contact_campaign_status ccs
+              ON ccs.contact_id = e.contact_id AND ccs.campaign_id = e.campaign_id
+            WHERE e.campaign_id = %s AND e.event_type = 'email_sent'
+              AND e.user_id = %s
+            ORDER BY e.created_at DESC
+            LIMIT %s OFFSET %s
+        """, (campaign_id, user_id, limit, offset))
+        rows = cursor.fetchall()
+        messages = [_row_to_dict(r) for r in rows]
+        total = rows[0]["total"] if rows else 0
+
+    return {"messages": messages, "total": total}
+
+
+class AddStepRequest(BaseModel):
+    channel: str
+    delay_days: int = 0
+    template_id: Optional[int] = None
+    step_order: Optional[int] = None
+
+
+@router.post("/campaigns/{campaign_id}/sequence")
+def add_sequence_step(
+    campaign_id: int,
+    body: AddStepRequest,
+    conn=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Add a new step to a campaign's sequence. Blocked if contacts are enrolled."""
+    user_id = user["id"]
+    with get_cursor(conn) as cursor:
+        if not verify_ownership(conn, "campaigns", campaign_id, user_id):
+            raise HTTPException(404, "Campaign not found")
+
+        # Block if enrolled contacts exist
+        cursor.execute(
+            "SELECT COUNT(*) as cnt FROM contact_campaign_status WHERE campaign_id = %s",
+            (campaign_id,),
+        )
+        if cursor.fetchone()["cnt"] > 0:
+            raise HTTPException(
+                422, "Cannot add steps to a campaign with enrolled contacts"
+            )
+
+        # linkedin_connect constraint
+        if body.channel == "linkedin_connect":
+            cursor.execute(
+                "SELECT id FROM sequence_steps "
+                "WHERE campaign_id = %s AND channel = 'linkedin_connect'",
+                (campaign_id,),
+            )
+            if cursor.fetchone():
+                raise HTTPException(
+                    422, "Only one linkedin_connect step allowed per sequence"
+                )
+
+        if body.step_order is not None:
+            # Insert at position, renumber subsequent
+            cursor.execute(
+                "UPDATE sequence_steps SET step_order = step_order + 10000 "
+                "WHERE campaign_id = %s",
+                (campaign_id,),
+            )
+            cursor.execute(
+                """UPDATE sequence_steps SET step_order = CASE
+                   WHEN step_order - 10000 >= %s THEN step_order - 10000 + 1
+                   ELSE step_order - 10000
+                   END WHERE campaign_id = %s""",
+                (body.step_order, campaign_id),
+            )
+            new_order = body.step_order
+        else:
+            cursor.execute(
+                "SELECT COALESCE(MAX(step_order), 0) + 1 as next_order "
+                "FROM sequence_steps WHERE campaign_id = %s",
+                (campaign_id,),
+            )
+            new_order = cursor.fetchone()["next_order"]
+
+        cursor.execute(
+            """INSERT INTO sequence_steps
+               (campaign_id, step_order, channel, delay_days, template_id)
+               VALUES (%s, %s, %s, %s, %s) RETURNING *""",
+            (campaign_id, new_order, body.channel, body.delay_days, body.template_id),
+        )
+        new_step = cursor.fetchone()
+        conn.commit()
+
+    return _row_to_dict(new_step)
+
+
+@router.delete("/campaigns/{campaign_id}/sequence/{step_id}")
+def delete_sequence_step(
+    campaign_id: int,
+    step_id: int,
+    conn=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Delete a sequence step and compact step_order. Blocked if contacts are enrolled."""
+    user_id = user["id"]
+    with get_cursor(conn) as cursor:
+        cursor.execute(
+            "SELECT ss.id, ss.step_order FROM sequence_steps ss "
+            "JOIN campaigns c ON c.id = ss.campaign_id "
+            "WHERE ss.id = %s AND ss.campaign_id = %s AND c.user_id = %s",
+            (step_id, campaign_id, user_id),
+        )
+        step = cursor.fetchone()
+        if not step:
+            raise HTTPException(404, "Step not found")
+
+        # Block if enrolled contacts exist
+        cursor.execute(
+            "SELECT COUNT(*) as cnt FROM contact_campaign_status WHERE campaign_id = %s",
+            (campaign_id,),
+        )
+        if cursor.fetchone()["cnt"] > 0:
+            raise HTTPException(
+                422, "Cannot delete steps from a campaign with enrolled contacts"
+            )
+
+        cursor.execute(
+            "DELETE FROM sequence_steps WHERE id = %s AND campaign_id = %s",
+            (step_id, campaign_id),
+        )
+
+        # Compact step_order (remove gaps)
+        cursor.execute(
+            "UPDATE sequence_steps SET step_order = step_order + 10000 "
+            "WHERE campaign_id = %s",
+            (campaign_id,),
+        )
+        cursor.execute("""
+            WITH numbered AS (
+                SELECT id, ROW_NUMBER() OVER (ORDER BY step_order) as new_order
+                FROM sequence_steps WHERE campaign_id = %s
+            )
+            UPDATE sequence_steps ss SET step_order = n.new_order
+            FROM numbered n WHERE ss.id = n.id
+        """, (campaign_id,))
+
+        conn.commit()
+
+    return {"deleted": True}

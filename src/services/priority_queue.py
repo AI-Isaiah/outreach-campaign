@@ -25,6 +25,7 @@ def get_daily_queue(
     campaign_id: int,
     target_date: Optional[str] = None,
     limit: int = 10,
+    scope: str = "today",
 ) -> list[dict]:
     """Return the prioritized list of contacts to action today.
 
@@ -33,6 +34,8 @@ def get_daily_queue(
         campaign_id: which campaign to pull the queue for
         target_date: ISO date string (YYYY-MM-DD); defaults to today
         limit: maximum number of results to return
+        scope: queue scope filter. "today" (default) = next_action_date <= target_date,
+               "all" = no date filter, "overdue" = next_action_date < target_date
 
     Returns:
         List of dicts, each representing a contact ready for action, ordered
@@ -47,7 +50,18 @@ def get_daily_queue(
         if not cursor.fetchone():
             raise ValueError(f"Campaign {campaign_id} not found")
 
-    query = """
+    # Build date filter based on scope
+    if scope == "all":
+        date_filter = ""
+        date_params: list = []
+    elif scope == "overdue":
+        date_filter = "AND ccs.next_action_date < %s"
+        date_params = [target_date]
+    else:  # "today" (default)
+        date_filter = "AND ccs.next_action_date <= %s"
+        date_params = [target_date]
+
+    query = f"""
     WITH eligible AS (
         SELECT
             c.id AS contact_id,
@@ -63,7 +77,7 @@ def get_daily_queue(
             comp.name AS company_name,
             comp.aum_millions,
             comp.firm_type,
-            ccs.current_step,
+            ccs.current_step, ccs.current_step_id,
             ccs.status AS ccs_status,
             ccs.next_action_date,
             ccs.channel_override
@@ -72,7 +86,7 @@ def get_daily_queue(
         JOIN companies comp ON comp.id = c.company_id
         WHERE ccs.campaign_id = %s
           AND ccs.status IN (%s, %s)
-          AND ccs.next_action_date <= %s
+          {date_filter}
           AND c.unsubscribed = false
     ),
     ranked AS (
@@ -105,7 +119,7 @@ def get_daily_queue(
     FROM active_contacts ac
     JOIN sequence_steps ss
       ON ss.campaign_id = %s
-     AND ss.step_order = ac.current_step
+     AND ss.stable_id = ac.current_step_id
     WHERE
         -- Email steps: must have valid email
         (ss.channel != 'email' OR ac.email_status = 'valid')
@@ -118,13 +132,14 @@ def get_daily_queue(
         AND (ss.non_gdpr_only = false OR ac.contact_is_gdpr = false)
         AND (ss.gdpr_only = false OR ac.contact_is_gdpr = true)
     ORDER BY
-        ac.current_step ASC,
+        ss.step_order ASC,
         ac.next_action_date ASC
     LIMIT %s
     """
 
     with get_cursor(conn) as cursor:
-        cursor.execute(query, (campaign_id, ContactStatus.QUEUED, ContactStatus.IN_PROGRESS, target_date, campaign_id, limit))
+        query_params = [campaign_id, ContactStatus.QUEUED, ContactStatus.IN_PROGRESS] + date_params + [campaign_id, limit]
+        cursor.execute(query, query_params)
         rows = cursor.fetchall()
 
         if not rows:
@@ -197,7 +212,7 @@ def get_next_step_for_contact(
     with get_cursor(conn) as cursor:
         cursor.execute(
             """
-            SELECT c.is_gdpr, ccs.current_step
+            SELECT c.is_gdpr, ccs.current_step, ccs.current_step_id
             FROM contact_campaign_status ccs
             JOIN contacts c ON c.id = ccs.contact_id
             WHERE ccs.contact_id = %s AND ccs.campaign_id = %s

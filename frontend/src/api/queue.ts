@@ -9,13 +9,14 @@ export const queueApi = {
   },
 
   getQueue: (campaign: string, options?: {
-    date?: string; limit?: number; firm_type?: string; aum_min?: number; aum_max?: number;
+    date?: string; limit?: number; firm_type?: string; aum_min?: number; aum_max?: number; scope?: string;
   }) => {
     const params = new URLSearchParams({ limit: String(options?.limit ?? 25) });
     if (options?.date) params.set("date", options.date);
     if (options?.firm_type) params.set("firm_type", options.firm_type);
     if (options?.aum_min != null) params.set("aum_min", String(options.aum_min));
     if (options?.aum_max != null) params.set("aum_max", String(options.aum_max));
+    if (options?.scope) params.set("scope", options.scope);
     return request<QueueResponse>(`/queue/${campaign}?${params}`);
   },
 

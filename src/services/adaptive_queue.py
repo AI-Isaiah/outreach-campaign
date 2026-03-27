@@ -23,6 +23,7 @@ def get_adaptive_queue(
     target_date: Optional[str] = None,
     limit: int = 20,
     diverse: bool = True,
+    scope: str = "today",
     *,
     user_id: Optional[int] = None,
 ) -> list[dict]:
@@ -39,7 +40,7 @@ def get_adaptive_queue(
     Falls back to static queue on error.
     """
     # Get base queue items (eligibility)
-    items = get_daily_queue(conn, campaign_id, target_date=target_date, limit=limit * 3)
+    items = get_daily_queue(conn, campaign_id, target_date=target_date, limit=limit * 3, scope=scope)
 
     if not items:
         return []

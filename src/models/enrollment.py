@@ -71,11 +71,14 @@ def get_sequence_steps(conn: PgConnection, campaign_id: int, *, user_id: int) ->
     """Return all steps for a campaign, ordered by step_order.
 
     Joins to campaigns table to verify ownership.
+    Includes template subject and body via LEFT JOIN.
     """
     with get_cursor(conn) as cursor:
         cursor.execute(
-            """SELECT ss.* FROM sequence_steps ss
+            """SELECT ss.*, t.subject AS template_subject, t.body_template AS template_body
+               FROM sequence_steps ss
                JOIN campaigns c ON c.id = ss.campaign_id
+               LEFT JOIN templates t ON ss.template_id = t.id
                WHERE ss.campaign_id = %s AND c.user_id = %s
                ORDER BY ss.step_order""",
             (campaign_id, user_id),
@@ -93,6 +96,7 @@ def enroll_contact(
     campaign_id: int,
     variant: Optional[str] = None,
     next_action_date: Optional[str] = None,
+    first_step_stable_id: Optional[str] = None,
     *,
     user_id: int,
 ) -> Optional[int]:
@@ -110,9 +114,9 @@ def enroll_contact(
         try:
             cursor.execute(
                 """INSERT INTO contact_campaign_status
-                   (contact_id, campaign_id, current_step, assigned_variant, next_action_date)
-                   VALUES (%s, %s, 1, %s, %s) RETURNING id""",
-                (contact_id, campaign_id, variant, next_action_date),
+                   (contact_id, campaign_id, current_step, current_step_id, assigned_variant, next_action_date)
+                   VALUES (%s, %s, 1, %s, %s, %s) RETURNING id""",
+                (contact_id, campaign_id, first_step_stable_id, variant, next_action_date),
             )
             row = cursor.fetchone()
             conn.commit()
@@ -127,6 +131,7 @@ def bulk_enroll_contacts(
     campaign_id: int,
     contact_ids: list,
     variant_assigner: Optional[Callable] = None,
+    first_step_stable_id: Optional[str] = None,
     *,
     user_id: int,
 ) -> int:
@@ -142,6 +147,7 @@ def bulk_enroll_contacts(
         campaign_id: campaign to enroll contacts in
         contact_ids: list of contact ids to enroll
         variant_assigner: optional callable(contact_id) -> str for variant assignment
+        first_step_stable_id: optional stable_id of the first sequence step
         user_id: owner of the campaign (keyword-only)
 
     Returns:
@@ -171,13 +177,13 @@ def bulk_enroll_contacts(
             if contact_id in already_enrolled:
                 continue
             variant = variant_assigner(contact_id) if variant_assigner else None
-            rows_to_insert.append((contact_id, campaign_id, 1, variant))
+            rows_to_insert.append((contact_id, campaign_id, 1, first_step_stable_id, variant))
 
         if rows_to_insert:
             psycopg2.extras.execute_values(
                 cursor,
                 """INSERT INTO contact_campaign_status
-                   (contact_id, campaign_id, current_step, assigned_variant)
+                   (contact_id, campaign_id, current_step, current_step_id, assigned_variant)
                    VALUES %s""",
                 rows_to_insert,
             )
@@ -213,6 +219,7 @@ def update_contact_campaign_status(
     campaign_id: int,
     status: Optional[str] = None,
     current_step: Optional[int] = None,
+    current_step_id: Optional[str] = None,  # UUID stable_id reference
     next_action_date: Optional[str] = None,
     channel_override=_SENTINEL,
     *,
@@ -236,6 +243,9 @@ def update_contact_campaign_status(
         fields.append("current_step = %s")
         params.append(current_step)
         fields.append("sent_at = NULL")
+    if current_step_id is not None:
+        fields.append("current_step_id = %s")
+        params.append(current_step_id)
     if next_action_date is not None:
         fields.append("next_action_date = %s")
         params.append(next_action_date)

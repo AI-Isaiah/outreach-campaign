@@ -14,6 +14,7 @@ import {
   Inbox,
   X,
   ListOrdered,
+  MessageSquare,
 } from "lucide-react";
 import { campaignsApi } from "../api/campaigns";
 import type { CampaignContact } from "../api/campaigns";
@@ -30,6 +31,7 @@ import Button from "../components/ui/Button";
 import HealthScoreBadge from "../components/HealthScoreBadge";
 import QueueEmailCard from "../components/QueueEmailCard";
 import QueueLinkedInCard from "../components/QueueLinkedInCard";
+import SequenceEditorDetail from "../components/SequenceEditorDetail";
 
 type Tab = "contacts" | "messages" | "sequence" | "analytics" | "queue";
 
@@ -286,7 +288,7 @@ export default function CampaignDetail() {
       <div role="tabpanel" aria-label={`${activeTab} tab content`}>
         {activeTab === "contacts" && <ContactsTab campaignName={name!} campaignId={campaign.id} onSwitchTab={switchTab} />}
         {activeTab === "queue" && <QueueTab campaignName={name!} />}
-        {activeTab === "messages" && <MessagesTab />}
+        {activeTab === "messages" && <MessagesTab campaignId={campaign.id} />}
         {activeTab === "sequence" && <SequenceTab campaignName={campaign.name} campaignId={campaign.id} />}
         {activeTab === "analytics" && <AnalyticsTab metricsData={metricsData} campaignName={name!} />}
       </div>
@@ -460,6 +462,7 @@ const MAX_HINT_VIEWS = 3;
 
 function QueueTab({ campaignName }: { campaignName: string }) {
   const [focusedIndex, setFocusedIndex] = useState(0);
+  const [queueScope, setQueueScope] = useState<"all" | "today" | "overdue">("all");
   const [showHint, setShowHint] = useState(() => {
     const count = parseInt(localStorage.getItem(HINT_STORAGE_KEY) || "0", 10);
     return count < MAX_HINT_VIEWS;
@@ -468,8 +471,8 @@ function QueueTab({ campaignName }: { campaignName: string }) {
   const queryClient = useQueryClient();
 
   const { data, isLoading, isError, error, refetch } = useQuery<QueueResponse>({
-    queryKey: queryKeys.queue.campaign(campaignName),
-    queryFn: () => queueApi.getQueue(campaignName, { limit: 50 }),
+    queryKey: [...queryKeys.queue.campaign(campaignName), queueScope],
+    queryFn: () => queueApi.getQueue(campaignName, { limit: 50, scope: queueScope === "all" ? undefined : queueScope }),
   });
 
   const allItems: QueueItem[] = data?.items || [];
@@ -567,20 +570,50 @@ function QueueTab({ campaignName }: { campaignName: string }) {
     return <ErrorCard message={(error as Error).message} onRetry={() => refetch()} />;
   }
 
+  const scopePills = (
+    <div className="flex gap-2 mb-4">
+      {(["all", "today", "overdue"] as const).map((scope) => (
+        <button
+          key={scope}
+          onClick={() => setQueueScope(scope)}
+          className={`rounded-full px-3 py-1 text-sm font-medium transition-colors ${
+            queueScope === scope
+              ? "bg-gray-900 text-white"
+              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+          }`}
+        >
+          {scope === "all" ? "All Queued" : scope === "today" ? "Today" : "Overdue"}
+        </button>
+      ))}
+    </div>
+  );
+
   if (allItems.length === 0) {
     return (
-      <div className="text-center py-16">
-        <div className="w-16 h-16 rounded-full bg-green-50 flex items-center justify-center mx-auto mb-4">
-          <Inbox size={28} className="text-green-500" />
+      <div>
+        {scopePills}
+        <div className="text-center py-16">
+          <div className="w-16 h-16 rounded-full bg-green-50 flex items-center justify-center mx-auto mb-4">
+            <Inbox size={28} className="text-green-500" />
+          </div>
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">
+            {queueScope === "overdue" ? "Nothing overdue. Nice." : queueScope === "today" ? "All caught up!" : "No contacts enrolled yet"}
+          </h2>
+          <p className="text-sm text-gray-500">
+            {queueScope === "overdue"
+              ? "All outreach is on schedule."
+              : queueScope === "today"
+                ? "No actions for today in this campaign. Check back tomorrow."
+                : "Enroll contacts to start seeing queue items."}
+          </p>
         </div>
-        <h2 className="text-lg font-semibold text-gray-900 mb-1">All caught up!</h2>
-        <p className="text-sm text-gray-500">No actions for today in this campaign. Check back tomorrow.</p>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
+      {scopePills}
       <p className="text-sm text-gray-500">
         {allItems.length} action{allItems.length !== 1 ? "s" : ""} today
         {emailItems.length > 0 && ` \u00b7 ${emailItems.length} email`}
@@ -658,10 +691,76 @@ function QueueTab({ campaignName }: { campaignName: string }) {
 
 // ─── Messages Tab ──────────────────────────────────────────────────
 
-function MessagesTab() {
+function ReplyBadge({ status }: { status: string }) {
+  if (status === "replied_positive") {
+    return <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-500" title="Positive reply" />;
+  }
+  if (status === "replied_negative") {
+    return <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500" title="Negative reply" />;
+  }
+  return <span className="inline-block w-2.5 h-2.5 rounded-full bg-gray-300" title="No reply" />;
+}
+
+function MessagesTab({ campaignId }: { campaignId: number }) {
+  const [offset, setOffset] = useState(0);
+  const { data, isLoading } = useQuery({
+    queryKey: ["campaign-messages", campaignId, offset],
+    queryFn: () => campaignsApi.getCampaignMessages(campaignId, { limit: 25, offset }),
+  });
+
+  if (isLoading) return <SkeletonTable rows={3} cols={5} />;
+
+  const messages = data?.messages || [];
+  const total = data?.total || 0;
+
+  if (!messages.length) {
+    return (
+      <div className="text-center py-16">
+        <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center mx-auto mb-4">
+          <MessageSquare size={24} className="text-blue-500" />
+        </div>
+        <h3 className="text-lg font-semibold text-gray-900 mb-1">No messages sent yet</h3>
+        <p className="text-sm text-gray-500">Queue and send to see history.</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="text-center py-12 text-sm text-gray-500">
-      No messages sent yet. Launch the campaign to start outreach.
+    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      <table className="w-full">
+        <thead className="bg-gray-50 border-b border-gray-200">
+          <tr>
+            <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Contact</th>
+            <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Company</th>
+            <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Template</th>
+            <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Sent</th>
+            <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Reply</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {messages.map((msg: any) => (
+            <tr key={msg.id} className="hover:bg-gray-50 transition-colors">
+              <td className="px-5 py-4 text-sm font-medium text-gray-900">{msg.contact_name}</td>
+              <td className="px-5 py-4 text-sm text-gray-500">{msg.company_name}</td>
+              <td className="px-5 py-4 text-sm text-gray-500">{msg.template_subject || "\u2014"}</td>
+              <td className="px-5 py-4 text-sm text-gray-500">{new Date(msg.sent_at).toLocaleDateString()}</td>
+              <td className="px-5 py-4">
+                <ReplyBadge status={msg.reply_status} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {messages.length < total && (
+        <div className="px-5 py-3 border-t border-gray-100 text-center">
+          <button
+            onClick={() => setOffset((prev) => prev + 25)}
+            className="text-sm font-medium text-blue-600 hover:text-blue-700"
+          >
+            Load more ({messages.length} of {total})
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -669,11 +768,17 @@ function MessagesTab() {
 // ─── Sequence Tab ──────────────────────────────────────────────────
 
 function SequenceTab({ campaignName, campaignId }: { campaignName: string; campaignId: number }) {
-  const { data: steps, isLoading } = useQuery<{ id: number; step_order: number; channel: string; delay_days: number; template_id: number | null; draft_mode: string | null }[]>({
+  const { data: steps, isLoading } = useQuery<{ id: number; step_order: number; channel: string; delay_days: number; template_id: number | null; draft_mode: string | null; template_subject?: string; template_body?: string }[]>({
     queryKey: ["campaign-sequence", campaignId],
-    queryFn: () => request<{ id: number; step_order: number; channel: string; delay_days: number; template_id: number | null; draft_mode: string | null }[]>(`/campaigns/${campaignId}/sequence`),
+    queryFn: () => request<{ id: number; step_order: number; channel: string; delay_days: number; template_id: number | null; draft_mode: string | null; template_subject?: string; template_body?: string }[]>(`/campaigns/${campaignId}/sequence`),
     enabled: !!campaignId,
   });
+
+  const { data: contactsData } = useQuery<CampaignContact[]>({
+    queryKey: ["campaign-contacts-count", campaignId],
+    queryFn: () => campaignsApi.getCampaignContacts(campaignId),
+  });
+  const enrolledCount = contactsData?.length ?? 0;
 
   if (isLoading) return <SkeletonTable rows={3} cols={4} />;
 
@@ -697,48 +802,12 @@ function SequenceTab({ campaignName, campaignId }: { campaignName: string; campa
     );
   }
 
-  const CHANNEL_LABELS: Record<string, string> = {
-    email: "Email",
-    linkedin_connect: "LinkedIn Connect",
-    linkedin_message: "LinkedIn Message",
-    linkedin_engage: "LinkedIn Engage",
-    linkedin_insight: "LinkedIn Insight",
-    linkedin_final: "LinkedIn Final",
-  };
-
   return (
-    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-      <table className="w-full">
-        <thead>
-          <tr className="bg-gray-50 border-b border-gray-200">
-            <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Step</th>
-            <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Channel</th>
-            <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Delay</th>
-            <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Mode</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100">
-          {steps.map((s) => (
-            <tr key={s.id} className="hover:bg-gray-50 transition-colors">
-              <td className="px-5 py-4 text-sm font-medium text-gray-900">Step {s.step_order}</td>
-              <td className="px-5 py-4">
-                <span className={`text-xs font-medium px-2 py-0.5 rounded ${
-                  s.channel === "email" ? "bg-blue-100 text-blue-700" : "bg-indigo-100 text-indigo-700"
-                }`}>
-                  {CHANNEL_LABELS[s.channel] ?? s.channel}
-                </span>
-              </td>
-              <td className="px-5 py-4 text-sm text-gray-500">
-                {s.delay_days === 0 ? "Same day" : `+${s.delay_days} day${s.delay_days > 1 ? "s" : ""}`}
-              </td>
-              <td className="px-5 py-4 text-sm text-gray-500 capitalize">
-                {s.draft_mode ?? "template"}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <SequenceEditorDetail
+      campaignId={campaignId}
+      steps={steps}
+      enrolledCount={enrolledCount}
+    />
   );
 }
 

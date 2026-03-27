@@ -85,6 +85,7 @@ def get_enriched_queue(
     aum_min: Optional[float] = None,
     aum_max: Optional[float] = None,
     diverse: bool = True,
+    scope: str = "today",
     user_id: Optional[str] = None,
 ) -> dict:
     """Build the fully enriched queue response for a campaign.
@@ -108,12 +109,12 @@ def get_enriched_queue(
         try:
             items = get_adaptive_queue(
                 conn, campaign_id, target_date=date, limit=limit * 3, diverse=use_diverse,
-                user_id=user_id,
+                scope=scope, user_id=user_id,
             )
         except (KeyError, ValueError, TypeError):
-            items = get_daily_queue(conn, campaign_id, target_date=date, limit=limit * 3)
+            items = get_daily_queue(conn, campaign_id, target_date=date, limit=limit * 3, scope=scope)
     else:
-        items = get_daily_queue(conn, campaign_id, target_date=date, limit=limit * 3)
+        items = get_daily_queue(conn, campaign_id, target_date=date, limit=limit * 3, scope=scope)
 
     # AUM range filters
     if aum_min is not None:
