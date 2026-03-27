@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   DndContext,
   closestCenter,
@@ -82,6 +82,12 @@ function SortableStepRow({
   const [editBody, setEditBody] = useState(step.template_body || "");
   const [editDelay, setEditDelay] = useState(step.delay_days);
   const [editChannel, setEditChannel] = useState(step.channel);
+
+  // Sync editor fields when the step's template changes (e.g., after template dropdown selection)
+  useEffect(() => {
+    setEditSubject(step.template_subject || "");
+    setEditBody(step.template_body || "");
+  }, [step.template_id, step.template_subject, step.template_body]);
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
