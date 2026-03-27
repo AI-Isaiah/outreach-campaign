@@ -219,16 +219,14 @@ class TestComputeHealthScore:
         assert score == 27
 
     def test_zero_emails_sent_velocity_zero(self):
-        """No emails sent yet: velocity = 0, bounce_rate = 0 (guarded by emails_sent > 0).
-        score = 0 + 0 - 0 = 0.
-        """
+        """No emails sent yet: returns None (N/A) — not enough data for a score."""
         metrics = {
             "total_enrolled": 10,
             "by_status": {"replied_positive": 0, "bounced": 0},
             "emails_sent": 0,
         }
         score = compute_health_score(metrics)
-        assert score == 0
+        assert score is None
 
     def test_score_capped_at_100(self):
         """Score should never exceed 100 even with very high velocity."""

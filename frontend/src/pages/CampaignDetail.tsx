@@ -254,10 +254,10 @@ export default function CampaignDetail() {
             accent="yellow"
           />
         </button>
-        <button className="text-left" onClick={() => { switchTab("contacts"); setSearchParams({ filter: "calls_booked" }, { replace: true }); }}>
+        <button className="text-left" onClick={() => { switchTab("contacts"); setSearchParams({}, { replace: true }); }}>
           <MetricCard
-            label="Calls Booked"
-            value={metrics.calls_booked}
+            label="Emails Sent"
+            value={metrics.emails_sent ?? 0}
             accent="green"
           />
         </button>
@@ -309,7 +309,6 @@ function ContactsTab({ campaignName, campaignId, onSwitchTab }: { campaignName: 
   useEffect(() => {
     if (filterParam === "contacted") setStatusFilter("no_response");
     else if (filterParam === "replied") setStatusFilter("replied_positive");
-    else if (filterParam === "calls_booked") setStatusFilter("completed");
     else if (filterParam === "in_progress") setStatusFilter("in_progress");
     else if (filterParam) setStatusFilter(filterParam);
   }, [filterParam]);

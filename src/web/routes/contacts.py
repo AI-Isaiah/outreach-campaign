@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -30,6 +31,9 @@ _limiter = Limiter(
     enabled=os.getenv("RATE_LIMIT_ENABLED", "true").lower() != "false",
 )
 router = APIRouter(tags=["contacts"])
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
 
 
 LIFECYCLE_STAGES = set(LifecycleStage)
@@ -75,6 +79,14 @@ class LinkedInUrlUpdateRequest(BaseModel):
 class NameUpdateRequest(BaseModel):
     first_name: str = Field(max_length=200)
     last_name: str = Field(max_length=200)
+
+
+class ContactPatchRequest(BaseModel):
+    first_name: Optional[str] = Field(None, max_length=200)
+    last_name: Optional[str] = Field(None, max_length=200)
+    email: Optional[str] = Field(None, max_length=320)
+    linkedin_url: Optional[str] = Field(None, max_length=2048)
+    title: Optional[str] = Field(None, max_length=200)
 
 
 class BulkLifecycleRequest(BaseModel):
@@ -535,6 +547,112 @@ def update_contact_name(
             "contact_id": contact_id,
             "full_name": full_name,
         }
+
+
+@router.patch("/contacts/{contact_id}")
+def patch_contact(
+    contact_id: int,
+    body: ContactPatchRequest,
+    conn=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Update any subset of contact fields in one request.
+
+    Normalizes email, LinkedIn URL, and name. Resets email_status when
+    email changes. Clears channel_override for queue dedup re-evaluation.
+    """
+    user_id = user["id"]
+    with get_cursor(conn) as cur:
+        # Verify ownership
+        cur.execute(
+            "SELECT id, email_normalized FROM contacts WHERE id = %s AND user_id = %s",
+            (contact_id, user_id),
+        )
+        existing = cur.fetchone()
+        if not existing:
+            raise HTTPException(404, f"Contact {contact_id} not found")
+
+        fields: list[str] = []
+        params: list = []
+        changed_fields: list[str] = []
+
+        # Email
+        if body.email is not None:
+            email = body.email.strip()
+            if not _EMAIL_RE.match(email):
+                raise HTTPException(400, "Invalid email format")
+            email_norm = _normalize_email(email)
+            # Check uniqueness within this user's contacts
+            cur.execute(
+                "SELECT id FROM contacts WHERE email_normalized = %s AND user_id = %s AND id != %s",
+                (email_norm, user_id, contact_id),
+            )
+            if cur.fetchone():
+                raise HTTPException(409, "Email already in use by another contact")
+            fields.extend(["email = %s", "email_normalized = %s", "email_status = 'unverified'"])
+            params.extend([email, email_norm])
+            changed_fields.append("email")
+
+        # LinkedIn URL
+        if body.linkedin_url is not None:
+            li_norm = _normalize_linkedin(body.linkedin_url.strip())
+            fields.extend(["linkedin_url = %s", "linkedin_url_normalized = %s"])
+            params.extend([body.linkedin_url.strip(), li_norm])
+            changed_fields.append("linkedin_url")
+
+        # Name
+        if body.first_name is not None or body.last_name is not None:
+            first = (body.first_name or "").strip()
+            last = (body.last_name or "").strip()
+            if not first:
+                raise HTTPException(400, "First name is required")
+            full = f"{first} {last}".strip()
+            fields.extend(["first_name = %s", "last_name = %s", "full_name = %s"])
+            params.extend([first, last, full])
+            changed_fields.append("name")
+
+        # Title
+        if body.title is not None:
+            title = _HTML_TAG_RE.sub("", body.title).strip()[:200]
+            fields.append("title = %s")
+            params.append(title)
+            changed_fields.append("title")
+
+        if not fields:
+            raise HTTPException(400, "No fields to update")
+
+        # Update contact
+        params.extend([contact_id, user_id])
+        cur.execute(
+            f"UPDATE contacts SET {', '.join(fields)} WHERE id = %s AND user_id = %s",
+            params,
+        )
+
+        # Email cascade: clear channel_override so dedup re-evaluates
+        if "email" in changed_fields:
+            cur.execute(
+                "UPDATE contact_campaign_status SET channel_override = NULL WHERE contact_id = %s",
+                (contact_id,),
+            )
+
+        # Log the update
+        log_event(
+            conn, contact_id, "contact_updated",
+            metadata=json.dumps({"fields": changed_fields}),
+            user_id=user_id,
+        )
+
+    conn.commit()
+
+    # Return fresh contact data
+    with get_cursor(conn) as cur:
+        cur.execute(
+            "SELECT * FROM contacts WHERE id = %s AND user_id = %s",
+            (contact_id, user_id),
+        )
+        contact = cur.fetchone()
+
+    return {"success": True, "contact": dict(contact) if contact else None}
 
 
 @router.post("/contacts/bulk/lifecycle")

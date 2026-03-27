@@ -1,5 +1,7 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import ErrorBoundary from "../components/ErrorBoundary";
+import ErrorCard from "../components/ui/ErrorCard";
+import Button from "../components/ui/Button";
 import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
@@ -581,12 +583,9 @@ function SmartImportInner() {
                 Drag and drop your CSV file here
               </p>
               <p className="text-sm text-gray-400 mb-4">or click to browse</p>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="px-4 py-2.5 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors"
-              >
+              <Button onClick={() => fileInputRef.current?.click()}>
                 Choose File
-              </button>
+              </Button>
             </div>
           )}
 
@@ -664,28 +663,11 @@ function SmartImportInner() {
 
           {/* Analyze error */}
           {analyzeMutation.isError && (
-            <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-lg p-4">
-              <AlertCircle
-                size={20}
-                className="text-red-600 shrink-0 mt-0.5"
-              />
-              <div className="flex-1">
-                <p className="text-sm font-medium text-red-800">
-                  AI mapping unavailable
-                </p>
-                <p className="text-sm text-red-700 mt-1">
-                  {(analyzeMutation.error as Error).message ||
-                    "Please check your file format."}
-                </p>
-              </div>
-              <button
-                onClick={handleAnalyze}
-                className="text-red-600 hover:text-red-800 shrink-0"
-                title="Retry"
-              >
-                <RotateCcw size={16} />
-              </button>
-            </div>
+            <ErrorCard
+              message={`AI mapping unavailable: ${(analyzeMutation.error as Error).message || "Please check your file format."}`}
+              onRetry={handleAnalyze}
+              retryLabel="Retry"
+            />
           )}
         </div>
       )}
@@ -824,27 +806,11 @@ function SmartImportInner() {
 
           {/* Preview error */}
           {previewMutation.isError && (
-            <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-lg p-4">
-              <AlertCircle
-                size={20}
-                className="text-red-600 shrink-0 mt-0.5"
-              />
-              <div className="flex-1">
-                <p className="text-sm font-medium text-red-800">
-                  Preview failed
-                </p>
-                <p className="text-sm text-red-700 mt-1">
-                  {(previewMutation.error as Error).message}
-                </p>
-              </div>
-              <button
-                onClick={() => previewMutation.mutate()}
-                className="text-red-600 hover:text-red-800 shrink-0"
-                title="Retry"
-              >
-                <RotateCcw size={16} />
-              </button>
-            </div>
+            <ErrorCard
+              message={`Preview failed: ${(previewMutation.error as Error).message}`}
+              onRetry={() => previewMutation.mutate()}
+              retryLabel="Retry"
+            />
           )}
         </div>
       )}
@@ -1137,27 +1103,11 @@ function SmartImportInner() {
 
           {/* Execute error */}
           {executeMutation.isError && (
-            <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-lg p-4">
-              <AlertCircle
-                size={20}
-                className="text-red-600 shrink-0 mt-0.5"
-              />
-              <div className="flex-1">
-                <p className="text-sm font-medium text-red-800">
-                  Import failed
-                </p>
-                <p className="text-sm text-red-700 mt-1">
-                  {(executeMutation.error as Error).message}
-                </p>
-              </div>
-              <button
-                onClick={() => executeMutation.mutate()}
-                className="text-red-600 hover:text-red-800 shrink-0"
-                title="Retry"
-              >
-                <RotateCcw size={16} />
-              </button>
-            </div>
+            <ErrorCard
+              message={`Import failed: ${(executeMutation.error as Error).message}`}
+              onRetry={() => executeMutation.mutate()}
+              retryLabel="Retry"
+            />
           )}
         </div>
       )}
@@ -1204,7 +1154,7 @@ function SmartImportInner() {
           </div>
 
           <div className="flex gap-3 pt-2">
-            <button
+            <Button
               onClick={() => {
                 const allContactIds = importResult.contact_ids ?? [];
                 const totalForCampaign = importResult.contacts_created
@@ -1218,7 +1168,6 @@ function SmartImportInner() {
                   },
                 });
               }}
-              className="px-6 py-2.5 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors"
             >
               Create Campaign with All {
                 importResult.contacts_created
@@ -1226,25 +1175,16 @@ function SmartImportInner() {
                 + (importResult.contacts_enrolled || 0)
                 + (importResult.duplicates_skipped || 0)
               } Contacts
-            </button>
-            <button
-              onClick={() => navigate("/contacts")}
-              className="px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
-            >
+            </Button>
+            <Button variant="secondary" onClick={() => navigate("/contacts")}>
               View Contacts
-            </button>
-            <button
-              onClick={resetAll}
-              className="px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
-            >
+            </Button>
+            <Button variant="secondary" onClick={resetAll}>
               Import More
-            </button>
-            <button
-              onClick={() => navigate(-1)}
-              className="px-4 py-2.5 text-gray-500 text-sm font-medium hover:text-gray-700 transition-colors"
-            >
+            </Button>
+            <Button variant="ghost" onClick={() => navigate(-1)}>
               &larr; Back
-            </button>
+            </Button>
           </div>
         </div>
       )}

@@ -819,6 +819,121 @@ class TestContactName:
         assert resp.status_code == 404
 
 
+class TestContactPatch:
+    """Tests for PATCH /contacts/{id} — partial contact update."""
+
+    def test_patch_email(self, client, db_conn):
+        coid = _seed_company(db_conn)
+        ctid = _seed_contact(db_conn, coid, email="old@example.com")
+        resp = client.patch(f"/api/contacts/{ctid}", json={"email": "new@example.com"})
+        assert resp.status_code == 200
+        assert resp.json()["success"] is True
+        # Verify email_status reset
+        from src.models.database import get_cursor
+        with get_cursor(db_conn) as cur:
+            cur.execute("SELECT email, email_normalized, email_status FROM contacts WHERE id = %s", (ctid,))
+            row = cur.fetchone()
+        assert row["email"] == "new@example.com"
+        assert row["email_normalized"] == "new@example.com"
+        assert row["email_status"] == "unverified"
+
+    def test_patch_invalid_email(self, client, db_conn):
+        coid = _seed_company(db_conn)
+        ctid = _seed_contact(db_conn, coid)
+        resp = client.patch(f"/api/contacts/{ctid}", json={"email": "not-an-email"})
+        assert resp.status_code == 400
+
+    def test_patch_duplicate_email(self, client, db_conn):
+        coid = _seed_company(db_conn)
+        ct1 = _seed_contact(db_conn, coid, email="taken@example.com")
+        ct2 = _seed_contact(db_conn, coid, email="other@example.com")
+        resp = client.patch(f"/api/contacts/{ct2}", json={"email": "taken@example.com"})
+        assert resp.status_code == 409
+
+    def test_patch_title_strips_html(self, client, db_conn):
+        coid = _seed_company(db_conn)
+        ctid = _seed_contact(db_conn, coid)
+        resp = client.patch(f"/api/contacts/{ctid}", json={"title": "<script>alert('xss')</script>Portfolio Manager"})
+        assert resp.status_code == 200
+        from src.models.database import get_cursor
+        with get_cursor(db_conn) as cur:
+            cur.execute("SELECT title FROM contacts WHERE id = %s", (ctid,))
+            row = cur.fetchone()
+        assert "<script>" not in row["title"]
+        assert "Portfolio Manager" in row["title"]
+
+    def test_patch_name_updates_full_name(self, client, db_conn):
+        coid = _seed_company(db_conn)
+        ctid = _seed_contact(db_conn, coid)
+        resp = client.patch(f"/api/contacts/{ctid}", json={"first_name": "Alice", "last_name": "Smith"})
+        assert resp.status_code == 200
+        from src.models.database import get_cursor
+        with get_cursor(db_conn) as cur:
+            cur.execute("SELECT first_name, last_name, full_name FROM contacts WHERE id = %s", (ctid,))
+            row = cur.fetchone()
+        assert row["full_name"] == "Alice Smith"
+        assert row["first_name"] == "Alice"
+        assert row["last_name"] == "Smith"
+
+    def test_patch_empty_first_name_rejected(self, client, db_conn):
+        coid = _seed_company(db_conn)
+        ctid = _seed_contact(db_conn, coid)
+        resp = client.patch(f"/api/contacts/{ctid}", json={"first_name": "", "last_name": "Smith"})
+        assert resp.status_code == 400
+
+    def test_patch_no_fields_rejected(self, client, db_conn):
+        coid = _seed_company(db_conn)
+        ctid = _seed_contact(db_conn, coid)
+        resp = client.patch(f"/api/contacts/{ctid}", json={})
+        assert resp.status_code == 400
+
+    def test_patch_not_found(self, client):
+        resp = client.patch("/api/contacts/99999", json={"title": "CEO"})
+        assert resp.status_code == 404
+
+    def test_patch_multiple_fields(self, client, db_conn):
+        coid = _seed_company(db_conn)
+        ctid = _seed_contact(db_conn, coid, email="old@test.com")
+        resp = client.patch(f"/api/contacts/{ctid}", json={
+            "email": "new@test.com",
+            "title": "Managing Director",
+            "first_name": "Jane",
+            "last_name": "Doe",
+        })
+        assert resp.status_code == 200
+        contact = resp.json()["contact"]
+        assert contact["email"] == "new@test.com"
+        assert contact["title"] == "Managing Director"
+        assert contact["full_name"] == "Jane Doe"
+
+    def test_patch_email_clears_channel_override(self, client, db_conn):
+        """Email change should clear channel_override for queue dedup re-evaluation."""
+        coid = _seed_company(db_conn)
+        ctid = _seed_contact(db_conn, coid, email="old@test.com")
+        # Enroll in a campaign and set channel_override
+        from src.models.campaigns import create_campaign
+        camp = create_campaign(db_conn, "TestCamp", user_id=TEST_USER_ID)
+        from src.models.enrollment import enroll_contact
+        enroll_contact(db_conn, ctid, camp, user_id=TEST_USER_ID)
+        from src.models.database import get_cursor
+        with get_cursor(db_conn) as cur:
+            cur.execute(
+                "UPDATE contact_campaign_status SET channel_override = 'linkedin_only' WHERE contact_id = %s",
+                (ctid,),
+            )
+        db_conn.commit()
+        # Patch email
+        resp = client.patch(f"/api/contacts/{ctid}", json={"email": "new@test.com"})
+        assert resp.status_code == 200
+        with get_cursor(db_conn) as cur:
+            cur.execute(
+                "SELECT channel_override FROM contact_campaign_status WHERE contact_id = %s",
+                (ctid,),
+            )
+            row = cur.fetchone()
+        assert row["channel_override"] is None
+
+
 class TestContactNotes:
     def test_add_note(self, client, db_conn):
         coid = _seed_company(db_conn)

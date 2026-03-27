@@ -214,9 +214,9 @@ export default function Templates() {
           <table className="w-full">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Name</th>
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Channel</th>
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Subject</th>
+                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide max-w-[180px]">Name</th>
+                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide w-24">Channel</th>
+                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide min-w-[280px]">Subject</th>
                 <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Variant</th>
                 <th className="text-right px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Actions</th>
               </tr>
@@ -230,7 +230,7 @@ export default function Templates() {
                       {t.channel}
                     </span>
                   </td>
-                  <td className="px-5 py-3 text-sm text-gray-600 truncate max-w-xs">
+                  <td className="px-5 py-3 text-sm text-gray-600 truncate max-w-xs" title={t.subject || ""}>
                     {t.subject || "-"}
                   </td>
                   <td className="px-5 py-3 text-sm text-gray-500">
