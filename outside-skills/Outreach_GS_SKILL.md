@@ -125,12 +125,22 @@ Given:
 
 ## Personalization Variables
 
-Always include these as placeholders — the outreach tool (e.g., Instantly, Lemlist, or the tool shown in the screenshot) will merge them:
+Always include these as placeholders — the outreach tool will merge them:
 - `{{first_name}}` — recipient first name
 - `{{company_name}}` — recipient company
 - `{{title}}` — recipient title
+- `{{calendly_url}}` — sender's meeting booking link (use in CTAs when suggesting a call)
 
 Use `{{first_name}}` in message 1 (LinkedIn) only if it's a connection request. In emails, use it in the greeting.
+
+Include `{{calendly_url}}` in at least one email CTA (typically the final email or the first email with a meeting ask). Format: "Book a time: {{calendly_url}}" or weave naturally into the CTA.
+
+## Signature Rules
+
+- Do NOT sign emails with the recipient's name or any assumed sender name.
+- Do NOT add a signature block. The outreach tool appends the sender's signature automatically.
+- End email messages with the CTA only — no "Best," no "Regards," no name.
+- For LinkedIn messages: never sign off. Just end with the message.
 
 ## Quality Checklist (self-verify before output)
 

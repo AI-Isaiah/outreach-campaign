@@ -1614,6 +1614,7 @@ function StepReview({
   channels: Set<string>;
 }) {
   const totalDays = steps.length > 0 ? steps[steps.length - 1].delay_days : 0;
+  const channelList = channels instanceof Set ? Array.from(channels) : [];
 
   return (
     <div className="space-y-4">
@@ -1640,7 +1641,7 @@ function StepReview({
         </div>
         <div className="flex justify-between text-sm">
           <span className="text-gray-500">Channels</span>
-          <span className="font-medium">{Array.from(channels).join(", ")}</span>
+          <span className="font-medium">{channelList.join(", ") || "none"}</span>
         </div>
       </div>
 
