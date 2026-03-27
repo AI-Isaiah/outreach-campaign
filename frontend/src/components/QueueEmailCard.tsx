@@ -19,12 +19,16 @@ function QueueEmailCard({
   onDeferred,
   isFocused,
   isApproved,
+  isSelected,
+  onToggle,
 }: {
   item: QueueItem;
   campaign: string;
   onDeferred?: () => void;
   isFocused?: boolean;
   isApproved?: boolean;
+  isSelected?: boolean;
+  onToggle?: (id: number) => void;
 }) {
   const [subject, setSubject] = useState(
     item.message_draft?.draft_subject || item.rendered_email?.subject || "",
@@ -95,11 +99,18 @@ function QueueEmailCard({
     <div
       className={`bg-white border rounded-lg shadow-sm overflow-hidden ${
         isFocused ? "ring-2 ring-blue-500 ring-offset-2 border-blue-300" : "border-gray-200"
-      }`}
+      } ${isSelected ? "border-l-4 border-l-blue-500 bg-blue-50/30" : ""}`}
       aria-label={`Email: ${item.contact_name}`}
     >
       <div className="bg-amber-50 px-5 py-3 flex items-center justify-between border-b border-amber-100">
         <div className="flex items-center gap-1.5">
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={(e) => { e.stopPropagation(); onToggle?.(item.contact_id); }}
+            className="w-4 h-4 accent-blue-600 flex-shrink-0 cursor-pointer"
+            aria-label={`Select ${item.contact_name}`}
+          />
           {isApproved && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
           <Mail size={16} className="text-amber-600 flex-shrink-0" />
           <span className="font-semibold text-gray-900">
