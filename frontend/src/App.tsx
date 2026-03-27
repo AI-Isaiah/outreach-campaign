@@ -19,7 +19,7 @@ const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Queue = lazy(() => import("./pages/Queue"));
 const CampaignDetail = lazy(() => import("./pages/CampaignDetail"));
 const CampaignBuilder = lazy(() => import("./pages/CampaignBuilder"));
-const CampaignWizard = lazy(() => import("./pages/CampaignWizard"));
+const CampaignWizard = lazy(() => import("./pages/campaigns/CampaignWizard"));
 const ContactList = lazy(() => import("./pages/ContactList"));
 const ContactDetail = lazy(() => import("./pages/ContactDetail"));
 const Templates = lazy(() => import("./pages/Templates"));

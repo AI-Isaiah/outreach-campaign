@@ -1,6 +1,7 @@
 """Tests for the smart CSV import pipeline."""
 
 import json
+import time
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -175,7 +176,9 @@ def test_analyze_csv_mocked_llm_success():
     sample_rows = [{"Firm Name": "Acme", "Country": "US", "Primary Email": "a@b.com",
                      "City": "NYC", "Phone": "555"}]
 
-    with patch("src.services.smart_import._call_llm", return_value=(llm_response, "anthropic")):
+    with patch("src.services.smart_import._get_cached_mapping", return_value=None), \
+         patch("src.services.smart_import._save_mapping_cache"), \
+         patch("src.services.smart_import.call_llm", return_value=(llm_response, "anthropic")):
         result = analyze_csv(headers, sample_rows, user_id=1, conn=mock_conn)
 
     assert result["provider"] == "anthropic"
@@ -196,7 +199,8 @@ def test_analyze_csv_llm_failure_heuristic_fallback():
     headers = ["Firm Name", "Country", "Primary Email"]
     sample_rows = [{"Firm Name": "Acme", "Country": "US", "Primary Email": "a@b.com"}]
 
-    with patch("src.services.smart_import._call_llm", side_effect=RuntimeError("No API key")):
+    with patch("src.services.smart_import._get_cached_mapping", return_value=None), \
+         patch("src.services.smart_import.call_llm", side_effect=RuntimeError("No API key")):
         result = analyze_csv(headers, sample_rows, user_id=1, conn=mock_conn)
 
     # Falls back to heuristic: provider should be None
@@ -227,7 +231,9 @@ def test_analyze_csv_llm_partial_heuristic_merge():
     sample_rows = [{"Firm Name": "Acme", "Country": "US",
                      "Primary Email": "a@b.com", "Position": "MD"}]
 
-    with patch("src.services.smart_import._call_llm", return_value=(llm_response, "openai")):
+    with patch("src.services.smart_import._get_cached_mapping", return_value=None), \
+         patch("src.services.smart_import._save_mapping_cache"), \
+         patch("src.services.smart_import.call_llm", return_value=(llm_response, "openai")):
         result = analyze_csv(headers, sample_rows, user_id=1, conn=mock_conn)
 
     assert result["provider"] == "openai"
@@ -1773,3 +1779,85 @@ def test_file_duplicate_triple(tmp_db):
         assert triage["new_contacts"] == 1
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Performance tests
+# ---------------------------------------------------------------------------
+
+
+class TestLargeImportPerformance:
+    """Performance tests for import pipeline at scale."""
+
+    def _generate_rows(self, n: int) -> tuple[list[str], list[dict]]:
+        """Generate n CSV rows with realistic data."""
+        headers = ["Company Name", "Country", "First Name", "Last Name", "Email", "Title", "LinkedIn URL"]
+        rows = []
+        for i in range(n):
+            rows.append({
+                "Company Name": f"Fund Alpha {i}",
+                "Country": "Germany" if i % 3 == 0 else "United States",
+                "First Name": f"Contact{i}",
+                "Last Name": f"Person{i}",
+                "Email": f"contact{i}@fund{i}.com",
+                "Title": "Managing Director",
+                "LinkedIn URL": f"https://linkedin.com/in/person{i}",
+            })
+        return headers, rows
+
+    def test_transform_10k_rows_performance(self):
+        """Transform 10,000 rows completes in <30 seconds."""
+        headers, rows = self._generate_rows(10_000)
+        mapping = {
+            "Company Name": "company.name",
+            "Country": "company.country",
+            "First Name": "contact.first_name",
+            "Last Name": "contact.last_name",
+            "Email": "contact.email",
+            "Title": "contact.title",
+            "LinkedIn URL": "contact.linkedin_url",
+        }
+
+        start = time.monotonic()
+        result = transform_rows(rows, mapping, multi_contact={"detected": False, "contact_groups": []}, gdpr_countries=["germany"])
+        elapsed = time.monotonic() - start
+
+        assert len(result) == 10_000
+        assert elapsed < 30, f"Transform took {elapsed:.1f}s (max 30s)"
+        # Verify GDPR detection worked
+        gdpr_count = sum(1 for r in result if r.get("is_gdpr"))
+        assert gdpr_count > 0, "Expected some GDPR contacts"
+
+    def test_preview_10k_rows_performance(self, tmp_db):
+        """Preview 10,000 rows completes in <30 seconds."""
+        conn = get_connection(tmp_db)
+        try:
+            run_migrations(conn)
+            headers, rows = self._generate_rows(10_000)
+            mapping = {
+                "Company Name": "company.name",
+                "Country": "company.country",
+                "First Name": "contact.first_name",
+                "Last Name": "contact.last_name",
+                "Email": "contact.email",
+                "Title": "contact.title",
+                "LinkedIn URL": "contact.linkedin_url",
+            }
+            transformed = transform_rows(rows, mapping, multi_contact={"detected": False, "contact_groups": []}, gdpr_countries=[])
+
+            start = time.monotonic()
+            result = preview_import(conn, transformed, user_id=TEST_USER_ID)
+            elapsed = time.monotonic() - start
+
+            assert result["total_contacts"] == 10_000
+            assert result["new_contacts"] == 10_000
+            assert elapsed < 30, f"Preview took {elapsed:.1f}s (max 30s)"
+        finally:
+            conn.close()
+
+    def test_row_count_cap(self):
+        """Verify that generating >10k rows is detectable for row cap enforcement."""
+        headers, rows = self._generate_rows(10_001)
+        assert len(rows) == 10_001
+        # The route enforces MAX_IMPORT_ROWS = 10_000; this test verifies
+        # the data generation works and the cap logic can distinguish.

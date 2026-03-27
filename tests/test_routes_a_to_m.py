@@ -401,6 +401,7 @@ class TestCampaignLaunch:
             "name": "dup_name",
             "steps": [{"step_order": 1, "channel": "email", "delay_days": 0}],
             "contact_ids": [],
+            "status": "draft",  # draft bypasses 0-contacts check — testing name uniqueness
         })
         assert resp.status_code == 409
 

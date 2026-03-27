@@ -1,3 +1,4 @@
+import React from "react";
 import { ChevronDown, ChevronRight, Building2, ExternalLink } from "lucide-react";
 import type {
   PreviewRow,
@@ -129,7 +130,7 @@ export function MatchStatusBadge({
 }
 
 /** Expandable side-by-side comparison panel for matched contacts. */
-export function ComparisonPanel({
+export const ComparisonPanel = React.memo(function ComparisonPanel({
   row,
   onDecision,
 }: {
@@ -245,4 +246,4 @@ export function ComparisonPanel({
       </td>
     </tr>
   );
-}
+});

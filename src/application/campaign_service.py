@@ -53,6 +53,9 @@ def launch_campaign(
     if not steps:
         raise ValueError("At least one sequence step is required")
 
+    if status == "active" and not contact_ids:
+        raise ValueError("Active campaigns require at least 1 contact")
+
     # Verify all contacts belong to this user before starting the transaction
     if contact_ids:
         with get_cursor(conn) as cur:

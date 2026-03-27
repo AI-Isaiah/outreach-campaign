@@ -71,8 +71,8 @@ def test_parse_insights_invalid_json():
     assert result["template_suggestions"] == []
 
 
-@patch("src.services.llm_advisor.ANTHROPIC_API_KEY", "")
-def test_run_analysis_no_api_key(tmp_db):
+@patch("src.services.llm_client.detect_provider", return_value=None)
+def test_run_analysis_no_api_key(mock_detect, tmp_db):
     """Should return a useful message when API key is missing."""
     conn = get_connection(tmp_db)
     run_migrations(conn)
@@ -90,22 +90,16 @@ def test_run_analysis_no_api_key(tmp_db):
     conn.close()
 
 
-@patch("src.services.llm_advisor.ANTHROPIC_API_KEY", "test-key")
-@patch("src.services.llm_advisor.httpx.post")
-def test_run_analysis_with_mock_llm(mock_post, tmp_db):
+@patch("src.services.llm_client.detect_provider", return_value=("anthropic", "test-key"))
+@patch("src.services.llm_client._call_anthropic")
+def test_run_analysis_with_mock_llm(mock_call, mock_detect, tmp_db):
     """Should call LLM and store results."""
     mock_response = json.dumps({
         "insights": ["Email works better than LinkedIn", "Large funds respond more"],
         "template_suggestions": ["Try personalized subject lines"],
         "strategy_notes": "Prioritize $1B+ funds and use email channel.",
     })
-    mock_post.return_value = MagicMock(
-        status_code=200,
-        raise_for_status=MagicMock(),
-        json=MagicMock(
-            return_value={"content": [{"text": mock_response}]}
-        ),
-    )
+    mock_call.return_value = mock_response
 
     conn = get_connection(tmp_db)
     run_migrations(conn)

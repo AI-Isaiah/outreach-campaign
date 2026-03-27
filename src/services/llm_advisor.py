@@ -8,11 +8,9 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-
-import httpx
 
 from src.models.database import get_cursor
+from src.services.llm_client import call_llm_safe
 from src.services.retry import retry_on_failure
 from src.services.response_analyzer import (
     get_channel_performance,
@@ -22,9 +20,6 @@ from src.services.response_analyzer import (
 )
 
 logger = logging.getLogger(__name__)
-
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-ADVISOR_MODEL = "claude-haiku-4-5-20251001"
 
 
 def run_analysis(conn, campaign_id: int) -> dict:
@@ -175,39 +170,24 @@ def _build_analysis_prompt(
 
 
 def _call_llm(prompt: str) -> str:
-    """Call Claude API with the given prompt."""
-    if not ANTHROPIC_API_KEY:
+    """Call LLM via shared client. Returns raw text or JSON fallback on error."""
+    from src.services.llm_client import detect_provider
+    if not detect_provider():
         return json.dumps({
-            "insights": ["ANTHROPIC_API_KEY not configured — unable to run analysis."],
+            "insights": ["No LLM API key configured — unable to run analysis."],
             "template_suggestions": [],
-            "strategy_notes": "Configure ANTHROPIC_API_KEY in .env to enable AI analysis.",
+            "strategy_notes": "Configure ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY in .env.",
         })
 
-    try:
-        resp = httpx.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model": ADVISOR_MODEL,
-                "max_tokens": 1000,
-                "messages": [{"role": "user", "content": prompt}],
-            },
-            timeout=60,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        return data["content"][0]["text"]
-    except (httpx.HTTPError, json.JSONDecodeError, KeyError, IndexError):
-        logger.exception("LLM advisor call failed")
-        return json.dumps({
-            "insights": ["LLM API call failed — check logs for details."],
-            "template_suggestions": [],
-            "strategy_notes": "Retry or check API key configuration.",
-        })
+    api_error_fallback = json.dumps({
+        "insights": ["LLM API call failed — check logs for details."],
+        "template_suggestions": [],
+        "strategy_notes": "Retry or check API key configuration.",
+    })
+    text, provider = call_llm_safe(prompt, max_tokens=1000, timeout=60.0, fallback=api_error_fallback)
+    if provider is None:
+        return api_error_fallback
+    return text
 
 
 def _parse_insights(response_text: str) -> dict:

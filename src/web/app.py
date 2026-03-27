@@ -45,6 +45,7 @@ from src.web.routes import (  # noqa: E402
     crm,
     deals,
     deep_research,
+    drafts,
     gmail,
     gmail_oauth,
     import_routes,
@@ -155,6 +156,7 @@ _auth_deps = [Depends(require_auth)]
 
 app.include_router(queue.router, prefix="/api", dependencies=_auth_deps)
 app.include_router(campaigns.router, prefix="/api", dependencies=_auth_deps)
+app.include_router(drafts.router, prefix="/api", dependencies=_auth_deps)
 app.include_router(contacts.router, prefix="/api", dependencies=_auth_deps)
 app.include_router(stats.router, prefix="/api", dependencies=_auth_deps)
 app.include_router(gmail.router, prefix="/api", dependencies=_auth_deps)
