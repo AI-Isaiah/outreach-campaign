@@ -1599,7 +1599,7 @@ function StepMessages({
                       : "bg-indigo-100 text-indigo-700"
                   }`}
                 >
-                  {isEmail ? "Email" : "LinkedIn"}
+                  {CHANNEL_LABELS[s.channel] ?? s.channel}
                 </span>
               </div>
 

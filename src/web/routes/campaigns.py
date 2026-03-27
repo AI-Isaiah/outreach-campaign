@@ -126,7 +126,7 @@ def list_all_campaigns(
 ):
     """List all campaigns with embedded metrics (CTE for O(1) table scans)."""
     user_id = user["id"]
-    status_filter = "AND c.status = %s" if status else ""
+    status_filter = "AND c.status = %s" if status else "AND c.status != 'archived'"
 
     query = f"""
     WITH campaign_stats AS (

@@ -9,7 +9,7 @@ const CONVERSATION_CHANNELS = [
   "conference", "phone", "telegram", "whatsapp", "email", "linkedin", "in_person", "video_call",
 ];
 
-export default function ContactConversations({ contactId }: { contactId: number }) {
+export default function ContactConversations({ contactId, inline }: { contactId: number; inline?: boolean }) {
   const queryClient = useQueryClient();
 
   const [convForm, setConvForm] = useState({
@@ -51,10 +51,12 @@ export default function ContactConversations({ contactId }: { contactId: number 
     },
   });
 
+  const Wrapper = inline ? "div" : Card;
+
   return (
-    <Card>
+    <Wrapper>
       <div className="flex items-center justify-between mb-4">
-        <h2 className="font-semibold text-gray-900">Conversations</h2>
+        <h2 className={`font-semibold text-gray-900 ${inline ? "text-sm" : ""}`}>Conversations</h2>
         <Button
           variant={showConvForm ? "ghost" : "primary"}
           size="sm"
@@ -149,6 +151,6 @@ export default function ContactConversations({ contactId }: { contactId: number 
       ) : (
         <p className="text-sm text-gray-400">No conversations logged yet.</p>
       )}
-    </Card>
+    </Wrapper>
   );
 }

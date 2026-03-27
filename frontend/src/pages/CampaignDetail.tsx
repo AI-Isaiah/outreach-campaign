@@ -13,6 +13,7 @@ import {
   Linkedin,
   Inbox,
   X,
+  ListOrdered,
 } from "lucide-react";
 import { campaignsApi } from "../api/campaigns";
 import type { CampaignContact } from "../api/campaigns";
@@ -229,26 +230,34 @@ export default function CampaignDetail() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <MetricCard
-          label="Contacted"
-          value={metrics.emails_sent + metrics.linkedin_connects}
-          accent="green"
-        />
-        <MetricCard
-          label="Replied"
-          value={(metrics.by_status?.replied_positive || 0) + (metrics.by_status?.replied_negative || 0)}
-          accent="blue"
-        />
-        <MetricCard
-          label="Waiting"
-          value={metrics.by_status?.in_progress || 0}
-          accent="yellow"
-        />
-        <MetricCard
-          label="Calls Booked"
-          value={metrics.calls_booked}
-          accent="green"
-        />
+        <button className="text-left" onClick={() => { switchTab("contacts"); setSearchParams({ filter: "contacted" }, { replace: true }); }}>
+          <MetricCard
+            label="Contacted"
+            value={metrics.emails_sent + metrics.linkedin_connects}
+            accent="green"
+          />
+        </button>
+        <button className="text-left" onClick={() => { switchTab("contacts"); setSearchParams({ filter: "replied" }, { replace: true }); }}>
+          <MetricCard
+            label="Replied"
+            value={(metrics.by_status?.replied_positive || 0) + (metrics.by_status?.replied_negative || 0)}
+            accent="blue"
+          />
+        </button>
+        <button className="text-left" onClick={() => { switchTab("contacts"); setSearchParams({ filter: "in_progress" }, { replace: true }); }}>
+          <MetricCard
+            label="Waiting"
+            value={metrics.by_status?.in_progress || 0}
+            accent="yellow"
+          />
+        </button>
+        <button className="text-left" onClick={() => { switchTab("contacts"); setSearchParams({ filter: "calls_booked" }, { replace: true }); }}>
+          <MetricCard
+            label="Calls Booked"
+            value={metrics.calls_booked}
+            accent="green"
+          />
+        </button>
       </div>
 
       <div
@@ -277,7 +286,7 @@ export default function CampaignDetail() {
         {activeTab === "contacts" && <ContactsTab campaignName={name!} campaignId={campaign.id} />}
         {activeTab === "queue" && <QueueTab campaignName={name!} />}
         {activeTab === "messages" && <MessagesTab />}
-        {activeTab === "sequence" && <SequenceTab />}
+        {activeTab === "sequence" && <SequenceTab campaignName={campaign.name} />}
         {activeTab === "analytics" && <AnalyticsTab metricsData={metricsData} campaignName={name!} />}
       </div>
     </div>
@@ -287,7 +296,20 @@ export default function CampaignDetail() {
 // ─── Contacts Tab ──────────────────────────────────────────────────
 
 function ContactsTab({ campaignName, campaignId }: { campaignName: string; campaignId: number }) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filterParam = searchParams.get("filter") || "";
   const [statusFilter, setStatusFilter] = useState<string>("");
+  const [sortField, setSortField] = useState<string>("step");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  // Sync metric card filter from URL params
+  useEffect(() => {
+    if (filterParam === "contacted") setStatusFilter("no_response");
+    else if (filterParam === "replied") setStatusFilter("replied_positive");
+    else if (filterParam === "calls_booked") setStatusFilter("completed");
+    else if (filterParam === "in_progress") setStatusFilter("in_progress");
+    else if (filterParam) setStatusFilter(filterParam);
+  }, [filterParam]);
 
   const { data, isLoading, isError, error, refetch } = useQuery<CampaignContact[]>({
     queryKey: ["campaign-contacts", campaignId, statusFilter],
@@ -297,13 +319,53 @@ function ContactsTab({ campaignName, campaignId }: { campaignName: string; campa
     }),
   });
 
+  // Client-side sort
+  const sortedData = useMemo(() => {
+    if (!data) return [];
+    const sorted = [...data].sort((a, b) => {
+      let cmp = 0;
+      switch (sortField) {
+        case "contact": cmp = (a.full_name || "").localeCompare(b.full_name || ""); break;
+        case "company": cmp = (a.company_name || "").localeCompare(b.company_name || ""); break;
+        case "step": cmp = a.current_step - b.current_step; break;
+        case "status": cmp = a.status.localeCompare(b.status); break;
+        default: cmp = 0;
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+    return sorted;
+  }, [data, sortField, sortDir]);
+
+  const toggleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortDir("asc");
+    }
+  };
+
   if (isLoading) return <SkeletonTable rows={5} cols={5} />;
   if (isError) return <ErrorCard message={(error as Error).message} onRetry={() => refetch()} />;
+
+  const SortHeader = ({ field, children }: { field: string; children: React.ReactNode }) => (
+    <th
+      className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide cursor-pointer hover:text-gray-700 select-none"
+      onClick={() => toggleSort(field)}
+    >
+      <span className="inline-flex items-center gap-1">
+        {children}
+        {sortField === field && (
+          <span className="text-gray-400">{sortDir === "asc" ? "↑" : "↓"}</span>
+        )}
+      </span>
+    </th>
+  );
 
   return (
     <div className="space-y-4">
       {/* Filter */}
-      <div className="flex gap-2">
+      <div className="flex gap-2 flex-wrap">
         {["", "queued", "in_progress", "replied_positive", "replied_negative", "no_response", "bounced", "completed", "unsubscribed"].map((s) => (
           <button
             key={s}
@@ -312,27 +374,27 @@ function ContactsTab({ campaignName, campaignId }: { campaignName: string; campa
                 ? "bg-gray-900 text-white"
                 : "bg-gray-100 text-gray-600 hover:bg-gray-200"
             }`}
-            onClick={() => setStatusFilter(s)}
+            onClick={() => { setStatusFilter(s); setSearchParams({}, { replace: true }); }}
           >
             {s === "" ? "All" : s.replace(/_/g, " ")}
           </button>
         ))}
       </div>
 
-      {data && data.length > 0 ? (
+      {sortedData.length > 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
           <table className="w-full">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Contact</th>
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Company</th>
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Step</th>
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Status</th>
+                <SortHeader field="contact">Contact</SortHeader>
+                <SortHeader field="company">Company</SortHeader>
+                <SortHeader field="step">Step</SortHeader>
+                <SortHeader field="status">Status</SortHeader>
                 <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {data.map((c) => (
+              {sortedData.map((c) => (
                 <tr key={c.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-5 py-4">
                     <Link
@@ -587,10 +649,22 @@ function MessagesTab() {
 
 // ─── Sequence Tab ──────────────────────────────────────────────────
 
-function SequenceTab() {
+function SequenceTab({ campaignName }: { campaignName: string }) {
   return (
-    <div className="text-center py-12 text-sm text-gray-500">
-      No sequence steps defined.
+    <div className="text-center py-12">
+      <div className="w-12 h-12 rounded-full bg-purple-50 flex items-center justify-center mx-auto mb-3">
+        <ListOrdered size={24} className="text-purple-500" />
+      </div>
+      <h3 className="text-sm font-semibold text-gray-900 mb-1">No sequence set up</h3>
+      <p className="text-sm text-gray-500 mb-4">
+        Add a message sequence to automate your outreach for this campaign.
+      </p>
+      <a
+        href={`/campaigns/wizard?campaign=${encodeURIComponent(campaignName)}`}
+        className="inline-flex items-center gap-1.5 bg-gray-900 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-800"
+      >
+        Set Up Sequence
+      </a>
     </div>
   );
 }
