@@ -797,9 +797,16 @@ class TestSendCampaignEmail:
         self, mock_smtp_class, conn, sample_contact, sample_campaign,
         sample_template, sample_config
     ):
-        mock_server = MagicMock()
-        mock_smtp_class.return_value.__enter__ = MagicMock(return_value=mock_server)
-        mock_smtp_class.return_value.__exit__ = MagicMock(return_value=False)
+        _mock_smtp(mock_smtp_class)
+
+        # Need 2 steps so send can advance from step 1 to step 2
+        t2 = create_template(
+            conn, name="Follow Up v1 A", channel="email",
+            body_template="Follow up {{ first_name }}.",
+            subject="Following up", user_id=TEST_USER_ID,
+        )
+        add_sequence_step(conn, sample_campaign, 1, "email", sample_template, user_id=TEST_USER_ID)
+        add_sequence_step(conn, sample_campaign, 2, "email", t2, user_id=TEST_USER_ID)
 
         enroll_contact(conn, sample_contact, sample_campaign, user_id=TEST_USER_ID)
         status_before = get_contact_campaign_status(conn, sample_contact, sample_campaign, user_id=1)
