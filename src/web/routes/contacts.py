@@ -609,12 +609,8 @@ def patch_contact(
             if not first:
                 raise HTTPException(400, "First name is required")
             full = f"{first} {last}".strip()
-            name_norm = full.lower()
-            fields.extend([
-                "first_name = %s", "last_name = %s",
-                "full_name = %s", "name_normalized = %s",
-            ])
-            params.extend([first, last, full, name_norm])
+            fields.extend(["first_name = %s", "last_name = %s", "full_name = %s"])
+            params.extend([first, last, full])
             changed_fields.append("name")
 
         # Title
