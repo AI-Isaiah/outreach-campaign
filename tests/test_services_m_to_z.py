@@ -71,12 +71,19 @@ def _enroll_contact(
     if next_action_date is None:
         next_action_date = date.today().isoformat()
     cur = conn.cursor()
+    # Look up stable_id for the step so queue JOINs work
+    cur.execute(
+        "SELECT stable_id FROM sequence_steps WHERE campaign_id = %s AND step_order = %s",
+        (campaign_id, current_step),
+    )
+    row = cur.fetchone()
+    step_id = str(row["stable_id"]) if row else None
     cur.execute(
         """INSERT INTO contact_campaign_status
-           (contact_id, campaign_id, status, current_step,
+           (contact_id, campaign_id, status, current_step, current_step_id,
             next_action_date, assigned_variant, channel_override)
-           VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-        (contact_id, campaign_id, status, current_step,
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+        (contact_id, campaign_id, status, current_step, step_id,
          next_action_date, assigned_variant, channel_override),
     )
     conn.commit()

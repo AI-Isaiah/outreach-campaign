@@ -630,10 +630,14 @@ class TestQueue:
         co = _seed_company(db_conn, name="Undo Co")
         cid = _seed_contact(db_conn, co, email="undo@test.com")
         camp_id = _seed_campaign(db_conn, "undo_test")
+        # Need 2 steps so undo can regress from step 2 to step 1
+        from src.models.enrollment import add_sequence_step
+        add_sequence_step(db_conn, camp_id, 1, "email", user_id=TEST_USER_ID)
+        add_sequence_step(db_conn, camp_id, 2, "email", user_id=TEST_USER_ID)
         from src.models.campaigns import enroll_contact
         enroll_contact(db_conn, cid, camp_id,
                        next_action_date=date.today().isoformat(), user_id=TEST_USER_ID)
-        # Simulate a recent send by setting sent_at = NOW()
+        # Simulate a recent send by setting sent_at = NOW() and step advanced to 2
         cur = db_conn.cursor()
         cur.execute(
             """UPDATE contact_campaign_status

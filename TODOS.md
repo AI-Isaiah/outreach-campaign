@@ -43,10 +43,10 @@
 **What:** Select All + card checkboxes → review gate modal (stats, safety checks, random samples) → abortable send loop with progress → 30s undo. Server-side 1-per-company + dedup validation. Migration columns (approved_at, scheduled_for, sent_at) already shipped in migration 024.
 **Why:** Approving and sending each card individually is the biggest daily friction.
 
-### Post-import campaign creation flow
-**Priority:** P1 | **Sprint:** 3
+### ~~Post-import campaign creation flow~~
+**Priority:** P1 | **Sprint:** 3 | **Status:** Complete
 **Files:** `frontend/src/pages/SmartImport.tsx`, `frontend/src/pages/CampaignWizard.tsx`
-**What:** After import, show "Create Campaign with N Contacts" CTA. Navigate to wizard with contacts pre-populated (skip Step 2).
+**What:** After import, show "Create Campaign with N Contacts" CTA. Navigate to wizard with contacts pre-populated (pre-selects in Step 2 CRM tab).
 **Why:** Import dumps users on contacts page with no clear next step.
 
 ### Fund intelligence signals
@@ -55,19 +55,19 @@
 **What:** Extract time-sensitive signals from deep_research.crypto_signals + talking_points JSONB. Store as fund_signals JSONB on deep_research. Surface as badges on queue cards with tooltips.
 **Why:** "Reach out to Paradigm — they announced a $750M fund 2 weeks ago" makes outreach feel like insider knowledge.
 
-### Scheduled send
-**Priority:** P1 | **Sprint:** 4
-**Files:** `src/web/routes/queue.py`, cron endpoint, migration (reuses 025)
-**What:** `/cron/send-scheduled` endpoint (every 15 min). Picks up items where `scheduled_for <= NOW() AND sent_at IS NULL`. Sends via existing email pipeline with idempotency guard.
+### ~~Scheduled send~~
+**Priority:** P1 | **Sprint:** 4 | **Status:** Complete
+**Files:** `src/web/routes/queue.py`, `src/web/routes/replies.py`, `vercel.json`
+**What:** `/queue/schedule` API (presets: now, tomorrow_9am, spread_3_days, custom ISO). `/cron/send-scheduled` cron (every 15 min). Frontend Schedule button with dropdown. Vercel cron configured.
 **Why:** Lets users review queue in the evening and schedule sends for morning. Prevents 20 emails at once (spam filter risk).
 
 ---
 
 ## P1 — Next Up (post-sweep)
 
-### Auto-sequence advancement
-**Priority:** P1
-**What:** After an email is sent, automatically set `next_action_date` for the next step based on `delay_days` and move `current_step` forward. Turns the sequence engine from "manual crank" to "set and forget."
+### ~~Auto-sequence advancement~~
+**Priority:** P1 | **Status:** Complete
+**What:** After an email is sent, automatically set `next_action_date` for the next step based on `delay_days` and move `current_step` forward. Clears `approved_at`/`scheduled_for`/`sent_at` so contact re-enters approval queue for the next step. Works in SMTP send path, Gmail draft path, and LinkedIn actions.
 **Depends on:** Batch send (Sprint 3), scheduled send (Sprint 4).
 
 ### Meeting booking integration
@@ -77,31 +77,27 @@
 
 ---
 
-## P1 — Sequence Editor v2
+## ~~P1 — Sequence Editor v2~~
 
-### Sequence reordering (drag-and-drop)
-**Priority:** P1
+### ~~Sequence reordering (drag-and-drop)~~
+**Priority:** P1 | **Status:** Complete
 **Files:** `frontend/src/pages/CampaignDetail.tsx` (SequenceTab), `src/web/routes/campaigns.py`
-**What:** Allow reordering sequence steps via drag-and-drop in the Sequence tab. Warn when contacts have already received messages at the affected steps. Prompt on batch send if resequenced contacts are included. User can dismiss prompt permanently per campaign or once.
-**Why:** The sequence is set during wizard creation and frozen. Users need to adjust step order for live campaigns.
+**What:** Drag-and-drop reordering via dnd-kit. Uses stable_id (UUID) for step references so reorder doesn't break enrolled contacts. Warns when contacts have already received messages at affected steps. Reorder updates queued contacts to new step 1.
 
-### Inline template editing in sequence tab
-**Priority:** P1
+### ~~Inline template editing in sequence tab~~
+**Priority:** P1 | **Status:** Complete
 **Files:** `frontend/src/pages/CampaignDetail.tsx` (SequenceTab), `src/web/routes/templates.py`
-**What:** Click a sequence step to expand and edit its message template inline. Show subject + body with live preview. Save via existing template update API.
-**Why:** Currently requires navigating to Templates page. Should be editable right where the sequence is displayed.
+**What:** Click a sequence step to expand and edit channel, delay_days, and template inline. Recalculates delays on reorder.
 
-### Campaign queue shows all queued contacts (not just today)
-**Priority:** P1
+### ~~Campaign queue shows all queued contacts~~
+**Priority:** P1 | **Status:** Complete
 **Files:** `frontend/src/pages/CampaignDetail.tsx` (QueueTab), `src/application/queue_service.py`
-**What:** Campaign detail Queue tab should show all contacts with status "queued" or "in_progress", not just those with next_action_date = today. The contact tab shows "Queued" status but Queue tab shows empty.
-**Why:** User sees "2 contacts" as queued in contacts tab but queue shows empty. Confusing UX gap.
+**What:** Queue tab supports scope filter (today/all/overdue). Shows all queued contacts, not just today's.
 
-### Messages tab purpose: sent message history
-**Priority:** P2
+### ~~Messages tab: sent message history~~
+**Priority:** P2 | **Status:** Complete
 **Files:** `frontend/src/pages/CampaignDetail.tsx` (MessagesTab), `src/web/routes/campaigns.py`
-**What:** Show sent message history for this campaign. Each row: contact name, template used, sent date, reply status. Currently shows empty "No messages sent yet" placeholder.
-**Why:** Users need to see what was actually sent, not just what's queued.
+**What:** Shows sent message history for this campaign. Each row: contact name, template used, sent date, reply status.
 
 ### Resizable table columns
 **Priority:** P2
@@ -183,6 +179,23 @@
 ---
 
 ## Completed
+
+### Sequence Editor v2 + Auto-Sequence Advancement
+**Completed:** 2026-03-27, branch main
+- Drag-and-drop sequence reordering with stable_id (UUID) references (dnd-kit)
+- Inline step editing (channel, delay_days, template) with delay recalculation on reorder
+- Queue tab scope filters (today/all/overdue)
+- Messages tab: sent message history
+- Reorder updates queued contacts to new step 1
+- Auto-sequence advancement: after email send, sets `next_action_date = today + delay_days`, clears `approved_at`/`scheduled_for`/`sent_at` so contact re-enters approval queue
+- Gmail draft path also auto-advances with correct `next_action_date`
+- 5 backend tests (TestAutoSequenceAdvancement)
+
+### Post-import Campaign Flow + Scheduled Send
+**Completed:** 2026-03-27, branch main
+- Post-import "Create Campaign with N Contacts" CTA → wizard with pre-selected contacts
+- Scheduled send: `/queue/schedule` API + `/cron/send-scheduled` cron (15 min) + frontend Schedule dropdown
+- Vercel cron configuration for both scan-replies (30 min) and send-scheduled (15 min)
 
 ### Friction Sweep Sprint 1 + Sprint 2
 **Completed:** 2026-03-26, branch feat/friction-sweep-sprint1

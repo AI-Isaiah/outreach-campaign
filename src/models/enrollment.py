@@ -103,6 +103,8 @@ def enroll_contact(
     """Enroll a contact in a campaign. Returns enrollment id, or None if already enrolled.
 
     Verifies the campaign belongs to the user before enrolling.
+    Auto-populates current_step_id from the campaign's first sequence step
+    when first_step_stable_id is not provided.
     """
     with get_cursor(conn) as cursor:
         cursor.execute(
@@ -111,6 +113,17 @@ def enroll_contact(
         )
         if cursor.fetchone() is None:
             raise PermissionError(f"Campaign {campaign_id} not found or not owned by user {user_id}")
+
+        # Auto-populate from first sequence step when not provided
+        if first_step_stable_id is None:
+            cursor.execute(
+                "SELECT stable_id FROM sequence_steps WHERE campaign_id = %s AND step_order = 1",
+                (campaign_id,),
+            )
+            row = cursor.fetchone()
+            if row:
+                first_step_stable_id = str(row["stable_id"])
+
         try:
             cursor.execute(
                 """INSERT INTO contact_campaign_status
@@ -242,7 +255,20 @@ def update_contact_campaign_status(
     if current_step is not None:
         fields.append("current_step = %s")
         params.append(current_step)
+        # Reset send-cycle fields so the contact re-enters the approval queue
         fields.append("sent_at = NULL")
+        fields.append("approved_at = NULL")
+        fields.append("scheduled_for = NULL")
+        # Auto-resolve current_step_id when not explicitly provided
+        if current_step_id is None:
+            with get_cursor(conn) as cur:
+                cur.execute(
+                    "SELECT stable_id FROM sequence_steps WHERE campaign_id = %s AND step_order = %s",
+                    (campaign_id, current_step),
+                )
+                row = cur.fetchone()
+                if row:
+                    current_step_id = str(row["stable_id"])
     if current_step_id is not None:
         fields.append("current_step_id = %s")
         params.append(current_step_id)
