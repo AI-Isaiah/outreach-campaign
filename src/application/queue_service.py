@@ -135,12 +135,22 @@ def get_enriched_queue(
 
     enriched = _batch_enrich(conn, items, campaign_id, config, user_id=user_id)
 
+    # Total enrolled count (unfiltered) so frontend can distinguish
+    # "no contacts" from "contacts exist but are filtered out"
+    with get_cursor(conn) as cur:
+        cur.execute(
+            "SELECT COUNT(*) AS cnt FROM contact_campaign_status WHERE campaign_id = %s",
+            (campaign_id,),
+        )
+        total_enrolled = cur.fetchone()["cnt"]
+
     return {
         "campaign": campaign,
         "campaign_id": campaign_id,
         "date": date,
         "items": enriched,
         "total": len(enriched),
+        "total_enrolled": total_enrolled,
         "firm_type_counts": firm_type_counts,
     }
 

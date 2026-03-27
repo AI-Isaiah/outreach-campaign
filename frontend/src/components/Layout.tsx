@@ -10,6 +10,7 @@ import {
   Menu,
   X,
   LogOut,
+  Inbox,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { queryKeys } from "../api/queryKeys";
@@ -29,6 +30,7 @@ export default function Layout() {
 
   const primaryLinks = useMemo(() => [
     { to: "/", label: "Campaigns", icon: Megaphone, end: true },
+    { to: "/queue", label: "Today's Queue", icon: Inbox, end: false },
     { to: "/contacts", label: "Contacts", icon: Users, end: false },
   ], []);
 

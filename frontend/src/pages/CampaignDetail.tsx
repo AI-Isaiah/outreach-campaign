@@ -475,6 +475,7 @@ function QueueTab({ campaignName }: { campaignName: string }) {
   });
 
   const allItems: QueueItem[] = data?.items || [];
+  const totalEnrolled: number = (data as any)?.total_enrolled ?? 0;
   const emailItems = allItems.filter((i) => i.channel === "email");
   const linkedinItems = allItems.filter((i) => i.channel.startsWith("linkedin"));
   const flatItems = useMemo(
@@ -588,23 +589,35 @@ function QueueTab({ campaignName }: { campaignName: string }) {
   );
 
   if (allItems.length === 0) {
+    // Distinguish "no contacts at all" from "contacts enrolled but filtered out"
+    const hasEnrolled = totalEnrolled > 0;
+    let title: string;
+    let subtitle: string;
+    if (queueScope === "overdue") {
+      title = "Nothing overdue. Nice.";
+      subtitle = "All outreach is on schedule.";
+    } else if (queueScope === "today") {
+      title = hasEnrolled ? "All caught up!" : "No contacts enrolled yet";
+      subtitle = hasEnrolled
+        ? "No actions for today. Check back tomorrow."
+        : "Enroll contacts to start seeing queue items.";
+    } else if (hasEnrolled) {
+      title = `${totalEnrolled} contacts enrolled, but none match the queue`;
+      subtitle = "Contacts may need email verification, or their next action date hasn't arrived yet. Check the Contacts tab for details.";
+    } else {
+      title = "No contacts enrolled yet";
+      subtitle = "Enroll contacts to start seeing queue items.";
+    }
+
     return (
       <div>
         {scopePills}
         <div className="text-center py-16">
-          <div className="w-16 h-16 rounded-full bg-green-50 flex items-center justify-center mx-auto mb-4">
-            <Inbox size={28} className="text-green-500" />
+          <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${hasEnrolled && queueScope === "all" ? "bg-amber-50" : "bg-green-50"}`}>
+            <Inbox size={28} className={hasEnrolled && queueScope === "all" ? "text-amber-500" : "text-green-500"} />
           </div>
-          <h2 className="text-lg font-semibold text-gray-900 mb-1">
-            {queueScope === "overdue" ? "Nothing overdue. Nice." : queueScope === "today" ? "All caught up!" : "No contacts enrolled yet"}
-          </h2>
-          <p className="text-sm text-gray-500">
-            {queueScope === "overdue"
-              ? "All outreach is on schedule."
-              : queueScope === "today"
-                ? "No actions for today in this campaign. Check back tomorrow."
-                : "Enroll contacts to start seeing queue items."}
-          </p>
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">{title}</h2>
+          <p className="text-sm text-gray-500 max-w-md mx-auto">{subtitle}</p>
         </div>
       </div>
     );
@@ -730,8 +743,8 @@ function MessagesTab({ campaignId }: { campaignId: number }) {
         <thead className="bg-gray-50 border-b border-gray-200">
           <tr>
             <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Contact</th>
-            <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Company</th>
-            <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Template</th>
+            <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Channel</th>
+            <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Subject / Action</th>
             <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Sent</th>
             <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Reply</th>
           </tr>
@@ -740,7 +753,9 @@ function MessagesTab({ campaignId }: { campaignId: number }) {
           {messages.map((msg: any) => (
             <tr key={msg.id} className="hover:bg-gray-50 transition-colors">
               <td className="px-5 py-4 text-sm font-medium text-gray-900">{msg.contact_name}</td>
-              <td className="px-5 py-4 text-sm text-gray-500">{msg.company_name}</td>
+              <td className="px-5 py-4 text-sm text-gray-500">
+                {msg.event_type === "email_sent" ? "Email" : msg.event_type === "linkedin_connect" ? "LinkedIn Connect" : msg.event_type === "linkedin_message" ? "LinkedIn Message" : msg.event_type?.replace(/_/g, " ") || "\u2014"}
+              </td>
               <td className="px-5 py-4 text-sm text-gray-500">{msg.template_subject || "\u2014"}</td>
               <td className="px-5 py-4 text-sm text-gray-500">{new Date(msg.sent_at).toLocaleDateString()}</td>
               <td className="px-5 py-4">
