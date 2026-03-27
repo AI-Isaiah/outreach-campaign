@@ -129,7 +129,7 @@ class TestComputeHealthScore:
         assert score == 28
 
     def test_no_emails_sent(self):
-        """No emails sent means bounce_rate is 0 (avoids division by zero)."""
+        """No emails sent returns None (N/A) — not enough data for a score."""
         metrics = {
             "total_enrolled": 5,
             "by_status": {
@@ -143,12 +143,7 @@ class TestComputeHealthScore:
             "emails_sent": 0,
         }
         score = compute_health_score(metrics)
-        assert score is not None
-        # positive_reply_rate = 0, contribution = 0
-        # send_velocity = 0/5 = 0, contribution = 0
-        # bounce_rate = 0 (emails_sent == 0 branch), penalty = 0
-        # total = 0
-        assert score == 0
+        assert score is None
 
     def test_missing_by_status_keys(self):
         """Missing keys in by_status default to 0."""
