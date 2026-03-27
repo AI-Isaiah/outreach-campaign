@@ -77,6 +77,38 @@
 
 ---
 
+## P1 — Sequence Editor v2
+
+### Sequence reordering (drag-and-drop)
+**Priority:** P1
+**Files:** `frontend/src/pages/CampaignDetail.tsx` (SequenceTab), `src/web/routes/campaigns.py`
+**What:** Allow reordering sequence steps via drag-and-drop in the Sequence tab. Warn when contacts have already received messages at the affected steps. Prompt on batch send if resequenced contacts are included. User can dismiss prompt permanently per campaign or once.
+**Why:** The sequence is set during wizard creation and frozen. Users need to adjust step order for live campaigns.
+
+### Inline template editing in sequence tab
+**Priority:** P1
+**Files:** `frontend/src/pages/CampaignDetail.tsx` (SequenceTab), `src/web/routes/templates.py`
+**What:** Click a sequence step to expand and edit its message template inline. Show subject + body with live preview. Save via existing template update API.
+**Why:** Currently requires navigating to Templates page. Should be editable right where the sequence is displayed.
+
+### Campaign queue shows all queued contacts (not just today)
+**Priority:** P1
+**Files:** `frontend/src/pages/CampaignDetail.tsx` (QueueTab), `src/application/queue_service.py`
+**What:** Campaign detail Queue tab should show all contacts with status "queued" or "in_progress", not just those with next_action_date = today. The contact tab shows "Queued" status but Queue tab shows empty.
+**Why:** User sees "2 contacts" as queued in contacts tab but queue shows empty. Confusing UX gap.
+
+### Messages tab purpose: sent message history
+**Priority:** P2
+**Files:** `frontend/src/pages/CampaignDetail.tsx` (MessagesTab), `src/web/routes/campaigns.py`
+**What:** Show sent message history for this campaign. Each row: contact name, template used, sent date, reply status. Currently shows empty "No messages sent yet" placeholder.
+**Why:** Users need to see what was actually sent, not just what's queued.
+
+### Templates back-link from edit page
+**Priority:** P2
+**Files:** `frontend/src/pages/TemplateEdit.tsx` or equivalent
+**What:** Template edit page should have a back link to the templates overview. Currently no navigation back.
+**Why:** Basic navigation flow. "Back is always from where the user came."
+
 ## P2 — Backlog (deferred from friction sweep)
 
 ### Phase 5: Campaign kanban
