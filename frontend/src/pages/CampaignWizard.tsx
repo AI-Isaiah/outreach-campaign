@@ -1152,21 +1152,26 @@ function StepMessages({
         model: aiModel,
       }),
     onSuccess: (data) => {
+      const messages = data?.messages;
+      if (!messages || !Array.isArray(messages) || messages.length === 0) {
+        toast("AI returned no messages. Try again or write manually.", "error");
+        return;
+      }
       const newModes: Record<number, 'template' | 'manual' | 'ai'> = {};
       const newSubjects: Record<number, string> = { ...manualSubjects };
       const newBodies: Record<number, string> = { ...manualBodies };
-      for (const msg of data.messages) {
+      for (const msg of messages) {
         newModes[msg.step_order] = "manual";
         if (msg.subject) newSubjects[msg.step_order] = msg.subject;
-        newBodies[msg.step_order] = msg.body;
+        if (msg.body) newBodies[msg.step_order] = msg.body;
       }
       setTemplateModes({ ...templateModes, ...newModes });
       setManualSubjects(newSubjects);
       setManualBodies(newBodies);
-      toast(`Generated messages for ${data.messages.length} steps`, "success");
+      toast(`Generated messages for ${messages.length} steps`, "success");
     },
-    onError: () => {
-      toast("AI generation failed. Set messages manually.", "error");
+    onError: (err: Error) => {
+      toast(`AI generation failed: ${err.message}. Try again or write manually.`, "error");
     },
   });
 
