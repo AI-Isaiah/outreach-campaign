@@ -450,6 +450,22 @@ def reorder_sequence(
         )
         affected_count = cursor.fetchone()["cnt"]
 
+        # Update contacts who haven't been contacted yet to point to the new step 1
+        # These are contacts with status='queued' on the old step 1 who should now start
+        # at whatever step is now in position 1 after reorder.
+        cursor.execute(
+            """UPDATE contact_campaign_status ccs
+               SET current_step_id = (
+                   SELECT stable_id FROM sequence_steps
+                   WHERE campaign_id = %s AND step_order = 1
+               ),
+               current_step = 1
+               WHERE ccs.campaign_id = %s
+                 AND ccs.status = 'queued'
+                 AND ccs.current_step = 1""",
+            (campaign_id, campaign_id),
+        )
+
         # Recalculate next_action_date for affected contacts
         if affected_count > 0:
             cursor.execute("""

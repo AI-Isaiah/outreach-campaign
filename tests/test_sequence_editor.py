@@ -312,6 +312,56 @@ class TestReorderEndpoint:
         assert response.status_code == 200
         assert response.json()["affected_count"] == 1
 
+    def test_reorder_updates_queued_contacts_to_new_step_1(self, client, conn, sample_campaign):
+        """Queued contacts on step 1 should point to the new step 1 after reorder."""
+        campaign_id, steps = sample_campaign
+        # steps[0]=email(order=1), steps[1]=linkedin(order=2), steps[2]=email(order=3)
+
+        company_id = insert_company(conn, "ReorderUpdateCo")
+        contact_id = insert_contact(conn, company_id)
+        enroll_contact(
+            conn, contact_id, campaign_id,
+            first_step_stable_id=steps[0]["stable_id"],
+            user_id=TEST_USER_ID,
+        )
+        update_contact_campaign_status(
+            conn, contact_id, campaign_id, status="queued", user_id=TEST_USER_ID
+        )
+        conn.commit()
+
+        # Verify contact is on step 1 (email)
+        with get_cursor(conn) as cursor:
+            cursor.execute(
+                "SELECT current_step, current_step_id FROM contact_campaign_status WHERE contact_id = %s AND campaign_id = %s",
+                (contact_id, campaign_id),
+            )
+            before = cursor.fetchone()
+        assert before["current_step"] == 1
+        assert str(before["current_step_id"]) == steps[0]["stable_id"]
+
+        # Reorder: move linkedin (steps[1]) to position 1
+        response = client.put(
+            f"/api/campaigns/{campaign_id}/sequence/reorder",
+            json={
+                "steps": [
+                    {"step_id": steps[1]["id"], "step_order": 1},
+                    {"step_id": steps[0]["id"], "step_order": 2},
+                    {"step_id": steps[2]["id"], "step_order": 3},
+                ]
+            },
+        )
+        assert response.status_code == 200
+
+        # Contact should now point to the NEW step 1 (linkedin)
+        with get_cursor(conn) as cursor:
+            cursor.execute(
+                "SELECT current_step, current_step_id FROM contact_campaign_status WHERE contact_id = %s AND campaign_id = %s",
+                (contact_id, campaign_id),
+            )
+            after = cursor.fetchone()
+        assert after["current_step"] == 1
+        assert str(after["current_step_id"]) == steps[1]["stable_id"]  # now linkedin
+
     def test_reorder_zero_affected_when_no_enrollments(self, client, sample_campaign):
         """Reorder with no enrolled contacts returns affected_count=0."""
         campaign_id, steps = sample_campaign
