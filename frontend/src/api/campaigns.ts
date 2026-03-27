@@ -100,7 +100,7 @@ export const campaignsApi = {
       method: "POST", body: JSON.stringify(data),
     }),
 
-  reorderSequence: (campaignId: number, steps: { step_id: number; step_order: number }[]) =>
+  reorderSequence: (campaignId: number, steps: { step_id: number; step_order: number; delay_days?: number; channel?: string }[]) =>
     request<{ affected_count: number }>(`/campaigns/${campaignId}/sequence/reorder`, {
       method: "PUT", body: JSON.stringify({ steps }),
     }),

@@ -17,12 +17,12 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { campaignsApi } from "../api/campaigns";
 import { request } from "../api/request";
 import { useToast } from "./Toast";
 import { CHANNEL_LABELS } from "../constants";
-import { channelBadgeClass } from "../utils/sequenceUtils";
+import { channelBadgeClass, recalcSteps } from "../utils/sequenceUtils";
 
 interface SequenceStep {
   id: number;
@@ -80,9 +80,19 @@ function SortableStepRow({
   const isExpanded = expandedId === step.id;
   const [editSubject, setEditSubject] = useState(step.template_subject || "");
   const [editBody, setEditBody] = useState(step.template_body || "");
+  const [editDelay, setEditDelay] = useState(step.delay_days);
+  const [editChannel, setEditChannel] = useState(step.channel);
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Fetch available templates for the selector
+  const { data: templates } = useQuery<{ id: number; name: string; channel: string; subject: string }[]>({
+    queryKey: ["templates-list"],
+    queryFn: () => request("/templates"),
+    enabled: isExpanded,
+    staleTime: 60_000,
+  });
 
   const saveMutation = useMutation({
     mutationFn: () => {
@@ -96,6 +106,19 @@ function SortableStepRow({
       toast("Template saved", "success");
       queryClient.invalidateQueries({ queryKey: ["campaign-sequence", campaignId] });
       onToggleExpand(step.id);
+    },
+    onError: (err: Error) => {
+      toast(err.message, "error");
+    },
+  });
+
+  // Save step properties (delay_days, channel, template_id)
+  const updateStepMutation = useMutation({
+    mutationFn: (updates: { delay_days?: number; channel?: string; template_id?: number }) =>
+      campaignsApi.updateSequenceStep(campaignId, step.id, updates),
+    onSuccess: () => {
+      toast("Step updated", "success");
+      queryClient.invalidateQueries({ queryKey: ["campaign-sequence", campaignId] });
     },
     onError: (err: Error) => {
       toast(err.message, "error");
@@ -146,7 +169,7 @@ function SortableStepRow({
 
           {/* Delay */}
           <span className="text-xs text-gray-400 shrink-0">
-            {step.delay_days === 0 ? "Day 0" : `Day ${step.delay_days}`}
+            Day {step.delay_days}
           </span>
 
           {/* Template name or placeholder */}
@@ -154,16 +177,14 @@ function SortableStepRow({
             {step.template_subject || (step.template_id ? `Template #${step.template_id}` : "No template")}
           </span>
 
-          {/* Expand/collapse */}
-          {step.template_id && (
-            <button
-              onClick={() => onToggleExpand(step.id)}
-              className="text-gray-400 hover:text-gray-600 shrink-0"
-              title={isExpanded ? "Collapse" : "Edit template"}
-            >
-              {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-            </button>
-          )}
+          {/* Expand/collapse — always available */}
+          <button
+            onClick={() => onToggleExpand(step.id)}
+            className="text-gray-400 hover:text-gray-600 shrink-0"
+            title={isExpanded ? "Collapse" : "Edit step"}
+          >
+            {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          </button>
 
           {/* Delete */}
           <button
@@ -178,43 +199,103 @@ function SortableStepRow({
       </div>
 
       {/* Expanded editing panel */}
-      {isExpanded && step.template_id && (
-        <div className="bg-gray-50 border-x border-b border-gray-100 rounded-b-lg px-5 py-4 -mt-px space-y-3">
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Subject</label>
-            <input
-              type="text"
-              value={editSubject}
-              onChange={(e) => setEditSubject(e.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-              placeholder="Email subject"
-            />
+      {isExpanded && (
+        <div className="bg-gray-50 border-x border-b border-gray-100 rounded-b-lg px-5 py-4 -mt-px space-y-4">
+          {/* Step properties row */}
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Channel</label>
+              <select
+                value={editChannel}
+                onChange={(e) => {
+                  setEditChannel(e.target.value);
+                  updateStepMutation.mutate({ channel: e.target.value });
+                }}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white"
+              >
+                <option value="email">Email</option>
+                <option value="linkedin_connect">LinkedIn Connect</option>
+                <option value="linkedin_message">LinkedIn Message</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Send on day</label>
+              <input
+                type="number"
+                min={0}
+                value={editDelay}
+                onChange={(e) => setEditDelay(Number(e.target.value))}
+                onBlur={() => {
+                  if (editDelay !== step.delay_days) {
+                    updateStepMutation.mutate({ delay_days: editDelay });
+                  }
+                }}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Template</label>
+              <select
+                value={step.template_id ?? ""}
+                onChange={(e) => {
+                  const tid = e.target.value ? Number(e.target.value) : undefined;
+                  if (tid) updateStepMutation.mutate({ template_id: tid });
+                }}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white"
+              >
+                <option value="">Select template...</option>
+                {(templates || []).map((t) => (
+                  <option key={t.id} value={t.id}>{t.name || t.subject || `Template #${t.id}`}</option>
+                ))}
+              </select>
+            </div>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Body</label>
-            <textarea
-              value={editBody}
-              onChange={(e) => setEditBody(e.target.value)}
-              rows={6}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-y"
-              placeholder="Message body"
-            />
-          </div>
-          <div className="flex gap-2 justify-end">
-            <button
-              onClick={() => onToggleExpand(step.id)}
-              className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={() => saveMutation.mutate()}
-              disabled={saveMutation.isPending}
-              className="px-3 py-1.5 text-xs font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50"
-            >
-              {saveMutation.isPending ? "Saving..." : "Save"}
-            </button>
-          </div>
+
+          {/* Template content editor (when template is assigned) */}
+          {step.template_id && (
+            <>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Subject</label>
+                <input
+                  type="text"
+                  value={editSubject}
+                  onChange={(e) => setEditSubject(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                  placeholder="Email subject"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Body</label>
+                <textarea
+                  value={editBody}
+                  onChange={(e) => setEditBody(e.target.value)}
+                  rows={6}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-y"
+                  placeholder="Message body"
+                />
+              </div>
+              <div className="flex gap-2 justify-end">
+                <button
+                  onClick={() => onToggleExpand(step.id)}
+                  className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => saveMutation.mutate()}
+                  disabled={saveMutation.isPending}
+                  className="px-3 py-1.5 text-xs font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50"
+                >
+                  {saveMutation.isPending ? "Saving..." : "Save"}
+                </button>
+              </div>
+            </>
+          )}
+
+          {/* No template assigned hint */}
+          {!step.template_id && (
+            <p className="text-xs text-gray-400">Select a template above to edit its content here.</p>
+          )}
         </div>
       )}
     </div>
@@ -237,7 +318,12 @@ export default function SequenceEditorDetail({ campaignId, steps, enrolledCount 
     mutationFn: (reordered: SequenceStep[]) =>
       campaignsApi.reorderSequence(
         campaignId,
-        reordered.map((s, i) => ({ step_id: s.id, step_order: i + 1 })),
+        reordered.map((s, i) => ({
+          step_id: s.id,
+          step_order: i + 1,
+          delay_days: s.delay_days,
+          channel: s.channel,
+        })),
       ),
     onSuccess: (data) => {
       toast(`Reordered ${data.affected_count} step${data.affected_count !== 1 ? "s" : ""}`, "success");
@@ -273,7 +359,18 @@ export default function SequenceEditorDetail({ campaignId, steps, enrolledCount 
     const newIndex = steps.findIndex((s) => s.id === over.id);
     if (oldIndex === -1 || newIndex === -1) return;
 
-    const reordered = arrayMove(steps, oldIndex, newIndex);
+    const moved = arrayMove(steps, oldIndex, newIndex);
+    // Recalculate delay_days + enforce linkedin_connect-first rule
+    const recalced = recalcSteps(
+      moved.map((s) => ({ ...s, _id: String(s.id) }))
+    );
+    // Map back to SequenceStep shape with recalculated values
+    const reordered = recalced.map((r, i) => ({
+      ...moved[i],
+      step_order: r.step_order,
+      delay_days: r.delay_days,
+      channel: r.channel,
+    }));
     reorderMutation.mutate(reordered);
   };
 

@@ -378,6 +378,8 @@ def get_campaign_template_performance(
 class ReorderStep(BaseModel):
     step_id: int
     step_order: int
+    delay_days: Optional[int] = None
+    channel: Optional[str] = None
 
 
 class ReorderRequest(BaseModel):
@@ -415,12 +417,29 @@ def reorder_sequence(
         )
 
         # Phase 2: set final values via parameterized CASE
-        case_sql = " ".join("WHEN %s THEN %s" for _ in body.steps)
-        case_params = [v for s in body.steps for v in (s.step_id, s.step_order)]
+        order_case = " ".join("WHEN %s THEN %s" for _ in body.steps)
+        order_params = [v for s in body.steps for v in (s.step_id, s.step_order)]
+
+        # Build optional delay_days and channel CASE clauses
+        set_clauses = [f"step_order = CASE id {order_case} END"]
+        all_params = list(order_params)
+
+        if any(s.delay_days is not None for s in body.steps):
+            delay_case = " ".join("WHEN %s THEN %s" for _ in body.steps)
+            delay_params = [v for s in body.steps for v in (s.step_id, s.delay_days if s.delay_days is not None else 0)]
+            set_clauses.append(f"delay_days = CASE id {delay_case} END")
+            all_params.extend(delay_params)
+
+        if any(s.channel is not None for s in body.steps):
+            ch_case = " ".join("WHEN %s THEN %s" for _ in body.steps)
+            ch_params = [v for s in body.steps for v in (s.step_id, s.channel if s.channel is not None else "email")]
+            set_clauses.append(f"channel = CASE id {ch_case} END")
+            all_params.extend(ch_params)
+
         cursor.execute(
-            f"UPDATE sequence_steps SET step_order = CASE id {case_sql} END "
+            f"UPDATE sequence_steps SET {', '.join(set_clauses)} "
             f"WHERE campaign_id = %s AND id IN ({placeholders})",
-            case_params + [campaign_id] + step_ids,
+            all_params + [campaign_id] + step_ids,
         )
 
         # Count affected contacts
