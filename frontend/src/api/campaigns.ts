@@ -99,4 +99,32 @@ export const campaignsApi = {
     request<{ steps: GeneratedStep[] }>(`/campaigns/${campaignId}/generate-sequence`, {
       method: "POST", body: JSON.stringify(data),
     }),
+
+  reorderSequence: (campaignId: number, steps: { step_id: number; step_order: number }[]) =>
+    request<{ affected_count: number }>(`/campaigns/${campaignId}/sequence/reorder`, {
+      method: "PUT", body: JSON.stringify({ steps }),
+    }),
+
+  updateSequenceStep: (campaignId: number, stepId: number, updates: { channel?: string; delay_days?: number; template_id?: number }) =>
+    request<{ success: boolean }>(`/campaigns/${campaignId}/sequence/${stepId}`, {
+      method: "PATCH", body: JSON.stringify(updates),
+    }),
+
+  addSequenceStep: (campaignId: number, step: { channel: string; delay_days?: number; template_id?: number; step_order?: number }) =>
+    request<{ id: number; success: boolean }>(`/campaigns/${campaignId}/sequence`, {
+      method: "POST", body: JSON.stringify(step),
+    }),
+
+  deleteSequenceStep: (campaignId: number, stepId: number) =>
+    request<{ success: boolean }>(`/campaigns/${campaignId}/sequence/${stepId}`, {
+      method: "DELETE",
+    }),
+
+  getCampaignMessages: (campaignId: number, params: { limit?: number; offset?: number } = {}) => {
+    const query = new URLSearchParams();
+    if (params.limit) query.set("limit", String(params.limit));
+    if (params.offset) query.set("offset", String(params.offset));
+    const qs = query.toString();
+    return request<{ messages: any[]; total: number }>(`/campaigns/${campaignId}/messages${qs ? `?${qs}` : ""}`);
+  },
 };
