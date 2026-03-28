@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import re
+import time
 
 from datetime import datetime, timezone
 
@@ -82,10 +83,10 @@ Rules:
 Output format:
 MESSAGE: <message text>"""
 
-SYSTEM_PROMPTS = {
-    Channel.EMAIL: SYSTEM_EMAIL,
-    Channel.LINKEDIN_CONNECT: SYSTEM_LINKEDIN_CONNECT,
-    Channel.LINKEDIN_MESSAGE: SYSTEM_LINKEDIN_MESSAGE,
+SYSTEM_PROMPTS: dict[str, str] = {
+    "email": SYSTEM_EMAIL,
+    "linkedin_connect": SYSTEM_LINKEDIN_CONNECT,
+    "linkedin_message": SYSTEM_LINKEDIN_MESSAGE,
 }
 
 
@@ -185,8 +186,7 @@ def generate_draft(
                 "found" if research else "not available",
                 contact.get("company_id"))
 
-    import time as _time
-    _t0 = _time.monotonic()
+    _t0 = time.monotonic()
     system_prompt = SYSTEM_PROMPTS[prompt_type]
     resp = httpx.post(
         "https://api.anthropic.com/v1/messages",
@@ -205,7 +205,7 @@ def generate_draft(
     )
     resp.raise_for_status()
     raw_text = resp.json()["content"][0]["text"]
-    _elapsed = _time.monotonic() - _t0
+    _elapsed = time.monotonic() - _t0
     logger.info("Haiku response: %d chars, %.1fs", len(raw_text), _elapsed)
 
     # 7. Parse response
@@ -366,8 +366,7 @@ def generate_sequence_messages(
 
     logger.info("Generating sequence messages: %d steps, user=%d", len(steps), user_id)
 
-    import time as _time
-    _t0 = _time.monotonic()
+    _t0 = time.monotonic()
     resp = httpx.post(
         "https://api.anthropic.com/v1/messages",
         headers={
@@ -385,7 +384,7 @@ def generate_sequence_messages(
     )
     resp.raise_for_status()
     raw_text = resp.json()["content"][0]["text"]
-    _elapsed = _time.monotonic() - _t0
+    _elapsed = time.monotonic() - _t0
     logger.info("Sequence generation: %d chars, %.1fs", len(raw_text), _elapsed)
 
     messages = _parse_sequence_response(raw_text, steps)

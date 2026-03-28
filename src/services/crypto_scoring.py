@@ -64,6 +64,7 @@ def classify_crypto_interest(
         f'"reasoning": "<your reasoning>"}}'
     )
 
+    text = ""
     try:
         resp = httpx.post(
             "https://api.anthropic.com/v1/messages",
@@ -92,8 +93,9 @@ def classify_crypto_interest(
             if brace_match:
                 text = brace_match.group(0)
         return json.loads(text)
-    except (json.JSONDecodeError, KeyError):
-        logger.warning("Failed to parse classification for %s: %s", company_name, text[:200] if 'text' in dir() else "no text")
+    except (json.JSONDecodeError, KeyError) as exc:
+        raw_preview = text[:200] if isinstance(text, str) else "no text"
+        logger.warning("Failed to parse classification for %s: %s — raw: %s", company_name, exc, raw_preview)
         return {
             "crypto_score": 20,
             "category": "no_signal",
