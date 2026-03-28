@@ -32,6 +32,10 @@ import HealthScoreBadge from "../components/HealthScoreBadge";
 import QueueEmailCard from "../components/QueueEmailCard";
 import QueueLinkedInCard from "../components/QueueLinkedInCard";
 import SequenceEditorDetail from "../components/SequenceEditorDetail";
+import type { SequenceStep } from "../components/SequenceEditorDetail";
+import { useToast } from "../components/Toast";
+import { CHANNEL_LABELS } from "../constants";
+import { channelBadgeClass } from "../utils/sequenceUtils";
 import CrmContactPicker from "./campaigns/components/CrmContactPicker";
 
 type Tab = "contacts" | "messages" | "sequence" | "analytics" | "queue";
@@ -299,6 +303,11 @@ export default function CampaignDetail() {
 
 // ─── Contacts Tab ──────────────────────────────────────────────────
 
+const CONTACT_STATUS_FILTERS = [
+  "", "queued", "in_progress", "replied_positive", "replied_negative",
+  "no_response", "bounced", "completed", "unsubscribed",
+] as const;
+
 function ContactsTab({ campaignName, campaignId, onSwitchTab }: { campaignName: string; campaignId: number; onSwitchTab: (tab: Tab) => void }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const filterParam = searchParams.get("filter") || "";
@@ -308,6 +317,7 @@ function ContactsTab({ campaignName, campaignId, onSwitchTab }: { campaignName: 
   const [showAddContacts, setShowAddContacts] = useState(false);
   const [addContactIds, setAddContactIds] = useState<Set<number>>(new Set());
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   // Sync metric card filter from URL params
   useEffect(() => {
@@ -372,7 +382,7 @@ function ContactsTab({ campaignName, campaignId, onSwitchTab }: { campaignName: 
     <div className="space-y-4">
       {/* Filter + Add Contacts */}
       <div className="flex gap-2 flex-wrap items-center">
-        {["", "queued", "in_progress", "replied_positive", "replied_negative", "no_response", "bounced", "completed", "unsubscribed"].map((s) => (
+        {CONTACT_STATUS_FILTERS.map((s) => (
           <button
             key={s}
             className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
@@ -405,13 +415,14 @@ function ContactsTab({ campaignName, campaignId, onSwitchTab }: { campaignName: 
               <button
                 onClick={async () => {
                   try {
-                    const result = await campaignsApi.enrollContacts(campaignId, Array.from(addContactIds));
+                    await campaignsApi.enrollContacts(campaignId, Array.from(addContactIds));
                     queryClient.invalidateQueries({ queryKey: ["campaign-contacts", campaignId] });
                     queryClient.invalidateQueries({ queryKey: ["campaign-detail"] });
+                    toast(`Enrolled ${addContactIds.size} contact${addContactIds.size !== 1 ? "s" : ""}`, "success");
                     setAddContactIds(new Set());
                     setShowAddContacts(false);
-                  } catch (err: any) {
-                    alert(err.message || "Failed to enroll contacts");
+                  } catch (err: unknown) {
+                    toast((err as Error).message || "Failed to enroll contacts", "error");
                   }
                 }}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
@@ -456,12 +467,10 @@ function ContactsTab({ campaignName, campaignId, onSwitchTab }: { campaignName: 
                           e.preventDefault();
                           onSwitchTab("queue");
                         }}
-                        className={`text-xs font-medium px-2 py-0.5 rounded cursor-pointer hover:opacity-80 transition-opacity ${
-                          c.current_channel === "email" ? "bg-blue-100 text-blue-700" : c.current_channel?.startsWith("linkedin") ? "bg-indigo-100 text-indigo-700" : "bg-gray-100 text-gray-600"
-                        }`}
+                        className={`text-xs font-medium px-2 py-0.5 rounded cursor-pointer hover:opacity-80 transition-opacity ${channelBadgeClass(c.current_channel || "")}`}
                         title={`View in queue`}
                       >
-                        {c.current_channel === "email" ? "Email" : c.current_channel === "linkedin_connect" ? "Connect" : c.current_channel === "linkedin_message" ? "Message" : `Step ${c.current_step}`}
+                        {CHANNEL_LABELS[c.current_channel || ""] ?? `Step ${c.current_step}`}
                       </button>
                       <span className="text-xs text-gray-400">{c.current_step}/{c.total_steps}</span>
                     </div>
@@ -633,7 +642,9 @@ function QueueTab({ campaignName }: { campaignName: string }) {
               : "bg-gray-100 text-gray-600 hover:bg-gray-200"
           }`}
         >
-          {scope === "all" ? "All Queued" : scope === "today" ? `Due today (${new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })})` : "Overdue"}
+          {scope === "all" && "All Queued"}
+          {scope === "today" && `Due today (${new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })})`}
+          {scope === "overdue" && "Overdue"}
         </button>
       ))}
     </div>
@@ -764,6 +775,15 @@ function ReplyBadge({ status }: { status: string }) {
   return <span className="inline-block w-2.5 h-2.5 rounded-full bg-gray-300" title="No reply" />;
 }
 
+const EVENT_TYPE_LABELS: Record<string, string> = {
+  email_sent: "Email",
+  linkedin_connect: "LinkedIn Connect",
+  linkedin_message: "LinkedIn Message",
+  linkedin_engage: "LinkedIn Engage",
+  linkedin_insight: "LinkedIn Insight",
+  linkedin_final: "LinkedIn Final",
+};
+
 function MessagesTab({ campaignId }: { campaignId: number }) {
   const [offset, setOffset] = useState(0);
   const { data, isLoading } = useQuery({
@@ -805,7 +825,7 @@ function MessagesTab({ campaignId }: { campaignId: number }) {
             <tr key={msg.id} className="hover:bg-gray-50 transition-colors">
               <td className="px-5 py-4 text-sm font-medium text-gray-900">{msg.contact_name}</td>
               <td className="px-5 py-4 text-sm text-gray-500">
-                {msg.event_type === "email_sent" ? "Email" : msg.event_type === "linkedin_connect" ? "LinkedIn Connect" : msg.event_type === "linkedin_message" ? "LinkedIn Message" : msg.event_type?.replace(/_/g, " ") || "\u2014"}
+                {EVENT_TYPE_LABELS[msg.event_type] ?? msg.event_type?.replace(/_/g, " ") ?? "\u2014"}
               </td>
               <td className="px-5 py-4 text-sm text-gray-500">{msg.template_subject || "\u2014"}</td>
               <td className="px-5 py-4 text-sm text-gray-500">{new Date(msg.sent_at).toLocaleDateString()}</td>
@@ -833,9 +853,9 @@ function MessagesTab({ campaignId }: { campaignId: number }) {
 // ─── Sequence Tab ──────────────────────────────────────────────────
 
 function SequenceTab({ campaignName, campaignId }: { campaignName: string; campaignId: number }) {
-  const { data: steps, isLoading } = useQuery<{ id: number; step_order: number; channel: string; delay_days: number; template_id: number | null; draft_mode: string | null; template_subject?: string; template_body?: string }[]>({
+  const { data: steps, isLoading } = useQuery<SequenceStep[]>({
     queryKey: ["campaign-sequence", campaignId],
-    queryFn: () => request<{ id: number; step_order: number; channel: string; delay_days: number; template_id: number | null; draft_mode: string | null; template_subject?: string; template_body?: string }[]>(`/campaigns/${campaignId}/sequence`),
+    queryFn: () => request<SequenceStep[]>(`/campaigns/${campaignId}/sequence`),
     enabled: !!campaignId,
   });
 
@@ -1116,9 +1136,7 @@ function TemplatePerformanceTable({
                   )}
                 </td>
                 <td className="px-5 py-4">
-                  <span className={`text-xs font-medium px-2 py-0.5 rounded ${
-                    t.channel === "email" ? "bg-blue-100 text-blue-700" : "bg-indigo-100 text-indigo-700"
-                  }`}>
+                  <span className={`text-xs font-medium px-2 py-0.5 rounded ${channelBadgeClass(t.channel)}`}>
                     {t.channel === "email" ? "Email" : "LinkedIn"}
                   </span>
                 </td>

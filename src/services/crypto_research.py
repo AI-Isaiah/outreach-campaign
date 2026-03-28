@@ -39,13 +39,11 @@ from src.services.crypto_scoring import (  # noqa: F401
     estimate_job_cost,
 )
 from src.services.crypto_web_scraper import (  # noqa: F401
+    COST_CRAWL,
+    COST_WEB_SEARCH,
     crawl_company_website,
     discover_contacts_at_company,
     research_company_web_search,
-)
-from src.services.crypto_web_scraper import (
-    COST_WEB_SEARCH,
-    COST_CRAWL,
 )
 from src.services.crypto_scoring import COST_LLM
 

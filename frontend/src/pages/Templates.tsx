@@ -10,6 +10,7 @@ import Button from "../components/ui/Button";
 import Card from "../components/ui/Card";
 import Input from "../components/ui/Input";
 import Select from "../components/ui/Select";
+import { channelBadgeClass } from "../utils/sequenceUtils";
 
 export default function Templates() {
   const queryClient = useQueryClient();
@@ -103,18 +104,6 @@ export default function Templates() {
     });
     setShowForm(true);
   }
-
-  const channelBadge = (ch: string) => {
-    const colors: Record<string, string> = {
-      email: "bg-amber-100 text-amber-800",
-      linkedin_connect: "bg-blue-100 text-blue-800",
-      linkedin_message: "bg-blue-100 text-blue-800",
-      linkedin_engage: "bg-blue-100 text-blue-800",
-      linkedin_insight: "bg-blue-100 text-blue-800",
-      linkedin_final: "bg-blue-100 text-blue-800",
-    };
-    return colors[ch] || "bg-gray-100 text-gray-700";
-  };
 
   return (
     <div className="space-y-6">
@@ -259,7 +248,7 @@ export default function Templates() {
                 <tr key={t.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-5 py-3 font-medium text-gray-900">{t.name}</td>
                   <td className="px-5 py-3">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${channelBadge(t.channel)}`}>
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${channelBadgeClass(t.channel)}`}>
                       {t.channel}
                     </span>
                   </td>

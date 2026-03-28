@@ -24,7 +24,7 @@ import { useToast } from "./Toast";
 import { CHANNEL_LABELS } from "../constants";
 import { channelBadgeClass, recalcSteps } from "../utils/sequenceUtils";
 
-interface SequenceStep {
+export interface SequenceStep {
   id: number;
   stable_id?: string;
   step_order: number;

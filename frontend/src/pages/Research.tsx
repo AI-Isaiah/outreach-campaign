@@ -37,6 +37,7 @@ function NewJobModal({ onClose }: { onClose: () => void }) {
   const [dragOver, setDragOver] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState("");
+  const [reResearchError, setReResearchError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
 
@@ -290,16 +291,16 @@ function NewJobModal({ onClose }: { onClose: () => void }) {
                   <p className="text-amber-700 text-xs">Would you like to re-research them?</p>
                   <div className="flex gap-2 justify-center">
                     <button
-                      onClick={() => {
+                      onClick={async () => {
                         createMutation.reset();
-                        // Re-run with skip_duplicates=false (forces re-research)
-                        api.createResearchJob(file!, name, method, false).then(() => {
+                        setReResearchError("");
+                        try {
+                          await api.createResearchJob(file!, name, method, false);
                           queryClient.invalidateQueries({ queryKey: ["research-jobs"] });
                           onClose();
-                        }).catch((err) => {
-                          // Show the actual error if it's something else
-                          createMutation.mutate();
-                        });
+                        } catch (err: unknown) {
+                          setReResearchError((err as Error).message || "Re-research failed");
+                        }
                       }}
                       className="px-3 py-1.5 text-xs font-medium text-white bg-amber-600 rounded-lg hover:bg-amber-700 transition-colors"
                     >
@@ -312,6 +313,9 @@ function NewJobModal({ onClose }: { onClose: () => void }) {
                       Cancel
                     </button>
                   </div>
+                  {reResearchError && (
+                    <p className="text-xs text-red-600 mt-1">{reResearchError}</p>
+                  )}
                 </div>
               ) : (
                 <div className="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700">
