@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { Mail, MessageCircle, StickyNote } from "lucide-react";
+import { Mail, StickyNote } from "lucide-react";
 import { api } from "../api/client";
 import type { InboxItem } from "../types";
 import { SkeletonCard } from "../components/Skeleton";
@@ -12,19 +12,16 @@ import Button from "../components/ui/Button";
 const CHANNEL_TABS = [
   { key: undefined, label: "All" },
   { key: "email", label: "Email" },
-  { key: "whatsapp", label: "WhatsApp" },
   { key: "notes", label: "Notes" },
 ] as const;
 
 const CHANNEL_STYLES: Record<string, string> = {
   email: "bg-blue-100 text-blue-700",
-  whatsapp: "bg-green-100 text-green-700",
   note: "bg-gray-100 text-gray-700",
 };
 
 const CHANNEL_ICONS: Record<string, React.ReactNode> = {
   email: <Mail size={14} />,
-  whatsapp: <MessageCircle size={14} />,
   note: <StickyNote size={14} />,
 };
 

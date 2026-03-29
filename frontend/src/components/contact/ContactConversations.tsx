@@ -6,7 +6,7 @@ import Button from "../ui/Button";
 import Card from "../ui/Card";
 
 const CONVERSATION_CHANNELS = [
-  "conference", "phone", "telegram", "whatsapp", "email", "linkedin", "in_person", "video_call",
+  "conference", "phone", "email", "linkedin", "in_person", "video_call",
 ];
 
 export default function ContactConversations({ contactId, inline }: { contactId: number; inline?: boolean }) {

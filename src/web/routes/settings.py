@@ -49,13 +49,9 @@ def get_settings(
     except Exception:
         gmail_authorized = False
 
-    # WhatsApp status (placeholder)
-    whatsapp_status = "not_configured"
-
     return {
         "engine_config": config,
         "gmail_authorized": gmail_authorized,
-        "whatsapp_status": whatsapp_status,
     }
 
 

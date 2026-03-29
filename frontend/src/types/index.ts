@@ -336,7 +336,6 @@ export interface SearchResults {
 export interface EngineSettings {
   engine_config: Record<string, string>;
   gmail_authorized: boolean;
-  whatsapp_status: string;
 }
 
 // --- Round 3: CRM Pipeline, Tags, Inbox ---
@@ -372,7 +371,7 @@ export interface Tag {
 
 export interface InboxItem {
   item_id: number;
-  channel: "email" | "whatsapp" | "note";
+  channel: "email" | "note";
   contact_name: string | null;
   company_name: string | null;
   contact_id: number;

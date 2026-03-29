@@ -92,24 +92,6 @@ def test_inbox_with_pending_reply(client, db_conn):
     assert data["items"][0]["contact_name"] == "John Doe"
 
 
-def test_inbox_with_whatsapp(client, db_conn):
-    company_id = _seed_company(db_conn)
-    contact_id = _seed_contact(db_conn, company_id)
-
-    cur = db_conn.cursor()
-    cur.execute(
-        """INSERT INTO whatsapp_messages (contact_id, phone_number, direction, message_text, captured_at)
-           VALUES (%s, '+15551234567', 'received', 'Hello from WhatsApp', NOW())""",
-        (contact_id,),
-    )
-    db_conn.commit()
-
-    resp = client.get("/api/inbox")
-    data = resp.json()
-    assert data["total"] == 1
-    assert data["items"][0]["channel"] == "whatsapp"
-
-
 def test_inbox_channel_filter(client, db_conn):
     company_id = _seed_company(db_conn)
     contact_id = _seed_contact(db_conn, company_id)
@@ -123,12 +105,6 @@ def test_inbox_channel_filter(client, db_conn):
            VALUES (%s, %s, 'Re: Intro', 'Sounds great!', 'positive', 0.95, false)""",
         (contact_id, campaign_id),
     )
-    # Add whatsapp message
-    cur.execute(
-        """INSERT INTO whatsapp_messages (contact_id, phone_number, direction, message_text, captured_at)
-           VALUES (%s, '+15551234567', 'received', 'WhatsApp msg', NOW())""",
-        (contact_id,),
-    )
     # Add note
     cur.execute(
         "INSERT INTO response_notes (contact_id, note_type, content) VALUES (%s, 'general', 'A note')",
@@ -138,17 +114,12 @@ def test_inbox_channel_filter(client, db_conn):
 
     # All channels
     resp = client.get("/api/inbox")
-    assert resp.json()["total"] == 3
+    assert resp.json()["total"] == 2
 
     # Email only
     resp2 = client.get("/api/inbox?channel=email")
     assert resp2.json()["total"] == 1
     assert resp2.json()["items"][0]["channel"] == "email"
-
-    # WhatsApp only
-    resp3 = client.get("/api/inbox?channel=whatsapp")
-    assert resp3.json()["total"] == 1
-    assert resp3.json()["items"][0]["channel"] == "whatsapp"
 
     # Notes only
     resp4 = client.get("/api/inbox?channel=notes")

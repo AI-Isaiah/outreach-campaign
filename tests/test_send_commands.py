@@ -1,4 +1,4 @@
-"""Tests for send/status/unsubscribe CLI commands and A/B testing (Task 21)."""
+"""Tests for send/status/unsubscribe CLI commands (Task 21)."""
 
 from __future__ import annotations
 
@@ -18,7 +18,6 @@ from src.models.campaigns import (
     get_contact_campaign_status,
     log_event,
 )
-from src.services.ab_testing import assign_variant, get_variant_stats
 from src.services.compliance import process_unsubscribe
 from src.services.state_machine import transition_contact
 from tests.conftest import TEST_USER_ID
@@ -280,133 +279,6 @@ class TestStatusCommand:
 
         assert result.exit_code != 0
         assert "Unknown action" in result.output
-
-
-# ===========================================================================
-# Tests: A/B variant assignment
-# ===========================================================================
-
-class TestABVariantAssignment:
-    """Test that A/B variant assignment is deterministic."""
-
-    def test_deterministic_assignment(self):
-        """Same contact_id always gets the same variant."""
-        v1 = assign_variant(42)
-        v2 = assign_variant(42)
-        v3 = assign_variant(42)
-        assert v1 == v2 == v3
-
-    def test_different_contacts_can_differ(self):
-        """Different contact_ids can produce different variants (statistical)."""
-        variants_seen = set()
-        for cid in range(100):
-            variants_seen.add(assign_variant(cid))
-        # With 100 contacts and 2 variants, we should see both
-        assert len(variants_seen) == 2
-
-    def test_custom_variants(self):
-        """Custom variant list should be respected."""
-        v = assign_variant(1, variants=["X", "Y", "Z"])
-        assert v in {"X", "Y", "Z"}
-
-    def test_custom_variants_deterministic(self):
-        """Custom variants with same contact_id should be reproducible."""
-        v1 = assign_variant(7, variants=["X", "Y", "Z"])
-        v2 = assign_variant(7, variants=["X", "Y", "Z"])
-        assert v1 == v2
-
-    def test_default_variants(self):
-        """Default assignment should produce A or B."""
-        v = assign_variant(99)
-        assert v in {"A", "B"}
-
-
-# ===========================================================================
-# Tests: get_variant_stats
-# ===========================================================================
-
-class TestGetVariantStats:
-    """Test variant statistics computation."""
-
-    def test_returns_correct_counts(self, conn, sample_campaign, sample_company):
-        """Variant stats should correctly count statuses per variant."""
-        campaign_id = sample_campaign
-
-        # Create contacts and enroll with different variants
-        contacts = []
-        for i, (variant, status) in enumerate([
-            ("A", "replied_positive"),
-            ("A", "replied_negative"),
-            ("A", "no_response"),
-            ("A", "queued"),
-            ("B", "replied_positive"),
-            ("B", "no_response"),
-        ]):
-            cursor = conn.cursor()
-            cursor.execute(
-                "INSERT INTO contacts "
-                "(company_id, first_name, email, email_normalized, priority_rank, source, user_id) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
-                (sample_company, f"Contact{i}", f"c{i}@test.com", f"c{i}@test.com", i + 1, "csv", TEST_USER_ID),
-            )
-            cid = cursor.fetchone()["id"]
-            conn.commit()
-
-            cursor = conn.cursor()
-            cursor.execute(
-                """INSERT INTO contact_campaign_status
-                   (contact_id, campaign_id, current_step, status, assigned_variant)
-                   VALUES (%s, %s, 1, %s, %s)""",
-                (cid, campaign_id, status, variant),
-            )
-            conn.commit()
-
-        stats = get_variant_stats(conn, campaign_id)
-
-        # Find variant A and B stats
-        a_stats = next(s for s in stats if s["variant"] == "A")
-        b_stats = next(s for s in stats if s["variant"] == "B")
-
-        assert a_stats["total"] == 4
-        assert a_stats["replied_positive"] == 1
-        assert a_stats["replied_negative"] == 1
-        assert a_stats["no_response"] == 1
-        assert a_stats["reply_rate"] == round(2 / 4, 4)
-
-        assert b_stats["total"] == 2
-        assert b_stats["replied_positive"] == 1
-        assert b_stats["no_response"] == 1
-        assert b_stats["reply_rate"] == round(1 / 2, 4)
-
-    def test_empty_campaign_returns_empty(self, conn, sample_campaign):
-        """Campaign with no enrollments should return empty list."""
-        stats = get_variant_stats(conn, sample_campaign)
-        assert stats == []
-
-    def test_null_variant_grouped(self, conn, sample_campaign, sample_company):
-        """Contacts with no assigned variant should group under None."""
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO contacts "
-            "(company_id, first_name, email, priority_rank, source, user_id) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
-            (sample_company, "NoVariant", "nv@test.com", 1, "csv", TEST_USER_ID),
-        )
-        cid = cursor.fetchone()["id"]
-        conn.commit()
-
-        cursor = conn.cursor()
-        cursor.execute(
-            """INSERT INTO contact_campaign_status
-               (contact_id, campaign_id, current_step, status, assigned_variant)
-               VALUES (%s, %s, 1, 'queued', NULL)""",
-            (cid, sample_campaign),
-        )
-        conn.commit()
-
-        stats = get_variant_stats(conn, sample_campaign)
-        assert len(stats) == 1
-        assert stats[0]["variant"] is None
-        assert stats[0]["total"] == 1
 
 
 # ===========================================================================

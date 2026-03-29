@@ -15,13 +15,13 @@ from src.models.database import get_cursor
 router = APIRouter(tags=["conversations"])
 
 _CONVERSATION_CHANNEL = Literal[
-    "conference", "phone", "telegram", "whatsapp",
+    "conference", "phone",
     "email", "linkedin", "in_person", "video_call",
 ]
 _CONVERSATION_OUTCOME = Literal["successful", "unsuccessful"]
 
 VALID_CHANNELS = {
-    "conference", "phone", "telegram", "whatsapp",
+    "conference", "phone",
     "email", "linkedin", "in_person", "video_call",
 }
 VALID_OUTCOMES = {"successful", "unsuccessful", None}

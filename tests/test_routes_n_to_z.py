@@ -1,8 +1,8 @@
-"""Comprehensive API route tests (second half): newsletters through whatsapp.
+"""Comprehensive API route tests (second half): newsletters through templates.
 
 Covers ~100 tests across:
   newsletters, products, queue, replies, research, sequence_generator,
-  settings, smart_import, stats, tags, templates, whatsapp
+  settings, smart_import, stats, tags, templates
 """
 
 from __future__ import annotations
@@ -1459,35 +1459,3 @@ class TestTemplates:
         assert resp.status_code == 422
 
 
-# ============================================================================
-# WHATSAPP
-# ============================================================================
-
-class TestWhatsApp:
-    """WhatsApp endpoints: setup, scan, status, messages."""
-
-    def test_scan_status(self, client):
-        resp = client.get("/api/whatsapp/scan/status")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "total_messages" in data
-        assert data["total_messages"] == 0
-
-    def test_messages_for_contact(self, client, db_conn):
-        co = _seed_company(db_conn)
-        cid = _seed_contact(db_conn, co, email="wa@test.com")
-        resp = client.get(f"/api/whatsapp/messages?contact_id={cid}")
-        assert resp.status_code == 200
-        assert resp.json() == []
-
-    def test_setup_no_playwright(self, client):
-        """Setup fails gracefully when playwright/scanner is not available."""
-        with patch.dict("sys.modules", {"src.services.whatsapp_scanner": None}):
-            resp = client.post("/api/whatsapp/setup")
-        # ImportError is caught and raised as 400
-        assert resp.status_code in (400, 500)
-
-    def test_scan_no_playwright(self, client):
-        with patch.dict("sys.modules", {"src.services.whatsapp_scanner": None}):
-            resp = client.post("/api/whatsapp/scan")
-        assert resp.status_code in (400, 500)

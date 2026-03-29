@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.services.whatsapp_scanner import normalize_phone
+from src.services.phone_utils import normalize_phone
 
 
 def test_normalize_us_phone():
@@ -22,4 +22,4 @@ def test_normalize_digits_only():
 
 
 def test_normalize_empty():
-    assert normalize_phone("") == ""
+    assert normalize_phone("") is None

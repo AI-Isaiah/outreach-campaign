@@ -13,8 +13,6 @@ const TYPE_STYLES: Record<string, string> = {
   linkedin_final_done: "border-blue-400 bg-blue-50",
   expandi_connected: "border-blue-400 bg-blue-50",
   expandi_message_sent: "border-blue-400 bg-blue-50",
-  whatsapp_sent: "border-green-400 bg-green-50",
-  whatsapp_received: "border-green-400 bg-green-50",
   replied_positive: "border-emerald-400 bg-emerald-50",
   replied_negative: "border-red-400 bg-red-50",
   neutral: "border-gray-300 bg-gray-50",
@@ -27,7 +25,6 @@ const SOURCE_LABELS: Record<string, string> = {
   event: "Event",
   gmail: "Gmail",
   reply: "Reply",
-  whatsapp: "WhatsApp",
   note: "Note",
 };
 

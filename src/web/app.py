@@ -62,7 +62,6 @@ from src.web.routes import (  # noqa: E402
     stats,
     tags,
     templates,
-    whatsapp,
 )
 
 logger = logging.getLogger(__name__)
@@ -180,7 +179,6 @@ app.include_router(crm.router, prefix="/api", dependencies=_auth_deps)
 app.include_router(import_routes.router, prefix="/api", dependencies=_auth_deps)
 app.include_router(settings.router, prefix="/api", dependencies=_auth_deps)
 app.include_router(insights.router, prefix="/api", dependencies=_auth_deps)
-app.include_router(whatsapp.router, prefix="/api", dependencies=_auth_deps)
 app.include_router(deals.router, prefix="/api", dependencies=_auth_deps)
 app.include_router(tags.router, prefix="/api", dependencies=_auth_deps)
 app.include_router(inbox.router, prefix="/api", dependencies=_auth_deps)

@@ -328,7 +328,7 @@ def global_search(
         )
         companies = [dict(r) for r in cur.fetchall()]
 
-        # Search messages (events metadata, response notes, whatsapp)
+        # Search messages (events metadata, response notes)
         cur.execute(
             """SELECT rn.id, rn.contact_id, rn.content, c.full_name AS contact_name,
                       'note' AS result_type

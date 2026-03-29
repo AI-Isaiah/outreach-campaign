@@ -1524,11 +1524,6 @@ class TestInbox:
         assert resp.status_code == 200
         assert "items" in resp.json()
 
-    def test_inbox_filter_channel_whatsapp(self, client):
-        resp = client.get("/api/inbox?channel=whatsapp")
-        assert resp.status_code == 200
-        assert "items" in resp.json()
-
     def test_inbox_filter_channel_notes(self, client):
         resp = client.get("/api/inbox?channel=notes")
         assert resp.status_code == 200

@@ -181,13 +181,6 @@ export const api = {
     }),
   getInsightHistory: () => request<AnalysisResponse[]>("/insights/history"),
 
-  // WhatsApp
-  whatsappSetup: () => request<{ success: boolean }>("/whatsapp/setup", { method: "POST" }),
-  whatsappScan: () => request<{ scanned: number; new_messages: number; success: boolean }>("/whatsapp/scan", { method: "POST" }),
-  whatsappScanStatus: () => request<{ status: string }>("/whatsapp/scan/status"),
-  whatsappMessages: (contactId: number) =>
-    request<Array<{ id: number; body: string; direction: string; received_at: string }>>(`/whatsapp/messages?contact_id=${contactId}`),
-
   // Tags
   listTags: () => request<Tag[]>("/tags"),
   createTag: (name: string, color = "#6B7280") =>

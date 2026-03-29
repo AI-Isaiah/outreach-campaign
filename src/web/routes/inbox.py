@@ -1,4 +1,4 @@
-"""Unified inbox API route — aggregates replies, whatsapp, notes."""
+"""Unified inbox API route — aggregates replies and notes."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ def get_inbox(
     conn=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    """Unified inbox: unconfirmed replies + received whatsapp + recent notes, sorted desc."""
+    """Unified inbox: unconfirmed replies + recent notes, sorted desc."""
     offset = (page - 1) * per_page
     parts = []
     params: list = []
@@ -37,22 +37,6 @@ def get_inbox(
             JOIN contacts c ON c.id = pr.contact_id
             JOIN companies co ON co.id = c.company_id
             WHERE pr.confirmed = false AND co.user_id = %s
-        """)
-        params.append(user["id"])
-
-    # Received WhatsApp messages
-    if channel is None or channel == "whatsapp":
-        parts.append("""
-            SELECT wm.id AS item_id, 'whatsapp' AS channel,
-                   c.full_name AS contact_name, co.name AS company_name,
-                   c.id AS contact_id, co.id AS company_id,
-                   NULL AS subject, wm.message_text AS body,
-                   wm.direction AS classification,
-                   COALESCE(wm.whatsapp_timestamp, wm.captured_at) AS occurred_at
-            FROM whatsapp_messages wm
-            JOIN contacts c ON c.id = wm.contact_id
-            JOIN companies co ON co.id = c.company_id
-            WHERE wm.direction = 'received' AND co.user_id = %s
         """)
         params.append(user["id"])
 

@@ -3,7 +3,7 @@
 Covers: message_drafter, metrics, newsletter, normalization_utils (gaps),
 phone_utils, priority_queue, reply_detector, response_analyzer, retry,
 sequence_generator, smart_import, state_machine (gaps), template_engine (gaps),
-token_encryption, whatsapp_scanner.
+token_encryption.
 
 Uses the tmp_db fixture (ephemeral PostgreSQL). External APIs are always mocked.
 """
@@ -650,7 +650,7 @@ class TestRenderNewsletter:
 
 
 # ===========================================================================
-# phone_utils — normalize_phone (from phone_utils.py, not whatsapp_scanner)
+# phone_utils — normalize_phone
 # ===========================================================================
 
 class TestPhoneUtilsNormalize:
@@ -1502,38 +1502,38 @@ class TestTokenEncryption:
 
 
 # ===========================================================================
-# whatsapp_scanner — normalize_phone utility
+# phone_utils — normalize_phone (additional edge cases)
 # ===========================================================================
 
-class TestWhatsappNormalizePhone:
-    """Tests for whatsapp_scanner.normalize_phone."""
+class TestNormalizePhone:
+    """Tests for phone_utils.normalize_phone (additional edge cases)."""
 
     def test_us_number(self):
-        from src.services.whatsapp_scanner import normalize_phone
+        from src.services.phone_utils import normalize_phone
         assert normalize_phone("+1 (555) 123-4567") == "+15551234567"
 
     def test_uk_number(self):
-        from src.services.whatsapp_scanner import normalize_phone
+        from src.services.phone_utils import normalize_phone
         assert normalize_phone("+44 20 7123 4567") == "+442071234567"
 
     def test_international_prefix(self):
-        from src.services.whatsapp_scanner import normalize_phone
+        from src.services.phone_utils import normalize_phone
         assert normalize_phone("00442071234567") == "+442071234567"
 
     def test_empty_string(self):
-        from src.services.whatsapp_scanner import normalize_phone
-        assert normalize_phone("") == ""
+        from src.services.phone_utils import normalize_phone
+        assert normalize_phone("") is None
 
-    def test_none_returns_empty(self):
-        from src.services.whatsapp_scanner import normalize_phone
-        assert normalize_phone(None) == ""
+    def test_none_returns_none(self):
+        from src.services.phone_utils import normalize_phone
+        assert normalize_phone(None) is None
 
     def test_already_normalized(self):
-        from src.services.whatsapp_scanner import normalize_phone
+        from src.services.phone_utils import normalize_phone
         assert normalize_phone("+15551234567") == "+15551234567"
 
     def test_spaces_and_dashes_stripped(self):
-        from src.services.whatsapp_scanner import normalize_phone
+        from src.services.phone_utils import normalize_phone
         assert normalize_phone("+1-555-123-4567") == "+15551234567"
 
 

@@ -563,20 +563,6 @@ export default function Settings() {
     },
   });
 
-  const whatsappSetup = useMutation({
-    mutationFn: api.whatsappSetup,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["settings"] });
-    },
-  });
-
-  const whatsappScan = useMutation({
-    mutationFn: api.whatsappScan,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["settings"] });
-    },
-  });
-
   if (isLoading) return <p className="text-gray-400">Loading...</p>;
 
   const config = data?.engine_config || {};
@@ -602,52 +588,6 @@ export default function Settings() {
 
       {/* API Keys */}
       <ApiKeysCard />
-
-      {/* WhatsApp */}
-      <div className="bg-white rounded-lg border p-5 space-y-4">
-        <h2 className="font-semibold text-gray-900">WhatsApp Integration</h2>
-        <p className="text-sm text-gray-500">
-          Connect WhatsApp Web to capture messages from contacts with phone numbers.
-          Requires Playwright to be installed.
-        </p>
-        <div className="flex items-center gap-4">
-          <div
-            className={`w-3 h-3 rounded-full ${
-              data?.whatsapp_status === "connected" ? "bg-green-400" : "bg-gray-300"
-            }`}
-          />
-          <span className="text-sm text-gray-700">
-            {data?.whatsapp_status === "connected"
-              ? "Session active"
-              : "Not connected"}
-          </span>
-          <button
-            onClick={() => whatsappSetup.mutate()}
-            disabled={whatsappSetup.isPending}
-            className="px-3 py-1.5 bg-green-600 text-white rounded text-sm font-medium hover:bg-green-700 disabled:opacity-50"
-          >
-            {whatsappSetup.isPending ? "Opening..." : "Setup WhatsApp"}
-          </button>
-          <button
-            onClick={() => whatsappScan.mutate()}
-            disabled={whatsappScan.isPending}
-            className="px-3 py-1.5 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-          >
-            {whatsappScan.isPending ? "Scanning..." : "Scan Messages"}
-          </button>
-        </div>
-        {whatsappSetup.isError && (
-          <p className="text-red-500 text-sm">{(whatsappSetup.error as Error).message}</p>
-        )}
-        {whatsappScan.isError && (
-          <p className="text-red-500 text-sm">{(whatsappScan.error as Error).message}</p>
-        )}
-        {whatsappScan.data && (
-          <p className="text-green-600 text-sm">
-            Scanned {whatsappScan.data.scanned} contacts, captured {whatsappScan.data.new_messages} new messages
-          </p>
-        )}
-      </div>
 
       {/* Engine Config */}
       <div className="bg-white rounded-lg border p-5 space-y-4">
