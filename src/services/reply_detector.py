@@ -45,7 +45,7 @@ def scan_gmail_for_replies(
     """
     with get_cursor(conn) as cur:
         cur.execute(
-            """SELECT DISTINCT c.id, c.email, ccs.campaign_id, ccs.created_at AS enrolled_at
+            """SELECT DISTINCT c.id, c.email, c.user_id, ccs.campaign_id, ccs.created_at AS enrolled_at
                FROM contact_campaign_status ccs
                JOIN contacts c ON c.id = ccs.contact_id
                WHERE c.email IS NOT NULL
@@ -108,7 +108,7 @@ def _scan_contact_replies(conn, service, contact: dict, stats: dict) -> None:
         for msg_stub in messages:
             msg_id = msg_stub["id"]
 
-            # Check if we already have this message
+            # Check if we already have this message (scoped via contact FK)
             cur.execute(
                 "SELECT id FROM pending_replies WHERE gmail_message_id = %s",
                 (msg_id,),

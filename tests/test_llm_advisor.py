@@ -79,12 +79,12 @@ def test_run_analysis_no_api_key(mock_detect, tmp_db):
     campaign_id = create_campaign(conn, "advisor_test", user_id=TEST_USER_ID)
     conn.commit()
 
-    result = run_analysis(conn, campaign_id)
+    result = run_analysis(conn, campaign_id, user_id=TEST_USER_ID)
     assert result["run_id"] > 0
     assert "not configured" in result["insights"][0].lower() or len(result["insights"]) > 0
 
     # Verify stored in advisor_runs
-    history = get_analysis_history(conn, campaign_id)
+    history = get_analysis_history(conn, campaign_id, user_id=TEST_USER_ID)
     assert len(history) == 1
     assert history[0]["campaign_id"] == campaign_id
     conn.close()
@@ -106,14 +106,14 @@ def test_run_analysis_with_mock_llm(mock_call, mock_detect, tmp_db):
     campaign_id = create_campaign(conn, "advisor_test_llm", user_id=TEST_USER_ID)
     conn.commit()
 
-    result = run_analysis(conn, campaign_id)
+    result = run_analysis(conn, campaign_id, user_id=TEST_USER_ID)
     assert result["run_id"] > 0
     assert "Email works better" in result["insights"][0]
     assert len(result["template_suggestions"]) == 1
     assert "Prioritize" in result["strategy_notes"]
 
     # Check history
-    history = get_analysis_history(conn, campaign_id)
+    history = get_analysis_history(conn, campaign_id, user_id=TEST_USER_ID)
     assert len(history) == 1
     assert history[0]["insights_parsed"] is not None
     conn.close()

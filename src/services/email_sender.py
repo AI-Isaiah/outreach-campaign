@@ -338,7 +338,7 @@ def render_campaign_email(
         return None
 
     if is_contact_gdpr(conn, contact_id, user_id=user_id):
-        if not check_gdpr_email_limit(conn, contact_id, campaign_id):
+        if not check_gdpr_email_limit(conn, contact_id, campaign_id, user_id=user_id):
             return None
 
     template_row = get_template(conn, template_id, user_id=user_id)
@@ -411,7 +411,7 @@ def send_campaign_email(
 
     # GDPR email limit check
     if is_contact_gdpr(conn, contact_id, user_id=user_id):
-        if not check_gdpr_email_limit(conn, contact_id, campaign_id):
+        if not check_gdpr_email_limit(conn, contact_id, campaign_id, user_id=user_id):
             logger.info("GDPR limit reached for contact %d in campaign %d", contact_id, campaign_id)
             return False
 

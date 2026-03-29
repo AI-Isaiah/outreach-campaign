@@ -86,6 +86,8 @@ def check_gdpr_email_limit(
     contact_id: int,
     campaign_id: int,
     max_emails: int = GDPR_MAX_EMAILS,
+    *,
+    user_id: int,
 ) -> bool:
     """Check if a GDPR-subject contact can still receive emails.
 
@@ -97,6 +99,7 @@ def check_gdpr_email_limit(
         contact_id: the contact to check
         campaign_id: the campaign context
         max_emails: maximum emails allowed (default 2 for GDPR)
+        user_id: owner user ID for tenant isolation
 
     Returns:
         True if the contact can still receive emails (count < max),
@@ -105,8 +108,9 @@ def check_gdpr_email_limit(
     with get_cursor(conn) as cursor:
         cursor.execute(
             """SELECT COUNT(*) as cnt FROM events
-               WHERE contact_id = %s AND campaign_id = %s AND event_type = 'email_sent'""",
-            (contact_id, campaign_id),
+               WHERE contact_id = %s AND campaign_id = %s AND event_type = 'email_sent'
+                 AND user_id = %s""",
+            (contact_id, campaign_id, user_id),
         )
         row = cursor.fetchone()
         count = row["cnt"] if row else 0

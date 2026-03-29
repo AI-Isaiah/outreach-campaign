@@ -30,6 +30,14 @@ def reorder_campaign_sequence(
         Dict with ``steps`` (updated sequence) and ``affected_count``.
     """
     with get_cursor(conn) as cursor:
+        # Verify campaign belongs to user
+        cursor.execute(
+            "SELECT id FROM campaigns WHERE id = %s AND user_id = %s",
+            (campaign_id, user_id),
+        )
+        if not cursor.fetchone():
+            raise ValueError(f"Campaign {campaign_id} not found or not owned by user")
+
         # Verify all steps belong to this campaign
         step_ids = [s["step_id"] for s in steps]
         placeholders = ",".join(["%s"] * len(step_ids))

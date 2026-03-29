@@ -78,16 +78,25 @@ def _call_gemini(prompt: str, api_key: str, *, model: str = DEFAULT_MODEL_GEMINI
     # NOTE: Google's Generative Language API requires the key as a URL query parameter.
     # There is no Authorization header option — this is a Google API design limitation,
     # not an implementation choice. The google-generativeai SDK uses the same mechanism.
-    resp = httpx.post(
-        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}",
-        headers={"Content-Type": "application/json"},
-        json={
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0, "maxOutputTokens": max_tokens},
-        },
-        timeout=timeout,
-    )
-    resp.raise_for_status()
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+    try:
+        resp = httpx.post(
+            url,
+            headers={"Content-Type": "application/json"},
+            json={
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {"temperature": 0, "maxOutputTokens": max_tokens},
+            },
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        # Redact API key from error message to prevent log exposure
+        safe_msg = str(exc).replace(api_key, "REDACTED")
+        raise httpx.HTTPStatusError(safe_msg, request=exc.request, response=exc.response) from None
+    except httpx.HTTPError as exc:
+        safe_msg = str(exc).replace(api_key, "REDACTED")
+        raise type(exc)(safe_msg) from None
     return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
 
 

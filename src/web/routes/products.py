@@ -4,12 +4,16 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from src.enums import ProductStage
 from src.web.dependencies import get_current_user, get_db
 from src.models.database import get_cursor
+
+_limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(tags=["products"])
 
@@ -85,7 +89,8 @@ def update_product(product_id: int, body: ProductUpdate, conn=Depends(get_db), u
 
 
 @router.delete("/products/{product_id}")
-def delete_product(product_id: int, conn=Depends(get_db), user=Depends(get_current_user)):
+@_limiter.limit("5/minute")
+def delete_product(request: Request, product_id: int, conn=Depends(get_db), user=Depends(get_current_user)):
     """Soft-delete a product (set is_active = false)."""
     with get_cursor(conn) as cur:
         cur.execute("SELECT id FROM products WHERE id = %s AND user_id = %s", (product_id, user["id"]))
@@ -191,7 +196,9 @@ def update_contact_product_stage(
 
 
 @router.delete("/contacts/{contact_id}/products/{product_id}")
+@_limiter.limit("5/minute")
 def remove_contact_product(
+    request: Request,
     contact_id: int,
     product_id: int,
     conn=Depends(get_db),

@@ -426,7 +426,7 @@ class TestCampaignMetricsReplyBreakdown:
         co = insert_company(conn, "MetCo")
         ct = insert_contact(conn, co)
         _enroll_contact(conn, ct, cid, status="in_progress")
-        m = get_campaign_metrics(conn, cid)
+        m = get_campaign_metrics(conn, cid, user_id=1)
         assert m["reply_breakdown"]["total"] == 0
         assert m["reply_breakdown"]["positive_rate"] == 0.0
         conn.close()
@@ -438,7 +438,7 @@ class TestCampaignMetricsReplyBreakdown:
         co = insert_company(conn, "RP1")
         ct = insert_contact(conn, co)
         _enroll_contact(conn, ct, cid, status="replied_positive")
-        m = get_campaign_metrics(conn, cid)
+        m = get_campaign_metrics(conn, cid, user_id=1)
         assert m["reply_breakdown"]["positive_rate"] == 1.0
         assert m["reply_breakdown"]["positive"] == 1
         conn.close()
@@ -454,7 +454,7 @@ class TestCampaignMetricsReplyBreakdown:
         _enroll_contact(conn, c1, cid, status="replied_positive")
         _enroll_contact(conn, c2, cid, status="replied_negative")
         _enroll_contact(conn, c3, cid, status="in_progress")
-        m = get_campaign_metrics(conn, cid)
+        m = get_campaign_metrics(conn, cid, user_id=1)
         assert m["reply_breakdown"]["total"] == 2
         assert m["reply_breakdown"]["positive_rate"] == 0.5
         conn.close()
@@ -469,7 +469,7 @@ class TestCampaignMetricsReplyBreakdown:
         _insert_event(conn, ct, "linkedin_connect_done", cid)
         _insert_event(conn, ct, "linkedin_message_done", cid)
         _insert_event(conn, ct, "linkedin_engage_done", cid)
-        m = get_campaign_metrics(conn, cid)
+        m = get_campaign_metrics(conn, cid, user_id=1)
         assert m["linkedin_connects"] == 1
         assert m["linkedin_messages"] == 2  # message_done + engage_done (connect is counted separately)
         conn.close()
@@ -903,7 +903,7 @@ class TestDeferStats:
     def test_empty_stats(self, tmp_db):
         from src.services.priority_queue import get_defer_stats
         conn = _conn(tmp_db)
-        result = get_defer_stats(conn)
+        result = get_defer_stats(conn, user_id=1)
         assert result["today_count"] == 0
         assert result["total_count"] == 0
         assert result["by_reason"] == []
@@ -919,7 +919,7 @@ class TestDeferStats:
         _enroll_contact(conn, ct, cid, status="queued")
         defer_contact(conn, ct, cid, reason="meeting", user_id=TEST_USER_ID)
         defer_contact(conn, ct, cid, reason="meeting", user_id=TEST_USER_ID)
-        result = get_defer_stats(conn, campaign_id=cid)
+        result = get_defer_stats(conn, campaign_id=cid, user_id=TEST_USER_ID)
         assert result["total_count"] == 2
         assert len(result["repeat_deferrals"]) >= 1
         conn.close()
@@ -1814,7 +1814,7 @@ class TestNextStepForContact:
         co = insert_company(conn, "NextStepCo")
         ct = insert_contact(conn, co)
         _enroll_contact(conn, ct, cid, status="queued", current_step=1)
-        step = get_next_step_for_contact(conn, ct, cid)
+        step = get_next_step_for_contact(conn, ct, cid, user_id=1)
         assert step is not None
         assert step["step_order"] == 1
         conn.close()
@@ -1825,7 +1825,7 @@ class TestNextStepForContact:
         cid = _create_campaign(conn)
         co = insert_company(conn, "NotEnrolledNS")
         ct = insert_contact(conn, co)
-        step = get_next_step_for_contact(conn, ct, cid)
+        step = get_next_step_for_contact(conn, ct, cid, user_id=1)
         assert step is None
         conn.close()
 

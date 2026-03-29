@@ -233,12 +233,13 @@ def scan_linkedin_acceptances(
             msg_id = msg_stub["id"]
             stats["scanned"] += 1
 
-            # Check if we already processed this Gmail message
+            # Check if we already processed this Gmail message (scoped to user)
             cur.execute(
                 """SELECT id FROM events
                    WHERE event_type = 'linkedin_acceptance_detected'
+                     AND user_id = %s
                      AND metadata LIKE %s""",
-                (f"%{msg_id}%",),
+                (user_id, f"%{msg_id}%"),
             )
             if cur.fetchone():
                 stats["already_processed"] += 1

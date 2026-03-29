@@ -208,6 +208,8 @@ def get_next_step_for_contact(
     conn,
     contact_id: int,
     campaign_id: int,
+    *,
+    user_id: int,
 ):
     """Return the sequence_step row for the contact's next action, or None.
 
@@ -221,8 +223,9 @@ def get_next_step_for_contact(
             FROM contact_campaign_status ccs
             JOIN contacts c ON c.id = ccs.contact_id
             WHERE ccs.contact_id = %s AND ccs.campaign_id = %s
+              AND c.user_id = %s
             """,
-            (contact_id, campaign_id),
+            (contact_id, campaign_id, user_id),
         )
         row = cursor.fetchone()
 
@@ -343,6 +346,8 @@ def get_defer_stats(
     conn,
     campaign_id: Optional[int] = None,
     target_date: Optional[str] = None,
+    *,
+    user_id: int,
 ) -> dict:
     """Get defer/skip analytics.
 
@@ -355,11 +360,12 @@ def get_defer_stats(
 
     with get_cursor(conn) as cursor:
         # Count deferrals today
-        params_today: list = [target_date]
+        params_today: list = [target_date, user_id]
         today_query = """
             SELECT COUNT(*) AS cnt FROM events
             WHERE event_type = 'deferred'
               AND created_at::date = %s
+              AND user_id = %s
         """
         if campaign_id:
             today_query += " AND campaign_id = %s"
@@ -368,8 +374,8 @@ def get_defer_stats(
         today_count = cursor.fetchone()["cnt"]
 
         # Total deferrals
-        params_total: list = []
-        total_query = "SELECT COUNT(*) AS cnt FROM events WHERE event_type = 'deferred'"
+        params_total: list = [user_id]
+        total_query = "SELECT COUNT(*) AS cnt FROM events WHERE event_type = 'deferred' AND user_id = %s"
         if campaign_id:
             total_query += " AND campaign_id = %s"
             params_total.append(campaign_id)
@@ -377,11 +383,12 @@ def get_defer_stats(
         total_count = cursor.fetchone()["cnt"]
 
         # By reason
-        params_reason: list = []
+        params_reason: list = [user_id]
         reason_query = """
             SELECT notes AS reason, COUNT(*) AS cnt
             FROM events
             WHERE event_type = 'deferred'
+              AND user_id = %s
         """
         if campaign_id:
             reason_query += " AND campaign_id = %s"
@@ -391,13 +398,14 @@ def get_defer_stats(
         by_reason = [{"reason": r["reason"] or "No reason", "count": r["cnt"]} for r in cursor.fetchall()]
 
         # Repeat deferrals (contacts deferred 2+ times)
-        params_repeat: list = []
+        params_repeat: list = [user_id]
         repeat_query = """
             SELECT e.contact_id, COUNT(*) AS defer_count,
                    COALESCE(c.full_name, c.email, c.id::text) AS contact_name
             FROM events e
             JOIN contacts c ON c.id = e.contact_id
             WHERE e.event_type = 'deferred'
+              AND e.user_id = %s
         """
         if campaign_id:
             repeat_query += " AND e.campaign_id = %s"

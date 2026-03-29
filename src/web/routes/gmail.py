@@ -280,11 +280,15 @@ def check_draft_status(
             try:
                 gmail_status = _drafter.check_draft_status(draft_row["gmail_draft_id"])
                 if gmail_status == "sent":
-                    # Draft was sent — update our records
+                    # Draft was sent — atomically update only if still 'drafted'
                     cur.execute(
-                        "UPDATE gmail_drafts SET status = 'sent', updated_at = NOW() WHERE id = %s",
+                        "UPDATE gmail_drafts SET status = 'sent', updated_at = NOW() WHERE id = %s AND status = 'drafted'",
                         (draft_row["id"],),
                     )
+                    if cur.rowcount == 0:
+                        # Already processed by a concurrent request
+                        conn.rollback()
+                        return dict(draft_row) | {"status": "sent"}
                     conn.commit()
 
                     log_event(

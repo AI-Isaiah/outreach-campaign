@@ -22,15 +22,29 @@ from src.services.response_analyzer import (
 logger = logging.getLogger(__name__)
 
 
-def run_analysis(conn, campaign_id: int) -> dict:
+def run_analysis(conn, campaign_id: int, *, user_id: int) -> dict:
     """Run an LLM-powered analysis of campaign performance.
 
     Gathers data from response_analyzer, builds a prompt, calls Claude,
     and stores the result in advisor_runs.
 
+    Args:
+        conn: database connection
+        campaign_id: the campaign to analyze
+        user_id: owner user ID for tenant isolation
+
     Returns:
         dict with keys: run_id, insights, template_suggestions, strategy_notes
     """
+    # Verify campaign belongs to user
+    with get_cursor(conn) as cur:
+        cur.execute(
+            "SELECT id FROM campaigns WHERE id = %s AND user_id = %s",
+            (campaign_id, user_id),
+        )
+        if not cur.fetchone():
+            raise ValueError(f"Campaign {campaign_id} not found or not owned by user {user_id}")
+
     # Gather performance data
     template_perf = get_template_performance(conn, campaign_id)
     channel_perf = get_channel_performance(conn, campaign_id)
@@ -52,12 +66,13 @@ def run_analysis(conn, campaign_id: int) -> dict:
     with get_cursor(conn) as cur:
         cur.execute(
             """INSERT INTO advisor_runs
-                   (campaign_id, run_type, prompt_summary, response_text,
+                   (campaign_id, user_id, run_type, prompt_summary, response_text,
                     insights_json, template_suggestions_json)
-               VALUES (%s, 'analysis', %s, %s, %s, %s)
+               VALUES (%s, %s, 'analysis', %s, %s, %s, %s)
                RETURNING id""",
             (
                 campaign_id,
+                user_id,
                 prompt[:500],
                 response_text,
                 json.dumps(insights),
@@ -75,7 +90,7 @@ def run_analysis(conn, campaign_id: int) -> dict:
     }
 
 
-def get_analysis_history(conn, campaign_id: int) -> list[dict]:
+def get_analysis_history(conn, campaign_id: int, *, user_id: int) -> list[dict]:
     """Fetch past advisor runs for a campaign."""
     with get_cursor(conn) as cur:
         cur.execute(
@@ -83,9 +98,9 @@ def get_analysis_history(conn, campaign_id: int) -> list[dict]:
                       response_text, insights_json, template_suggestions_json,
                       events_analyzed, created_at
                FROM advisor_runs
-               WHERE campaign_id = %s
+               WHERE campaign_id = %s AND user_id = %s
                ORDER BY created_at DESC""",
-            (campaign_id,),
+            (campaign_id, user_id),
         )
         rows = cur.fetchall()
     results = []

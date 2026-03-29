@@ -511,6 +511,7 @@ def retry_failed_results(job_id: int, db_url: str, api_keys: dict | None = None)
             if not job or job["status"] not in ("completed", "failed"):
                 return
             method = job["method"]
+            user_id = job["user_id"]
 
             # Reset errored results to pending
             cur.execute(

@@ -62,7 +62,7 @@ def test_score_contacts_basic(tmp_db):
     run_migrations(conn)
     campaign_id, alice_id, bob_id = _setup(conn)
 
-    scores = score_contacts(conn, campaign_id, [alice_id, bob_id])
+    scores = score_contacts(conn, campaign_id, [alice_id, bob_id], user_id=TEST_USER_ID)
     assert len(scores) == 2
 
     # Alice (high AUM, has LinkedIn) should score higher than Bob (low AUM, no LinkedIn)
@@ -80,7 +80,7 @@ def test_score_contacts_empty(tmp_db):
     run_migrations(conn)
     campaign_id = create_campaign(conn, "empty_scorer", user_id=TEST_USER_ID)
 
-    scores = score_contacts(conn, campaign_id, [])
+    scores = score_contacts(conn, campaign_id, [], user_id=TEST_USER_ID)
     assert scores == []
     conn.close()
 
@@ -90,7 +90,7 @@ def test_scores_sorted_descending(tmp_db):
     run_migrations(conn)
     campaign_id, alice_id, bob_id = _setup(conn)
 
-    scores = score_contacts(conn, campaign_id, [bob_id, alice_id])
+    scores = score_contacts(conn, campaign_id, [bob_id, alice_id], user_id=TEST_USER_ID)
     # Should be sorted by score descending
     assert scores[0]["priority_score"] >= scores[1]["priority_score"]
     conn.close()
@@ -101,7 +101,7 @@ def test_score_has_all_breakdown_fields(tmp_db):
     run_migrations(conn)
     campaign_id, alice_id, _ = _setup(conn)
 
-    scores = score_contacts(conn, campaign_id, [alice_id])
+    scores = score_contacts(conn, campaign_id, [alice_id], user_id=TEST_USER_ID)
     assert len(scores) == 1
     breakdown = scores[0]["breakdown"]
     assert "aum_score" in breakdown

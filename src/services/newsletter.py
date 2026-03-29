@@ -73,8 +73,9 @@ def auto_subscribe_eligible(conn, campaign_id: int, *, user_id: int) -> dict:
                JOIN contact_campaign_status ccs ON ccs.contact_id = c.id
                LEFT JOIN companies co ON co.id = c.company_id
                WHERE ccs.campaign_id = %s
-                 AND ccs.status = 'no_response'""",
-            (campaign_id,),
+                 AND ccs.status = 'no_response'
+                 AND c.user_id = %s""",
+            (campaign_id, user_id),
         )
         rows = cursor.fetchall()
 

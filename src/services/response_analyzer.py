@@ -9,12 +9,11 @@ from __future__ import annotations
 from src.models.database import get_cursor
 
 
-def get_template_performance(conn, campaign_id: int, *, user_id: int = None) -> list[dict]:
+def get_template_performance(conn, campaign_id: int, *, user_id: int | None = None) -> list[dict]:
     """Positive rate per template with confidence levels.
 
     Confidence: low (<20 sends), medium (20-50), high (50+).
-    ``user_id`` is accepted for multi-tenancy convention but not used in the
-    query (campaign_id already provides isolation via FK).
+    Campaign ownership provides tenant isolation via FK.
     """
     with get_cursor(conn) as cursor:
         cursor.execute(

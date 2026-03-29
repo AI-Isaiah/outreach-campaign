@@ -5,8 +5,10 @@ from __future__ import annotations
 from typing import Optional
 
 import psycopg2
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from src.application.campaign_service import launch_campaign as _launch_campaign
 from src.models.campaigns import delete_campaign, get_campaign, get_campaign_by_name, update_campaign_status
@@ -21,6 +23,8 @@ from src.services.response_analyzer import annotate_is_winning, get_template_per
 from src.services.campaign_sequence import reorder_campaign_sequence
 from src.web.dependencies import get_current_user, get_db
 from src.models.database import get_cursor, verify_ownership
+
+_limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(tags=["campaigns"])
 
@@ -104,7 +108,9 @@ def patch_campaign_status(
 
 
 @router.delete("/campaigns/{name}")
+@_limiter.limit("5/minute")
 def remove_campaign(
+    request: Request,
     name: str,
     conn=Depends(get_db),
     user=Depends(get_current_user),
@@ -306,7 +312,7 @@ def get_campaign(
     if not camp:
         raise HTTPException(404, f"Campaign '{name}' not found")
     result = _row_to_dict(camp)
-    metrics = get_campaign_metrics(conn, camp["id"])
+    metrics = get_campaign_metrics(conn, camp["id"], user_id=user["id"])
     result["health_score"] = compute_health_score(metrics)
     return result
 
@@ -335,10 +341,11 @@ def get_metrics(
         raise HTTPException(404, f"Campaign '{name}' not found")
 
     campaign_id = camp["id"]
-    metrics = get_campaign_metrics(conn, campaign_id)
-    variants = get_variant_comparison(conn, campaign_id)
-    weekly = get_weekly_summary(conn, campaign_id, weeks_back=1)
-    firm_breakdown = get_company_type_breakdown(conn, campaign_id)
+    uid = user["id"]
+    metrics = get_campaign_metrics(conn, campaign_id, user_id=uid)
+    variants = get_variant_comparison(conn, campaign_id, user_id=uid)
+    weekly = get_weekly_summary(conn, campaign_id, weeks_back=1, user_id=uid)
+    firm_breakdown = get_company_type_breakdown(conn, campaign_id, user_id=uid)
 
     campaign_dict = _row_to_dict(camp)
     campaign_dict["health_score"] = compute_health_score(metrics)
@@ -364,7 +371,7 @@ def get_campaign_weekly(
     if not camp:
         raise HTTPException(404, f"Campaign '{name}' not found")
 
-    weekly = get_weekly_summary(conn, camp["id"], weeks_back=weeks_back)
+    weekly = get_weekly_summary(conn, camp["id"], weeks_back=weeks_back, user_id=user["id"])
     return {"campaign": name, "weekly": weekly}
 
 
@@ -380,12 +387,13 @@ def get_campaign_report(
         raise HTTPException(404, f"Campaign '{name}' not found")
 
     campaign_id = camp["id"]
+    uid = user["id"]
     return {
         "campaign": _row_to_dict(camp),
-        "metrics": get_campaign_metrics(conn, campaign_id),
-        "variants": get_variant_comparison(conn, campaign_id),
-        "weekly": get_weekly_summary(conn, campaign_id, weeks_back=1),
-        "firm_breakdown": get_company_type_breakdown(conn, campaign_id),
+        "metrics": get_campaign_metrics(conn, campaign_id, user_id=uid),
+        "variants": get_variant_comparison(conn, campaign_id, user_id=uid),
+        "weekly": get_weekly_summary(conn, campaign_id, weeks_back=1, user_id=uid),
+        "firm_breakdown": get_company_type_breakdown(conn, campaign_id, user_id=uid),
     }
 
 
@@ -652,7 +660,9 @@ def add_sequence_step(
 
 
 @router.delete("/campaigns/{campaign_id}/sequence/{step_id}")
+@_limiter.limit("10/minute")
 def delete_sequence_step(
+    request: Request,
     campaign_id: int,
     step_id: int,
     conn=Depends(get_db),

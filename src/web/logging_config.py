@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 import os
 import sys
 from datetime import datetime, timezone
+
+# Context variable for per-request ID, set by middleware
+request_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar("request_id", default=None)
+
+
+def _get_request_id() -> str | None:
+    """Read current request_id from contextvars (set by middleware)."""
+    return request_id_var.get(None)
 
 
 class JSONFormatter(logging.Formatter):
@@ -19,6 +28,10 @@ class JSONFormatter(logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
         }
+        # Include request_id if set by middleware (via contextvars or record attribute)
+        request_id = getattr(record, "request_id", None) or _get_request_id()
+        if request_id:
+            log_entry["request_id"] = request_id
         if record.exc_info and record.exc_info[1]:
             log_entry["exception"] = self.formatException(record.exc_info)
         return json.dumps(log_entry)

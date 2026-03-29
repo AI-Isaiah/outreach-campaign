@@ -350,7 +350,7 @@ def defer_statistics(
         if camp:
             campaign_id = camp["id"]
 
-    return get_defer_stats(conn, campaign_id=campaign_id, target_date=date)
+    return get_defer_stats(conn, campaign_id=campaign_id, target_date=date, user_id=user["id"])
 
 
 @router.get("/queue/all")

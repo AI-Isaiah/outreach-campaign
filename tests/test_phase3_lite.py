@@ -282,7 +282,7 @@ def test_reply_breakdown_with_data(tmp_db):
     # Transition to replied_positive
     transition_contact(conn, contact_id, campaign_id, "replied_positive", user_id=TEST_USER_ID)
 
-    metrics = get_campaign_metrics(conn, campaign_id)
+    metrics = get_campaign_metrics(conn, campaign_id, user_id=TEST_USER_ID)
     rb = metrics["reply_breakdown"]
 
     assert rb["positive"] == 1
@@ -299,7 +299,7 @@ def test_reply_breakdown_zero_replies(tmp_db):
     _, _, campaign_id, _ = _setup(conn)
 
     # Contact stays in_progress — no replies
-    metrics = get_campaign_metrics(conn, campaign_id)
+    metrics = get_campaign_metrics(conn, campaign_id, user_id=TEST_USER_ID)
     rb = metrics["reply_breakdown"]
 
     assert rb["positive"] == 0

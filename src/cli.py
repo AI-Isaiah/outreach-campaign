@@ -826,7 +826,7 @@ def report(
             raise typer.Exit(1)
 
         campaign_id = camp["id"]
-        metrics = get_campaign_metrics(conn, campaign_id)
+        metrics = get_campaign_metrics(conn, campaign_id, user_id=CLI_USER_ID)
 
         # Header
         console.print(
@@ -859,7 +859,7 @@ def report(
         console.print(Panel("\n".join(overview_lines), title="Overall Metrics"))
 
         # Weekly Summary
-        weekly = get_weekly_summary(conn, campaign_id, weeks_back=1)
+        weekly = get_weekly_summary(conn, campaign_id, weeks_back=1, user_id=CLI_USER_ID)
         weekly_lines = [
             f"  Period:            {weekly['period']}",
             f"  Emails sent:       {weekly['emails_sent']}",
@@ -872,7 +872,7 @@ def report(
         console.print(Panel("\n".join(weekly_lines), title="This Week"))
 
         # Variant Comparison
-        variants = get_variant_comparison(conn, campaign_id)
+        variants = get_variant_comparison(conn, campaign_id, user_id=CLI_USER_ID)
         if variants:
             vt = Table(title="A/B Variant Comparison")
             vt.add_column("Variant", style="bold")
@@ -898,7 +898,7 @@ def report(
             console.print("[dim]No A/B variant data available.[/dim]")
 
         # Company Type Breakdown
-        firm_breakdown = get_company_type_breakdown(conn, campaign_id)
+        firm_breakdown = get_company_type_breakdown(conn, campaign_id, user_id=CLI_USER_ID)
         if firm_breakdown:
             ft = Table(title="Reply Rate by Firm Type")
             ft.add_column("Firm Type", style="bold")

@@ -31,8 +31,10 @@ help:
 install:
 	pip3 install -e ".[dev,whatsapp]"
 
+PG_BIN ?= $(shell pg_config --bindir 2>/dev/null || echo "/opt/homebrew/opt/postgresql@16/bin")
+
 test:
-	PATH="/opt/homebrew/opt/postgresql@16/bin:$$PATH" python3 -m pytest tests/ -v
+	PATH="$(PG_BIN):$$PATH" python3 -m pytest tests/ -v
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} +
@@ -78,8 +80,10 @@ web:
 api:
 	uvicorn src.web.app:app --host 0.0.0.0 --port 8000 --reload
 
+NODE_BIN ?= $(shell which node >/dev/null 2>&1 && dirname "$$(which node)" || echo "/opt/homebrew/opt/node@22/bin")
+
 dev:
-	cd frontend && PATH="/opt/homebrew/opt/node@22/bin:$$PATH" npx vite --port 8000 &
+	cd frontend && PATH="$(NODE_BIN):$$PATH" npx vite --port 8000 &
 	.venv/bin/uvicorn src.web.app:app --host 0.0.0.0 --port 8001
 
 # --- WhatsApp ---

@@ -24,7 +24,7 @@ def score_contacts(
     campaign_id: int,
     contact_ids: list[int],
     *,
-    user_id: int | None = None,
+    user_id: int,
 ) -> list[dict]:
     """Score a list of contacts and return sorted by priority score descending.
 

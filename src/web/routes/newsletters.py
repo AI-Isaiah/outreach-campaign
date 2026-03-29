@@ -8,12 +8,16 @@ import threading
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from src.models.database import get_cursor
 from src.web.dependencies import get_config, get_current_user, get_db
+
+_limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/newsletters", tags=["newsletters"])
 logger = logging.getLogger(__name__)
@@ -143,7 +147,8 @@ def update_newsletter(newsletter_id: int, body: NewsletterUpdate, conn=Depends(g
 
 
 @router.delete("/{newsletter_id}")
-def delete_newsletter(newsletter_id: int, conn=Depends(get_db), user=Depends(get_current_user)):
+@_limiter.limit("5/minute")
+def delete_newsletter(request: Request, newsletter_id: int, conn=Depends(get_db), user=Depends(get_current_user)):
     """Delete a draft newsletter."""
     with get_cursor(conn) as cur:
         cur.execute("SELECT id, status FROM newsletters WHERE id = %s AND user_id = %s", (newsletter_id, user["id"]))

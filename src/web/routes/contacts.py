@@ -325,10 +325,10 @@ def get_contact(
         )
         enrollments = cur.fetchall()
 
-        # Get response notes (bounded)
+        # Get response notes (bounded, user-scoped for defense-in-depth)
         cur.execute(
-            "SELECT * FROM response_notes WHERE contact_id = %s ORDER BY created_at DESC LIMIT 100",
-            (contact_id,),
+            "SELECT * FROM response_notes WHERE contact_id = %s AND user_id = %s ORDER BY created_at DESC LIMIT 100",
+            (contact_id, user["id"]),
         )
         notes = cur.fetchall()
 

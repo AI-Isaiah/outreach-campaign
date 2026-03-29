@@ -118,7 +118,7 @@ class TestGetCampaignMetrics:
         _set_status(conn, c2, campaign_id, "replied_positive")
         # c3 stays queued
 
-        metrics = get_campaign_metrics(conn, campaign_id)
+        metrics = get_campaign_metrics(conn, campaign_id, user_id=TEST_USER_ID)
 
         assert metrics["total_enrolled"] == 3
         assert metrics["by_status"]["queued"] == 1
@@ -143,7 +143,7 @@ class TestGetCampaignMetrics:
         log_event(conn, c1, "expandi_message_sent", campaign_id=campaign_id, user_id=TEST_USER_ID)
         log_event(conn, c1, "call_booked", campaign_id=campaign_id, user_id=TEST_USER_ID)
 
-        metrics = get_campaign_metrics(conn, campaign_id)
+        metrics = get_campaign_metrics(conn, campaign_id, user_id=TEST_USER_ID)
 
         assert metrics["emails_sent"] == 2
         assert metrics["linkedin_connects"] == 1
@@ -175,7 +175,7 @@ class TestGetCampaignMetrics:
         _set_status(conn, contacts[3], campaign_id, "in_progress")
         # contacts[4] stays queued
 
-        metrics = get_campaign_metrics(conn, campaign_id)
+        metrics = get_campaign_metrics(conn, campaign_id, user_id=TEST_USER_ID)
 
         # non-queued = 5 - 1 = 4
         # replies = 1 + 1 = 2
@@ -193,7 +193,7 @@ class TestGetCampaignMetrics:
         campaign_id = _create_campaign(conn)
         _enroll(conn, c1, campaign_id)
 
-        metrics = get_campaign_metrics(conn, campaign_id)
+        metrics = get_campaign_metrics(conn, campaign_id, user_id=TEST_USER_ID)
 
         assert metrics["reply_rate"] == 0.0
         assert metrics["positive_rate"] == 0.0
@@ -204,7 +204,7 @@ class TestGetCampaignMetrics:
         conn = _setup_db(tmp_db)
         campaign_id = _create_campaign(conn)
 
-        metrics = get_campaign_metrics(conn, campaign_id)
+        metrics = get_campaign_metrics(conn, campaign_id, user_id=TEST_USER_ID)
 
         assert metrics["total_enrolled"] == 0
         assert metrics["emails_sent"] == 0
@@ -227,7 +227,7 @@ class TestGetCampaignMetrics:
         _enroll(conn, c1, camp_a)
         log_event(conn, c1, "email_sent", campaign_id=camp_b, user_id=TEST_USER_ID)
 
-        metrics = get_campaign_metrics(conn, camp_a)
+        metrics = get_campaign_metrics(conn, camp_a, user_id=TEST_USER_ID)
         assert metrics["emails_sent"] == 0
         conn.close()
 
@@ -270,7 +270,7 @@ class TestGetVariantComparison:
         _set_status(conn, contacts_b[1], campaign_id, "replied_positive")
         _set_status(conn, contacts_b[2], campaign_id, "no_response")
 
-        variants = get_variant_comparison(conn, campaign_id)
+        variants = get_variant_comparison(conn, campaign_id, user_id=TEST_USER_ID)
 
         assert len(variants) == 2
 
@@ -300,7 +300,7 @@ class TestGetVariantComparison:
         conn = _setup_db(tmp_db)
         campaign_id = _create_campaign(conn)
 
-        variants = get_variant_comparison(conn, campaign_id)
+        variants = get_variant_comparison(conn, campaign_id, user_id=TEST_USER_ID)
         assert variants == []
         conn.close()
 
@@ -312,7 +312,7 @@ class TestGetVariantComparison:
         campaign_id = _create_campaign(conn)
         _enroll(conn, c1, campaign_id, variant=None)
 
-        variants = get_variant_comparison(conn, campaign_id)
+        variants = get_variant_comparison(conn, campaign_id, user_id=TEST_USER_ID)
         assert variants == []
         conn.close()
 
@@ -330,7 +330,7 @@ class TestGetVariantComparison:
         # c1: replied_positive, c2: queued
         _set_status(conn, c1, campaign_id, "replied_positive")
 
-        variants = get_variant_comparison(conn, campaign_id)
+        variants = get_variant_comparison(conn, campaign_id, user_id=TEST_USER_ID)
         assert len(variants) == 1
 
         var_a = variants[0]
@@ -371,7 +371,7 @@ class TestGetWeeklySummary:
         _log_event(conn, c1, "expandi_connected", campaign_id,
                    created_at=two_weeks_ago)
 
-        summary = get_weekly_summary(conn, campaign_id, weeks_back=1)
+        summary = get_weekly_summary(conn, campaign_id, weeks_back=1, user_id=TEST_USER_ID)
 
         assert summary["emails_sent"] == 1
         assert summary["replies_positive"] == 1
@@ -394,11 +394,11 @@ class TestGetWeeklySummary:
         _log_event(conn, c1, "email_sent", campaign_id, created_at=ten_days_ago)
 
         # weeks_back=1 should NOT capture this
-        summary_1 = get_weekly_summary(conn, campaign_id, weeks_back=1)
+        summary_1 = get_weekly_summary(conn, campaign_id, weeks_back=1, user_id=TEST_USER_ID)
         assert summary_1["emails_sent"] == 0
 
         # weeks_back=2 should capture it
-        summary_2 = get_weekly_summary(conn, campaign_id, weeks_back=2)
+        summary_2 = get_weekly_summary(conn, campaign_id, weeks_back=2, user_id=TEST_USER_ID)
         assert summary_2["emails_sent"] == 1
         conn.close()
 
@@ -417,7 +417,7 @@ class TestGetWeeklySummary:
         _log_event(conn, c1, "expandi_message_sent", campaign_id, created_at=recent)
         _log_event(conn, c1, "expandi_message_sent", campaign_id, created_at=recent)
 
-        summary = get_weekly_summary(conn, campaign_id, weeks_back=1)
+        summary = get_weekly_summary(conn, campaign_id, weeks_back=1, user_id=TEST_USER_ID)
         assert summary["linkedin_actions"] == 3
         conn.close()
 
@@ -426,7 +426,7 @@ class TestGetWeeklySummary:
         conn = _setup_db(tmp_db)
         campaign_id = _create_campaign(conn)
 
-        summary = get_weekly_summary(conn, campaign_id, weeks_back=1)
+        summary = get_weekly_summary(conn, campaign_id, weeks_back=1, user_id=TEST_USER_ID)
 
         assert summary["emails_sent"] == 0
         assert summary["linkedin_actions"] == 0
@@ -441,7 +441,7 @@ class TestGetWeeklySummary:
         conn = _setup_db(tmp_db)
         campaign_id = _create_campaign(conn)
 
-        summary = get_weekly_summary(conn, campaign_id, weeks_back=1)
+        summary = get_weekly_summary(conn, campaign_id, weeks_back=1, user_id=TEST_USER_ID)
 
         today = date.today()
         start = today - timedelta(days=7)
@@ -474,7 +474,7 @@ class TestGetCompanyTypeBreakdown:
         _set_status(conn, c2, campaign_id, "no_response")
         _set_status(conn, c3, campaign_id, "replied_positive")
 
-        breakdown = get_company_type_breakdown(conn, campaign_id)
+        breakdown = get_company_type_breakdown(conn, campaign_id, user_id=TEST_USER_ID)
 
         assert len(breakdown) == 2
 
@@ -509,7 +509,7 @@ class TestGetCompanyTypeBreakdown:
         _set_status(conn, c_a, campaign_id, "no_response")  # reply_rate = 0
         _set_status(conn, c_b, campaign_id, "replied_positive")  # reply_rate = 1
 
-        breakdown = get_company_type_breakdown(conn, campaign_id)
+        breakdown = get_company_type_breakdown(conn, campaign_id, user_id=TEST_USER_ID)
 
         assert breakdown[0]["firm_type"] == "Type B"
         assert breakdown[1]["firm_type"] == "Type A"
@@ -531,7 +531,7 @@ class TestGetCompanyTypeBreakdown:
         _enroll(conn, c1, campaign_id)
         _set_status(conn, c1, campaign_id, "replied_positive")
 
-        breakdown = get_company_type_breakdown(conn, campaign_id)
+        breakdown = get_company_type_breakdown(conn, campaign_id, user_id=TEST_USER_ID)
 
         assert len(breakdown) == 1
         assert breakdown[0]["firm_type"] == "Unknown"
@@ -542,7 +542,7 @@ class TestGetCompanyTypeBreakdown:
         conn = _setup_db(tmp_db)
         campaign_id = _create_campaign(conn)
 
-        breakdown = get_company_type_breakdown(conn, campaign_id)
+        breakdown = get_company_type_breakdown(conn, campaign_id, user_id=TEST_USER_ID)
         assert breakdown == []
         conn.close()
 
@@ -560,7 +560,7 @@ class TestGetCompanyTypeBreakdown:
         _set_status(conn, c1, campaign_id, "replied_positive")
         # c2 stays queued
 
-        breakdown = get_company_type_breakdown(conn, campaign_id)
+        breakdown = get_company_type_breakdown(conn, campaign_id, user_id=TEST_USER_ID)
         assert len(breakdown) == 1
 
         fo = breakdown[0]
@@ -754,7 +754,7 @@ class TestEdgeCases:
         _enroll(conn, c1, campaign_id)
         _set_status(conn, c1, campaign_id, "bounced")
 
-        metrics = get_campaign_metrics(conn, campaign_id)
+        metrics = get_campaign_metrics(conn, campaign_id, user_id=TEST_USER_ID)
 
         assert metrics["by_status"]["bounced"] == 1
         assert metrics["total_enrolled"] == 1
@@ -778,8 +778,8 @@ class TestEdgeCases:
         _set_status(conn, c1, camp_a, "replied_positive")
         _set_status(conn, c2, camp_b, "no_response")
 
-        metrics_a = get_campaign_metrics(conn, camp_a)
-        metrics_b = get_campaign_metrics(conn, camp_b)
+        metrics_a = get_campaign_metrics(conn, camp_a, user_id=TEST_USER_ID)
+        metrics_b = get_campaign_metrics(conn, camp_b, user_id=TEST_USER_ID)
 
         assert metrics_a["total_enrolled"] == 1
         assert metrics_a["by_status"]["replied_positive"] == 1
@@ -808,7 +808,7 @@ class TestEdgeCases:
         _set_status(conn, c2, campaign_id, "no_response")
         _set_status(conn, c3, campaign_id, "no_response")
 
-        variants = get_variant_comparison(conn, campaign_id)
+        variants = get_variant_comparison(conn, campaign_id, user_id=TEST_USER_ID)
 
         # Only A and B, not NULL
         assert len(variants) == 2
@@ -830,7 +830,7 @@ class TestEdgeCases:
         _log_event(conn, c1, "status_no_response", campaign_id, created_at=recent)
         _log_event(conn, c1, "status_no_response", campaign_id, created_at=recent)
 
-        summary = get_weekly_summary(conn, campaign_id, weeks_back=1)
+        summary = get_weekly_summary(conn, campaign_id, weeks_back=1, user_id=TEST_USER_ID)
         assert summary["new_no_response"] == 2
         conn.close()
 
@@ -847,6 +847,6 @@ class TestEdgeCases:
 
         _log_event(conn, c1, "status_replied_negative", campaign_id, created_at=recent)
 
-        summary = get_weekly_summary(conn, campaign_id, weeks_back=1)
+        summary = get_weekly_summary(conn, campaign_id, weeks_back=1, user_id=TEST_USER_ID)
         assert summary["replies_negative"] == 1
         conn.close()

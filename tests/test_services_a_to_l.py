@@ -294,7 +294,7 @@ class TestComplianceGdprLimitZero:
         ctid = _create_contact(conn, cid)
         camp = create_campaign(conn, "test_zero", user_id=TEST_USER_ID)
         # No emails sent, but max=0 should block
-        assert check_gdpr_email_limit(conn, ctid, camp, max_emails=0) is False
+        assert check_gdpr_email_limit(conn, ctid, camp, max_emails=0, user_id=TEST_USER_ID) is False
         conn.close()
 
 
@@ -307,7 +307,7 @@ class TestComplianceGdprLimitMax1:
         cid = _create_company(conn)
         ctid = _create_contact(conn, cid)
         camp = create_campaign(conn, "test_one", user_id=TEST_USER_ID)
-        assert check_gdpr_email_limit(conn, ctid, camp, max_emails=1) is True
+        assert check_gdpr_email_limit(conn, ctid, camp, max_emails=1, user_id=TEST_USER_ID) is True
         conn.close()
 
     def test_max_one_blocks_second(self, tmp_db):
@@ -317,7 +317,7 @@ class TestComplianceGdprLimitMax1:
         ctid = _create_contact(conn, cid)
         camp = create_campaign(conn, "test_one_b", user_id=TEST_USER_ID)
         log_event(conn, ctid, "email_sent", campaign_id=camp, user_id=TEST_USER_ID)
-        assert check_gdpr_email_limit(conn, ctid, camp, max_emails=1) is False
+        assert check_gdpr_email_limit(conn, ctid, camp, max_emails=1, user_id=TEST_USER_ID) is False
         conn.close()
 
 
@@ -409,7 +409,7 @@ class TestContactScorerZeroAum:
         camp = create_campaign(conn, "scorer_zero", user_id=TEST_USER_ID)
         enroll_contact(conn, ctid, camp, next_action_date="2026-01-01", user_id=TEST_USER_ID)
 
-        scores = score_contacts(conn, camp, [ctid])
+        scores = score_contacts(conn, camp, [ctid], user_id=TEST_USER_ID)
         assert len(scores) == 1
         assert scores[0]["breakdown"]["aum_score"] == 0.0
         conn.close()
@@ -422,7 +422,7 @@ class TestContactScorerZeroAum:
         camp = create_campaign(conn, "scorer_null", user_id=TEST_USER_ID)
         enroll_contact(conn, ctid, camp, next_action_date="2026-01-01", user_id=TEST_USER_ID)
 
-        scores = score_contacts(conn, camp, [ctid])
+        scores = score_contacts(conn, camp, [ctid], user_id=TEST_USER_ID)
         assert len(scores) == 1
         assert scores[0]["breakdown"]["aum_score"] == 0.0
         conn.close()
@@ -442,7 +442,7 @@ class TestContactScorerChannelScore:
         camp = create_campaign(conn, "ch_both", user_id=TEST_USER_ID)
         enroll_contact(conn, ctid, camp, next_action_date="2026-01-01", user_id=TEST_USER_ID)
 
-        scores = score_contacts(conn, camp, [ctid])
+        scores = score_contacts(conn, camp, [ctid], user_id=TEST_USER_ID)
         assert scores[0]["breakdown"]["channel_score"] == 1.0
         conn.close()
 
@@ -454,7 +454,7 @@ class TestContactScorerChannelScore:
         camp = create_campaign(conn, "ch_email", user_id=TEST_USER_ID)
         enroll_contact(conn, ctid, camp, next_action_date="2026-01-01", user_id=TEST_USER_ID)
 
-        scores = score_contacts(conn, camp, [ctid])
+        scores = score_contacts(conn, camp, [ctid], user_id=TEST_USER_ID)
         assert scores[0]["breakdown"]["channel_score"] == 0.5
         conn.close()
 
@@ -469,7 +469,7 @@ class TestContactScorerChannelScore:
         camp = create_campaign(conn, "ch_inv", user_id=TEST_USER_ID)
         enroll_contact(conn, ctid, camp, next_action_date="2026-01-01", user_id=TEST_USER_ID)
 
-        scores = score_contacts(conn, camp, [ctid])
+        scores = score_contacts(conn, camp, [ctid], user_id=TEST_USER_ID)
         assert scores[0]["breakdown"]["channel_score"] == 0.5
         conn.close()
 
@@ -483,7 +483,7 @@ class TestContactScorerChannelScore:
         camp = create_campaign(conn, "ch_none", user_id=TEST_USER_ID)
         enroll_contact(conn, ctid, camp, next_action_date="2026-01-01", user_id=TEST_USER_ID)
 
-        scores = score_contacts(conn, camp, [ctid])
+        scores = score_contacts(conn, camp, [ctid], user_id=TEST_USER_ID)
         assert scores[0]["breakdown"]["channel_score"] == 0.0
         conn.close()
 
@@ -499,7 +499,7 @@ class TestContactScorerRecency:
         camp = create_campaign(conn, "rec_none", user_id=TEST_USER_ID)
         enroll_contact(conn, ctid, camp, next_action_date=None, user_id=TEST_USER_ID)
 
-        scores = score_contacts(conn, camp, [ctid])
+        scores = score_contacts(conn, camp, [ctid], user_id=TEST_USER_ID)
         # No action date -> default recency of 0.5
         assert scores[0]["breakdown"]["recency_score"] == 0.5
         conn.close()
@@ -534,7 +534,7 @@ class TestContactScorerComposite:
         camp = create_campaign(conn, "composite", user_id=TEST_USER_ID)
         enroll_contact(conn, ctid, camp, next_action_date="2026-01-01", user_id=TEST_USER_ID)
 
-        scores = score_contacts(conn, camp, [ctid])
+        scores = score_contacts(conn, camp, [ctid], user_id=TEST_USER_ID)
         bd = scores[0]["breakdown"]
         expected = round(
             WEIGHT_AUM * bd["aum_score"]
@@ -2024,7 +2024,7 @@ class TestGetAnalysisHistory:
         from src.services.llm_advisor import get_analysis_history
         conn = _setup_db(tmp_db)
         camp = create_campaign(conn, "hist_empty", user_id=TEST_USER_ID)
-        result = get_analysis_history(conn, camp)
+        result = get_analysis_history(conn, camp, user_id=TEST_USER_ID)
         assert result == []
         conn.close()
 
@@ -2035,8 +2035,8 @@ class TestGetAnalysisHistory:
         camp = create_campaign(conn, "hist_run", user_id=TEST_USER_ID)
         conn.commit()
 
-        run_analysis(conn, camp)
-        history = get_analysis_history(conn, camp)
+        run_analysis(conn, camp, user_id=TEST_USER_ID)
+        history = get_analysis_history(conn, camp, user_id=TEST_USER_ID)
         assert len(history) == 1
         assert history[0]["campaign_id"] == camp
         conn.close()

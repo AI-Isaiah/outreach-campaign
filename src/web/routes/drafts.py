@@ -160,13 +160,29 @@ def get_contacts_by_ids(
 # ---------------------------------------------------------------------------
 # Draft cleanup
 # ---------------------------------------------------------------------------
-# TODO: Add expired-draft cleanup.  Two options:
-#   1. A periodic cron job:
-#        DELETE FROM campaign_drafts WHERE expires_at < NOW()
-#      Wire it into the existing cron_router pattern (see routes/replies.py).
-#   2. Inline on login — add to get_current_user() in dependencies.py:
-#        After resolving the user, fire-and-forget:
-#          DELETE FROM campaign_drafts
-#          WHERE user_id = %s AND expires_at < NOW()
-#      This keeps it simple but adds a write to every authed request.
-#   Option 1 (cron) is recommended for production.
+
+import logging
+
+_cleanup_logger = logging.getLogger(__name__)
+
+
+@router.post("/drafts/cleanup")
+def cleanup_expired_drafts(
+    conn=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Delete expired campaign drafts for the current user.
+
+    Intended to be called periodically (e.g. from a cron endpoint or on login).
+    Only deletes drafts owned by the requesting user.
+    """
+    with get_cursor(conn) as cur:
+        cur.execute(
+            "DELETE FROM campaign_drafts WHERE user_id = %s AND expires_at < NOW()",
+            (user["id"],),
+        )
+        deleted = cur.rowcount
+        conn.commit()
+    if deleted:
+        _cleanup_logger.info("Cleaned up %d expired drafts for user %s", deleted, user["id"])
+    return {"deleted": deleted}

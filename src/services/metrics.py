@@ -3,11 +3,8 @@
 Provides functions to compute campaign-level metrics, A/B variant comparisons,
 weekly summaries, and firm-type breakdowns for outreach campaigns.
 
-Multi-tenancy note: all functions in this module query by campaign_id, which
-provides tenant isolation via FK -- campaigns.user_id is verified by the caller
-(route or CLI) before the campaign_id reaches these functions.  This is
-defense-by-FK, not a direct user_id WHERE clause, but is safe as long as
-callers always verify campaign ownership first.
+Multi-tenancy: all functions accept user_id for defense-in-depth.  Campaign
+ownership is verified before running any queries.
 """
 
 from __future__ import annotations
@@ -19,7 +16,18 @@ from src.enums import ContactStatus, EventType
 from src.models.database import get_cursor
 
 
-def get_campaign_metrics(conn, campaign_id: int) -> dict:
+def _verify_campaign_owner(conn, campaign_id: int, user_id: int) -> None:
+    """Raise ValueError if campaign does not belong to user."""
+    with get_cursor(conn) as cur:
+        cur.execute(
+            "SELECT id FROM campaigns WHERE id = %s AND user_id = %s",
+            (campaign_id, user_id),
+        )
+        if not cur.fetchone():
+            raise ValueError(f"Campaign {campaign_id} not found or not owned by user {user_id}")
+
+
+def get_campaign_metrics(conn, campaign_id: int, *, user_id: int) -> dict:
     """Get comprehensive metrics for a campaign.
 
     Returns dict with:
@@ -33,6 +41,7 @@ def get_campaign_metrics(conn, campaign_id: int) -> dict:
     - reply_rate: float (positive + negative / total non-queued)
     - positive_rate: float (positive / total non-queued)
     """
+    _verify_campaign_owner(conn, campaign_id, user_id)
     with get_cursor(conn) as cursor:
         # Status counts
         cursor.execute(
@@ -135,13 +144,14 @@ def compute_health_score(metrics: dict) -> Optional[int]:
     return max(0, min(100, round(score)))
 
 
-def get_variant_comparison(conn, campaign_id: int) -> list[dict]:
+def get_variant_comparison(conn, campaign_id: int, *, user_id: int) -> list[dict]:
     """Compare A/B variants by reply rates.
 
     Returns list of dicts with: variant, total, replied_positive,
     replied_negative, no_response, reply_rate, positive_rate.
     Only includes contacts with a non-NULL assigned_variant.
     """
+    _verify_campaign_owner(conn, campaign_id, user_id)
     with get_cursor(conn) as cursor:
         cursor.execute(
             """
@@ -194,6 +204,8 @@ def get_weekly_summary(
     conn,
     campaign_id: int,
     weeks_back: int = 1,
+    *,
+    user_id: int,
 ) -> dict:
     """Get metrics for the past N weeks.
 
@@ -209,6 +221,7 @@ def get_weekly_summary(
     - calls_booked: int (call_booked events)
     - new_no_response: int (status_no_response events)
     """
+    _verify_campaign_owner(conn, campaign_id, user_id)
     today = date.today()
     start_date = today - timedelta(days=weeks_back * 7)
     start_str = start_date.isoformat()
@@ -265,6 +278,8 @@ def get_weekly_summary(
 def get_company_type_breakdown(
     conn,
     campaign_id: int,
+    *,
+    user_id: int,
 ) -> list[dict]:
     """Break down reply rates by company firm_type.
 
@@ -274,6 +289,7 @@ def get_company_type_breakdown(
     Each dict contains: firm_type, total, replied_positive, replied_negative,
     no_response, reply_rate, positive_rate.
     """
+    _verify_campaign_owner(conn, campaign_id, user_id)
     with get_cursor(conn) as cursor:
         cursor.execute(
             """

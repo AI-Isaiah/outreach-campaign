@@ -136,7 +136,7 @@ class TestCheckGdprEmailLimit:
         campaign_id = _create_campaign(conn)
 
         # 0 emails sent, limit is 2 => allowed
-        assert check_gdpr_email_limit(conn, contact_id, campaign_id) is True
+        assert check_gdpr_email_limit(conn, contact_id, campaign_id, user_id=TEST_USER_ID) is True
         conn.close()
 
     def test_at_boundary_blocks_send(self, tmp_db):
@@ -149,7 +149,7 @@ class TestCheckGdprEmailLimit:
         log_event(conn, contact_id, "email_sent", campaign_id=campaign_id, user_id=TEST_USER_ID)
         log_event(conn, contact_id, "email_sent", campaign_id=campaign_id, user_id=TEST_USER_ID)
 
-        assert check_gdpr_email_limit(conn, contact_id, campaign_id, max_emails=2) is False
+        assert check_gdpr_email_limit(conn, contact_id, campaign_id, max_emails=2, user_id=TEST_USER_ID) is False
         conn.close()
 
     def test_one_below_boundary_allows_send(self, tmp_db):
@@ -161,7 +161,7 @@ class TestCheckGdprEmailLimit:
 
         log_event(conn, contact_id, "email_sent", campaign_id=campaign_id, user_id=TEST_USER_ID)
 
-        assert check_gdpr_email_limit(conn, contact_id, campaign_id, max_emails=2) is True
+        assert check_gdpr_email_limit(conn, contact_id, campaign_id, max_emails=2, user_id=TEST_USER_ID) is True
         conn.close()
 
     def test_over_limit_blocks_send(self, tmp_db):
@@ -173,7 +173,7 @@ class TestCheckGdprEmailLimit:
         for _ in range(5):
             log_event(conn, contact_id, "email_sent", campaign_id=campaign_id, user_id=TEST_USER_ID)
 
-        assert check_gdpr_email_limit(conn, contact_id, campaign_id, max_emails=2) is False
+        assert check_gdpr_email_limit(conn, contact_id, campaign_id, max_emails=2, user_id=TEST_USER_ID) is False
         conn.close()
 
     def test_non_email_events_not_counted(self, tmp_db):
@@ -186,7 +186,7 @@ class TestCheckGdprEmailLimit:
         log_event(conn, contact_id, "call_booked", campaign_id=campaign_id, user_id=TEST_USER_ID)
         log_event(conn, contact_id, "expandi_connected", campaign_id=campaign_id, user_id=TEST_USER_ID)
 
-        assert check_gdpr_email_limit(conn, contact_id, campaign_id, max_emails=2) is True
+        assert check_gdpr_email_limit(conn, contact_id, campaign_id, max_emails=2, user_id=TEST_USER_ID) is True
         conn.close()
 
     def test_different_campaign_events_not_counted(self, tmp_db):
@@ -201,7 +201,7 @@ class TestCheckGdprEmailLimit:
         log_event(conn, contact_id, "email_sent", campaign_id=campaign_a, user_id=TEST_USER_ID)
 
         # Campaign B should be unaffected
-        assert check_gdpr_email_limit(conn, contact_id, campaign_b, max_emails=2) is True
+        assert check_gdpr_email_limit(conn, contact_id, campaign_b, max_emails=2, user_id=TEST_USER_ID) is True
         conn.close()
 
     def test_custom_max_emails(self, tmp_db):
@@ -215,9 +215,9 @@ class TestCheckGdprEmailLimit:
         log_event(conn, contact_id, "email_sent", campaign_id=campaign_id, user_id=TEST_USER_ID)
 
         # 3 sent, limit 5 => allowed
-        assert check_gdpr_email_limit(conn, contact_id, campaign_id, max_emails=5) is True
+        assert check_gdpr_email_limit(conn, contact_id, campaign_id, max_emails=5, user_id=TEST_USER_ID) is True
         # 3 sent, limit 3 => blocked
-        assert check_gdpr_email_limit(conn, contact_id, campaign_id, max_emails=3) is False
+        assert check_gdpr_email_limit(conn, contact_id, campaign_id, max_emails=3, user_id=TEST_USER_ID) is False
         conn.close()
 
 

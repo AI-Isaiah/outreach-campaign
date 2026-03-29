@@ -91,5 +91,4 @@ def load_config_safe() -> dict:
 
 SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL", "")
 
-# TODO: make configurable via .env or remove default
-DEFAULT_CAMPAIGN = "Q1_2026_initial"
+DEFAULT_CAMPAIGN = os.getenv("DEFAULT_CAMPAIGN", "Q1_2026_initial")

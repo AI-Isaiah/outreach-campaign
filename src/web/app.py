@@ -141,11 +141,16 @@ app.add_middleware(
 
 @app.middleware("http")
 async def add_request_id(request: Request, call_next):
+    from src.web.logging_config import request_id_var
     request_id = str(uuid.uuid4())
     request.state.request_id = request_id
-    response = await call_next(request)
-    response.headers["X-Request-ID"] = request_id
-    return response
+    token = request_id_var.set(request_id)
+    try:
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        return response
+    finally:
+        request_id_var.reset(token)
 
 
 # Health endpoint — no auth required

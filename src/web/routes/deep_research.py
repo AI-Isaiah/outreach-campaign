@@ -248,8 +248,9 @@ def cancel_deep_research(
             cur.execute(
                 """UPDATE deep_research
                    SET status = 'cancelled', updated_at = NOW()
-                   WHERE id = %s AND status IN ('pending', 'researching', 'synthesizing')""",
-                (deep_research_id,),
+                   WHERE id = %s AND user_id = %s
+                     AND status IN ('pending', 'researching', 'synthesizing')""",
+                (deep_research_id, user["id"]),
             )
             if cur.rowcount == 0:
                 conn.rollback()

@@ -520,7 +520,7 @@ class TestGetNextStepForContact:
             user_id=TEST_USER_ID,
         )
 
-        step = get_next_step_for_contact(conn, cid, campaign)
+        step = get_next_step_for_contact(conn, cid, campaign, user_id=TEST_USER_ID)
         assert step is not None
         assert step["step_order"] == 2
         assert step["channel"] == "linkedin_message"
@@ -535,7 +535,7 @@ class TestGetNextStepForContact:
             user_id=TEST_USER_ID,
         )
 
-        step = get_next_step_for_contact(conn, cid, campaign)
+        step = get_next_step_for_contact(conn, cid, campaign, user_id=TEST_USER_ID)
         assert step is None
 
     def test_gdpr_contact_skips_non_gdpr_only_steps(self, conn, campaign):
@@ -549,7 +549,7 @@ class TestGetNextStepForContact:
             user_id=TEST_USER_ID,
         )
 
-        step = get_next_step_for_contact(conn, cid, campaign)
+        step = get_next_step_for_contact(conn, cid, campaign, user_id=TEST_USER_ID)
         # Steps 4 and 5 are both non_gdpr_only, so no eligible step remains
         assert step is None
 
@@ -563,7 +563,7 @@ class TestGetNextStepForContact:
             user_id=TEST_USER_ID,
         )
 
-        step = get_next_step_for_contact(conn, cid, campaign)
+        step = get_next_step_for_contact(conn, cid, campaign, user_id=TEST_USER_ID)
         assert step is not None
         assert step["step_order"] == 4
 
@@ -572,7 +572,7 @@ class TestGetNextStepForContact:
         comp = insert_company(conn, "Test Corp", aum_millions=500)
         cid = insert_contact(conn, comp, first_name="Not", last_name="Enrolled")
 
-        step = get_next_step_for_contact(conn, cid, campaign)
+        step = get_next_step_for_contact(conn, cid, campaign, user_id=TEST_USER_ID)
         assert step is None
 
     def test_first_step(self, conn, campaign):
@@ -585,7 +585,7 @@ class TestGetNextStepForContact:
             user_id=TEST_USER_ID,
         )
 
-        step = get_next_step_for_contact(conn, cid, campaign)
+        step = get_next_step_for_contact(conn, cid, campaign, user_id=TEST_USER_ID)
         assert step is not None
         assert step["step_order"] == 1
         assert step["channel"] == "linkedin_connect"
@@ -600,7 +600,7 @@ class TestGetNextStepForContact:
             user_id=TEST_USER_ID,
         )
 
-        step = get_next_step_for_contact(conn, cid, campaign)
+        step = get_next_step_for_contact(conn, cid, campaign, user_id=TEST_USER_ID)
         assert step is not None
         assert step["step_order"] == 3
         assert step["channel"] == "email"

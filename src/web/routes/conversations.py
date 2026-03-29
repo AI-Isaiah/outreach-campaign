@@ -52,9 +52,7 @@ def list_conversations(
     """List conversations for a contact, newest first."""
     with get_cursor(conn) as cur:
         cur.execute(
-            """SELECT c.id FROM contacts c
-               JOIN companies co ON co.id = c.company_id
-               WHERE c.id = %s AND co.user_id = %s""",
+            "SELECT id FROM contacts WHERE id = %s AND user_id = %s",
             (contact_id, user["id"]),
         )
         if not cur.fetchone():
@@ -82,9 +80,7 @@ def create_conversation(
 
     with get_cursor(conn) as cur:
         cur.execute(
-            """SELECT c.id, c.lifecycle_stage FROM contacts c
-               JOIN companies co ON co.id = c.company_id
-               WHERE c.id = %s AND co.user_id = %s""",
+            "SELECT id, lifecycle_stage FROM contacts WHERE id = %s AND user_id = %s",
             (contact_id, user["id"]),
         )
         contact = cur.fetchone()
@@ -136,8 +132,7 @@ def update_conversation(
         cur.execute(
             """SELECT cv.id FROM conversations cv
                JOIN contacts c ON c.id = cv.contact_id
-               JOIN companies co ON co.id = c.company_id
-               WHERE cv.id = %s AND co.user_id = %s""",
+               WHERE cv.id = %s AND c.user_id = %s""",
             (conversation_id, user["id"]),
         )
         if not cur.fetchone():
@@ -174,8 +169,7 @@ def delete_conversation(
         cur.execute(
             """SELECT cv.id FROM conversations cv
                JOIN contacts c ON c.id = cv.contact_id
-               JOIN companies co ON co.id = c.company_id
-               WHERE cv.id = %s AND co.user_id = %s""",
+               WHERE cv.id = %s AND c.user_id = %s""",
             (conversation_id, user["id"]),
         )
         if not cur.fetchone():

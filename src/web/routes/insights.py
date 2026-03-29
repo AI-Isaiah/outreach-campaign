@@ -35,7 +35,7 @@ def analyze_campaign(request: Request, body: AnalyzeRequest, conn=Depends(get_db
         if not cur.fetchone():
             raise HTTPException(404, f"Campaign {body.campaign_id} not found")
 
-    result = run_analysis(conn, body.campaign_id)
+    result = run_analysis(conn, body.campaign_id, user_id=user["id"])
     return result
 
 
@@ -55,7 +55,7 @@ def insight_history(
             )
             if not cur.fetchone():
                 raise HTTPException(404, f"Campaign {campaign_id} not found")
-        return get_analysis_history(conn, campaign_id)
+        return get_analysis_history(conn, campaign_id, user_id=user["id"])
 
     # Return all runs scoped via campaigns
     with get_cursor(conn) as cur:

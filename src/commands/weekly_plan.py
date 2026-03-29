@@ -39,11 +39,11 @@ def generate_weekly_plan(conn, campaign_name: str) -> dict:
 
     campaign_id = camp["id"]
 
-    # Gather data
-    overall = get_campaign_metrics(conn, campaign_id)
-    last_week = get_weekly_summary(conn, campaign_id, weeks_back=1)
-    variants = get_variant_comparison(conn, campaign_id)
-    firm_breakdown = get_company_type_breakdown(conn, campaign_id)
+    # Gather data (user_id=1 for CLI context)
+    overall = get_campaign_metrics(conn, campaign_id, user_id=1)
+    last_week = get_weekly_summary(conn, campaign_id, weeks_back=1, user_id=1)
+    variants = get_variant_comparison(conn, campaign_id, user_id=1)
+    firm_breakdown = get_company_type_breakdown(conn, campaign_id, user_id=1)
 
     # Proposed next week: count contacts ready (queued with next_action_date
     # in the coming week, or past due)

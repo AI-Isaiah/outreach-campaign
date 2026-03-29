@@ -293,41 +293,41 @@ class TestAddComplianceFooterHtml:
 class TestCheckGdprEmailLimit:
     def test_under_limit_returns_true(self, conn, gdpr_contact, sample_campaign):
         # No emails sent yet
-        assert check_gdpr_email_limit(conn, gdpr_contact, sample_campaign) is True
+        assert check_gdpr_email_limit(conn, gdpr_contact, sample_campaign, user_id=TEST_USER_ID) is True
 
     def test_at_limit_returns_false(self, conn, gdpr_contact, sample_campaign):
         # Send 2 emails (the limit)
         log_event(conn, gdpr_contact, "email_sent", campaign_id=sample_campaign, user_id=TEST_USER_ID)
         log_event(conn, gdpr_contact, "email_sent", campaign_id=sample_campaign, user_id=TEST_USER_ID)
-        assert check_gdpr_email_limit(conn, gdpr_contact, sample_campaign) is False
+        assert check_gdpr_email_limit(conn, gdpr_contact, sample_campaign, user_id=TEST_USER_ID) is False
 
     def test_one_email_still_ok(self, conn, gdpr_contact, sample_campaign):
         log_event(conn, gdpr_contact, "email_sent", campaign_id=sample_campaign, user_id=TEST_USER_ID)
-        assert check_gdpr_email_limit(conn, gdpr_contact, sample_campaign) is True
+        assert check_gdpr_email_limit(conn, gdpr_contact, sample_campaign, user_id=TEST_USER_ID) is True
 
     def test_over_limit_returns_false(self, conn, gdpr_contact, sample_campaign):
         for _ in range(3):
             log_event(conn, gdpr_contact, "email_sent", campaign_id=sample_campaign, user_id=TEST_USER_ID)
-        assert check_gdpr_email_limit(conn, gdpr_contact, sample_campaign) is False
+        assert check_gdpr_email_limit(conn, gdpr_contact, sample_campaign, user_id=TEST_USER_ID) is False
 
     def test_other_event_types_not_counted(self, conn, gdpr_contact, sample_campaign):
         # Log non-email events
         log_event(conn, gdpr_contact, "linkedin_connect_sent", campaign_id=sample_campaign, user_id=TEST_USER_ID)
         log_event(conn, gdpr_contact, "status_in_progress", campaign_id=sample_campaign, user_id=TEST_USER_ID)
         log_event(conn, gdpr_contact, "email_opened", campaign_id=sample_campaign, user_id=TEST_USER_ID)
-        assert check_gdpr_email_limit(conn, gdpr_contact, sample_campaign) is True
+        assert check_gdpr_email_limit(conn, gdpr_contact, sample_campaign, user_id=TEST_USER_ID) is True
 
     def test_different_campaign_not_counted(self, conn, gdpr_contact, sample_campaign):
         other_campaign = create_campaign(conn, "Other Campaign", user_id=TEST_USER_ID)
         log_event(conn, gdpr_contact, "email_sent", campaign_id=other_campaign, user_id=TEST_USER_ID)
         log_event(conn, gdpr_contact, "email_sent", campaign_id=other_campaign, user_id=TEST_USER_ID)
         # Different campaign, so the original should still be under limit
-        assert check_gdpr_email_limit(conn, gdpr_contact, sample_campaign) is True
+        assert check_gdpr_email_limit(conn, gdpr_contact, sample_campaign, user_id=TEST_USER_ID) is True
 
     def test_custom_limit(self, conn, gdpr_contact, sample_campaign):
         log_event(conn, gdpr_contact, "email_sent", campaign_id=sample_campaign, user_id=TEST_USER_ID)
         # With max_emails=1, one email should hit the limit
-        assert check_gdpr_email_limit(conn, gdpr_contact, sample_campaign, max_emails=1) is False
+        assert check_gdpr_email_limit(conn, gdpr_contact, sample_campaign, max_emails=1, user_id=TEST_USER_ID) is False
 
 
 # ===========================================================================

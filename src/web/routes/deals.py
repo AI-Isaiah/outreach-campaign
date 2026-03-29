@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from src.enums import DealStage
 from src.web.dependencies import get_current_user, get_db
@@ -15,6 +17,8 @@ from src.models.database import get_cursor
 _DEAL_STAGE_LITERAL = Literal[
     "cold", "contacted", "engaged", "meeting_booked", "negotiating", "won", "lost"
 ]
+
+_limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/deals", tags=["deals"])
 
@@ -308,7 +312,9 @@ def update_deal_stage(
 
 
 @router.delete("/{deal_id}")
+@_limiter.limit("5/minute")
 def delete_deal(
+    request: Request,
     deal_id: int,
     conn=Depends(get_db),
     user=Depends(get_current_user),
