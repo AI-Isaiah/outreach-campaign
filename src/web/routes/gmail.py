@@ -1,4 +1,7 @@
-"""Gmail OAuth and draft API routes."""
+"""Gmail OAuth and draft API routes.
+
+NOTE: Draft creation also available in drafts.py. Consider consolidating.
+"""
 
 from __future__ import annotations
 

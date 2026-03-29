@@ -11,3 +11,23 @@ NON_GDPR_MAX_EMAILS = 3
 
 # Email verification
 ZEROBOUNCE_CHUNK_SIZE = 100
+
+# Query limits
+MAX_CONTACTS_PER_PAGE = 200
+MAX_EVENTS_PER_QUERY = 500
+MAX_QUEUE_ITEMS = 50
+MAX_TAGS_PER_QUERY = 500
+
+# SMTP retry
+SMTP_RETRY_COUNT = 3
+SMTP_RETRY_DELAY = 1  # seconds
+
+# LLM model identifiers — single source of truth for all AI calls
+LLM_MODELS = {
+    "deep_research": "claude-sonnet-4-20250514",
+    "message_drafter": "claude-haiku-4-5-20251001",
+    "classification": "claude-haiku-4-5-20251001",
+    "default_anthropic": "claude-haiku-4-5-20251001",
+    "sonnet": "claude-sonnet-4-20250514",
+    "opus": "claude-opus-4-20250514",
+}

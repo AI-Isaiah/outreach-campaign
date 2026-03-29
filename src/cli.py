@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+from contextlib import contextmanager
 from pathlib import Path
 
 import typer
@@ -25,6 +26,19 @@ console = Console()
 CLI_USER_ID = 1
 
 
+@contextmanager
+def cli_db():
+    """Context manager for CLI database connections."""
+    from src.models.database import get_connection, run_migrations
+
+    conn = get_connection(SUPABASE_DB_URL)
+    try:
+        run_migrations(conn)
+        yield conn
+    finally:
+        conn.close()
+
+
 def _load_config() -> dict:
     """Load config, wrapping errors for CLI display."""
     config = load_config_safe()
@@ -37,42 +51,29 @@ def _load_config() -> dict:
 @app.command()
 def import_csv(csv_path: str = typer.Argument(..., help="Path to Crypto Fund List CSV")):
     """Import contacts from the crypto fund CSV file."""
-    from src.models.database import get_connection, run_migrations, get_cursor
     from src.commands.import_contacts import import_fund_csv
 
-    conn = get_connection(SUPABASE_DB_URL)
-    try:
-        run_migrations(conn)
+    with cli_db() as conn:
         stats = import_fund_csv(conn, csv_path, user_id=CLI_USER_ID)
         console.print(f"[green]Imported {stats['companies_created']} companies, {stats['contacts_created']} contacts[/green]")
-    finally:
-        conn.close()
 
 
 @app.command()
 def import_emails(file_path: str = typer.Argument(..., help="Path to file with pasted emails")):
     """Import contacts from a pasted email list."""
-    from src.models.database import get_connection, run_migrations
     from src.commands.import_emails import import_pasted_emails
 
-    conn = get_connection(SUPABASE_DB_URL)
-    try:
-        run_migrations(conn)
+    with cli_db() as conn:
         stats = import_pasted_emails(conn, file_path, user_id=CLI_USER_ID)
         console.print(f"[green]Imported {stats['contacts_created']} contacts ({stats['lines_skipped']} skipped)[/green]")
-    finally:
-        conn.close()
 
 
 @app.command()
 def dedupe():
     """Run deduplication pipeline across all contacts."""
-    from src.models.database import get_connection, run_migrations
     from src.services.deduplication import run_dedup
 
-    conn = get_connection(SUPABASE_DB_URL)
-    try:
-        run_migrations(conn)
+    with cli_db() as conn:
         console.print("[bold]Running deduplication pipeline...[/bold]")
         stats = run_dedup(conn, export_dir="data/exports", user_id=CLI_USER_ID)
         console.print(f"  Email duplicates removed: {stats['email_dupes']}")
@@ -80,8 +81,6 @@ def dedupe():
         console.print(f"  Fuzzy company matches flagged: {stats['fuzzy_flagged']}")
         if stats["fuzzy_flagged"] > 0:
             console.print("  [yellow]Review: data/exports/dedup_review.csv[/yellow]")
-    finally:
-        conn.close()
 
 
 @app.command()
@@ -96,6 +95,7 @@ def verify():
         console.print("[red]ERROR: Set EMAIL_VERIFY_API_KEY in .env[/red]")
         raise typer.Exit(1)
 
+    # TODO: migrate to cli_db() context manager
     conn = get_connection(SUPABASE_DB_URL)
     try:
         run_migrations(conn)
@@ -124,12 +124,9 @@ def verify():
 @app.command()
 def stats():
     """Show database statistics."""
-    from src.models.database import get_connection, run_migrations
+    from src.models.database import get_cursor
 
-    conn = get_connection(SUPABASE_DB_URL)
-    try:
-        run_migrations(conn)
-
+    with cli_db() as conn:
         with get_cursor(conn) as cur:
             cur.execute("SELECT COUNT(*) AS cnt FROM companies")
             companies = cur.fetchone()["cnt"]
@@ -158,8 +155,6 @@ def stats():
         console.print(f"    Verified:     [green]{verified}[/green]")
         console.print(f"    Invalid:      [red]{invalid}[/red]")
         console.print(f"    Unverified:   {unverified}")
-    finally:
-        conn.close()
 
 
 @app.command()
@@ -173,6 +168,7 @@ def queue(
     from src.models.database import get_connection, run_migrations
     from src.commands.queue import queue_today
 
+    # TODO: migrate to cli_db() context manager
     conn = get_connection(SUPABASE_DB_URL)
     try:
         run_migrations(conn)
@@ -221,6 +217,7 @@ def export_expandi(
     from src.models.database import get_connection, run_migrations
     from src.commands.export_expandi import export_expandi_csv
 
+    # TODO: migrate to cli_db() context manager
     conn = get_connection(SUPABASE_DB_URL)
     run_migrations(conn)
 
@@ -248,6 +245,7 @@ def import_expandi(
     from src.models.database import get_connection, run_migrations
     from src.commands.import_expandi import import_expandi_results
 
+    # TODO: migrate to cli_db() context manager
     conn = get_connection(SUPABASE_DB_URL)
     run_migrations(conn)
 
@@ -274,6 +272,7 @@ def create_campaign_cmd(
     from src.models.database import get_connection, run_migrations
     from src.models.campaigns import create_campaign
 
+    # TODO: migrate to cli_db() context manager
     conn = get_connection(SUPABASE_DB_URL)
     run_migrations(conn)
 
@@ -306,6 +305,7 @@ def setup_sequence(
         add_sequence_step,
     )
 
+    # TODO: migrate to cli_db() context manager
     conn = get_connection(SUPABASE_DB_URL)
     run_migrations(conn)
 
@@ -397,6 +397,7 @@ def enroll(
     from src.models.database import get_connection, run_migrations
     from src.models.campaigns import get_campaign_by_name, enroll_contact
 
+    # TODO: migrate to cli_db() context manager
     conn = get_connection(SUPABASE_DB_URL)
     run_migrations(conn)
 
@@ -482,6 +483,7 @@ def send(
     from src.services.priority_queue import get_daily_queue
     from src.services.email_sender import send_campaign_email
 
+    # TODO: migrate to cli_db() context manager
     conn = get_connection(SUPABASE_DB_URL)
     try:
         run_migrations(conn)
@@ -580,6 +582,7 @@ def status(
     from src.models.events import log_event
     from src.services.state_machine import transition_contact, InvalidTransition
 
+    # TODO: migrate to cli_db() context manager
     conn = get_connection(SUPABASE_DB_URL)
     try:
         run_migrations(conn)
@@ -687,20 +690,15 @@ def unsubscribe(
     email: str = typer.Argument(..., help="Email to unsubscribe"),
 ):
     """Process an unsubscribe request."""
-    from src.models.database import get_connection, run_migrations
     from src.services.compliance import process_unsubscribe
 
-    conn = get_connection(SUPABASE_DB_URL)
-    try:
-        run_migrations(conn)
+    with cli_db() as conn:
         result = process_unsubscribe(conn, email, user_id=CLI_USER_ID)
 
         if result:
             console.print(f"[green]Unsubscribed: {email}[/green]")
         else:
             console.print(f"[yellow]No contact found with email: {email}[/yellow]")
-    finally:
-        conn.close()
 
 
 @app.command()
@@ -714,6 +712,7 @@ def weekly_plan(
     from src.models.database import get_connection, run_migrations
     from src.commands.weekly_plan import generate_weekly_plan
 
+    # TODO: migrate to cli_db() context manager
     conn = get_connection(SUPABASE_DB_URL)
     try:
         run_migrations(conn)
@@ -816,6 +815,7 @@ def report(
         get_company_type_breakdown,
     )
 
+    # TODO: migrate to cli_db() context manager
     conn = get_connection(SUPABASE_DB_URL)
     try:
         run_migrations(conn)

@@ -16,6 +16,7 @@ from slowapi.util import get_remote_address
 
 from src.models.database import get_cursor
 from src.web.dependencies import get_config, get_current_user, get_db
+from src.web.query_builder import QueryBuilder
 
 _limiter = Limiter(key_func=get_remote_address)
 
@@ -126,20 +127,13 @@ def update_newsletter(newsletter_id: int, body: NewsletterUpdate, conn=Depends(g
         if nl["status"] != "draft":
             raise HTTPException(400, "Can only edit draft newsletters")
 
-        updates = []
-        params = []
-        for field in ("subject", "body_html", "body_text"):
-            value = getattr(body, field)
-            if value is not None:
-                updates.append(f"{field} = %s")
-                params.append(value)
+        set_clause, params = QueryBuilder.build_update(body.model_dump())
 
-        if updates:
-            updates.append("updated_at = NOW()")
-            params.append(newsletter_id)
-            params.append(user["id"])
+        if set_clause:
+            set_clause += ", updated_at = NOW()"
+            params.extend([newsletter_id, user["id"]])
             cur.execute(
-                f"UPDATE newsletters SET {', '.join(updates)} WHERE id = %s AND user_id = %s",
+                f"UPDATE newsletters SET {set_clause} WHERE id = %s AND user_id = %s",
                 params,
             )
             conn.commit()

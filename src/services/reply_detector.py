@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 
 import httpx
 
+from src.constants import LLM_MODELS
 from src.enums import ContactStatus
 from src.services.gmail_drafter import GmailDrafter
 from src.models.database import get_cursor
@@ -20,7 +21,7 @@ from src.models.database import get_cursor
 logger = logging.getLogger(__name__)
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-CLASSIFY_MODEL = "claude-haiku-4-5-20251001"
+CLASSIFY_MODEL = LLM_MODELS["classification"]
 
 
 def scan_gmail_for_replies(

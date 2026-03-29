@@ -12,8 +12,10 @@ from typing import Optional
 
 import bcrypt
 import jwt
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from src.config import load_config_safe
 from src.web.dependencies import get_current_user, get_db
@@ -22,6 +24,11 @@ from src.models.database import get_cursor
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+_limiter = Limiter(
+    key_func=get_remote_address,
+    enabled=os.getenv("RATE_LIMIT_ENABLED", "true").lower() != "false",
+)
 
 _JWT_SECRET = os.getenv("JWT_SECRET", "")
 _JWT_ALGORITHM = "HS256"
@@ -77,7 +84,8 @@ def _check_password(password: str, password_hash: str) -> bool:
 # --- Routes ---
 
 @router.post("/login")
-def login(body: LoginRequest, conn=Depends(get_db)):
+@_limiter.limit("10/minute")
+def login(request: Request, body: LoginRequest, conn=Depends(get_db)):
     """Authenticate with email and password, return JWT."""
     with get_cursor(conn) as cur:
         cur.execute(
@@ -107,7 +115,8 @@ def login(body: LoginRequest, conn=Depends(get_db)):
 
 
 @router.post("/register")
-def register(body: RegisterRequest, conn=Depends(get_db)):
+@_limiter.limit("3/minute")
+def register(request: Request, body: RegisterRequest, conn=Depends(get_db)):
     """Register a new user (invite-only: email must be in allowed_emails)."""
     email = body.email.lower().strip()
 
@@ -150,7 +159,8 @@ def register(body: RegisterRequest, conn=Depends(get_db)):
 
 
 @router.post("/forgot-password")
-def forgot_password(body: ForgotPasswordRequest, conn=Depends(get_db)):
+@_limiter.limit("3/minute")
+def forgot_password(request: Request, body: ForgotPasswordRequest, conn=Depends(get_db)):
     """Send a password reset email. Always returns 200 to prevent email enumeration."""
     email = body.email.lower().strip()
 

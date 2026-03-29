@@ -16,6 +16,8 @@ from email.mime.text import MIMEText
 from pathlib import Path
 from typing import Optional
 
+from googleapiclient.errors import HttpError
+
 logger = logging.getLogger(__name__)
 
 _BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
@@ -79,7 +81,7 @@ class GmailDrafter:
         try:
             creds = self._load_credentials()
             return creds is not None and creds.valid
-        except Exception:
+        except (ValueError, OSError, KeyError):
             return False
 
     def _load_credentials(self):
@@ -160,7 +162,7 @@ class GmailDrafter:
         self._service = build("gmail", "v1", credentials=creds)
         return self._service
 
-    @retry_on_failure(max_retries=3, backoff_base=1.0, exceptions=(Exception,))
+    @retry_on_failure(max_retries=3, backoff_base=1.0, exceptions=(HttpError, OSError))
     def create_draft(
         self,
         to_email: str,
@@ -205,8 +207,6 @@ class GmailDrafter:
             'draft' if it still exists, 'sent' if it was sent/deleted,
             'error' if there was a non-404 API error.
         """
-        from googleapiclient.errors import HttpError
-
         service = self._get_service()
         try:
             service.users().drafts().get(userId="me", id=draft_id).execute()
@@ -216,7 +216,7 @@ class GmailDrafter:
                 return "sent"
             logger.warning("Gmail API error checking draft %s: %s", draft_id, e)
             return "error"
-        except Exception:
+        except (OSError, ValueError, KeyError) as e:
             logger.exception("Unexpected error checking draft %s", draft_id)
             return "error"
 
@@ -243,7 +243,7 @@ class GmailDrafter:
                     "draft_id": draft_id,
                     "success": True,
                 })
-            except Exception as e:
+            except (HttpError, OSError, ValueError, KeyError) as e:
                 logger.exception("Failed to create draft for %s", d["to_email"])
                 results.append({
                     "to_email": d["to_email"],

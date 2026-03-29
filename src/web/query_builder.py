@@ -41,3 +41,18 @@ class QueryBuilder:
     def params(self) -> list:
         """Return the accumulated parameter list."""
         return list(self._params)
+
+    @staticmethod
+    def build_update(fields: dict, exclude_none: bool = True) -> tuple[str, list]:
+        """Build SET clause from a dict of field->value pairs.
+
+        Returns (set_clause, params) for use in UPDATE ... SET {set_clause} WHERE ...
+        """
+        parts: list[str] = []
+        params: list = []
+        for field, value in fields.items():
+            if exclude_none and value is None:
+                continue
+            parts.append(f"{field} = %s")
+            params.append(value)
+        return ", ".join(parts), params

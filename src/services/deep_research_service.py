@@ -27,6 +27,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import httpx
 
 from src.models.database import get_cursor
+from src.constants import LLM_MODELS
 from src.services.normalization_utils import (
     normalize_company_name,
     normalize_email,
@@ -36,7 +37,7 @@ from src.services.normalization_utils import (
 
 logger = logging.getLogger(__name__)
 
-DEEP_RESEARCH_MODEL = "claude-sonnet-4-20250514"
+DEEP_RESEARCH_MODEL = LLM_MODELS["deep_research"]
 
 _HIGH_RECENCY_PATTERNS = re.compile(
     r"\b(just|recently|this week|this month|announced|launching|new fund|"

@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from src.constants import MAX_TAGS_PER_QUERY
 from src.web.dependencies import get_current_user, get_db
 from src.models.database import get_cursor
 
@@ -28,8 +29,8 @@ def list_tags(conn=Depends(get_db), user=Depends(get_current_user)):
     """List all tags."""
     with get_cursor(conn) as cur:
         cur.execute(
-            "SELECT * FROM tags WHERE user_id = %s ORDER BY name LIMIT 500",
-            (user["id"],),
+            "SELECT * FROM tags WHERE user_id = %s ORDER BY name LIMIT %s",
+            (user["id"], MAX_TAGS_PER_QUERY),
         )
         return [dict(r) for r in cur.fetchall()]
 

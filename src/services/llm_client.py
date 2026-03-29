@@ -15,9 +15,11 @@ import re
 
 import httpx
 
+from src.constants import LLM_MODELS
+
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL_ANTHROPIC = "claude-haiku-4-5-20251001"
+DEFAULT_MODEL_ANTHROPIC = LLM_MODELS["default_anthropic"]
 DEFAULT_MODEL_OPENAI = "gpt-4o-mini"
 DEFAULT_MODEL_GEMINI = "gemini-2.0-flash"
 

@@ -1,3 +1,8 @@
+-- ROLLBACK:
+--   DROP INDEX IF EXISTS idx_advisor_runs_user_id;
+--   ALTER TABLE advisor_runs ALTER COLUMN user_id DROP NOT NULL;
+--   ALTER TABLE advisor_runs DROP COLUMN IF EXISTS user_id;
+
 -- Add user_id to advisor_runs for multi-tenancy isolation
 ALTER TABLE advisor_runs ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id);
 

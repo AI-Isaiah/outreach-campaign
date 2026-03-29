@@ -15,12 +15,13 @@ from datetime import datetime, timezone
 
 import httpx
 
+from src.constants import LLM_MODELS
 from src.enums import Channel
 from src.models.database import get_cursor
 
 logger = logging.getLogger(__name__)
 
-HAIKU_MODEL = "claude-haiku-4-5-20251001"
+HAIKU_MODEL = LLM_MODELS["message_drafter"]
 HAIKU_TIMEOUT = 8  # seconds
 SEQUENCE_TIMEOUT = 30  # seconds — longer for multi-step generation
 
@@ -329,9 +330,9 @@ SYSTEM_IMPROVE = _build_improve_system()
 
 
 ALLOWED_MODELS = {
-    "haiku": "claude-haiku-4-5-20251001",
-    "sonnet": "claude-sonnet-4-20250514",
-    "opus": "claude-opus-4-20250514",
+    "haiku": LLM_MODELS["message_drafter"],
+    "sonnet": LLM_MODELS["sonnet"],
+    "opus": LLM_MODELS["opus"],
 }
 
 

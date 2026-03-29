@@ -1,4 +1,7 @@
-"""Campaign draft API routes — CRUD for wizard draft persistence."""
+"""Campaign draft API routes — CRUD for wizard draft persistence.
+
+NOTE: Draft creation also available in gmail.py. Consider consolidating.
+"""
 
 from __future__ import annotations
 

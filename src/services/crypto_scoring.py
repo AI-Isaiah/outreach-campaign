@@ -12,12 +12,14 @@ import re
 
 import httpx
 
+from src.constants import LLM_MODELS
+
 logger = logging.getLogger(__name__)
 
 # These are imported from the main module at call time; kept as module-level
 # for the same pattern used by crypto_research.py.
 ANTHROPIC_API_KEY = ""
-CLASSIFIER_MODEL = "claude-haiku-4-5-20251001"
+CLASSIFIER_MODEL = LLM_MODELS["classification"]
 
 # Cost estimates
 COST_LLM = 0.001

@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
+from src.constants import MAX_QUEUE_ITEMS
 from src.services.llm_advisor import get_analysis_history, run_analysis
 from src.web.dependencies import get_current_user, get_db
 from src.models.database import get_cursor
@@ -67,7 +68,7 @@ def insight_history(
                JOIN campaigns cam ON cam.id = ar.campaign_id
                WHERE cam.user_id = %s
                ORDER BY ar.created_at DESC
-               LIMIT 50""",
-            (user["id"],),
+               LIMIT %s""",
+            (user["id"], MAX_QUEUE_ITEMS),
         )
         return [dict(r) for r in cur.fetchall()]

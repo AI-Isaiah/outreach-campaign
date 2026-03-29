@@ -1434,7 +1434,7 @@ class TestGmailDrafterCreateBatchDrafts:
 
         # Mock create_draft to succeed first, fail second
         with patch.object(drafter, "create_draft") as mock_cd:
-            mock_cd.side_effect = ["draft_123", Exception("API error")]
+            mock_cd.side_effect = ["draft_123", OSError("API error")]
 
             results = drafter.create_batch_drafts([
                 {"to_email": "a@b.com", "subject": "S1", "body_text": "B1"},
@@ -1498,7 +1498,7 @@ class TestGmailDrafterCheckDraftStatus:
         drafter.token_path = None
 
         mock_service = MagicMock()
-        mock_service.users().drafts().get().execute.side_effect = Exception("Network error")
+        mock_service.users().drafts().get().execute.side_effect = OSError("Network error")
 
         with patch.object(drafter, "_get_service", return_value=mock_service):
             assert drafter.check_draft_status("abc") == "error"

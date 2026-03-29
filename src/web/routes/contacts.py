@@ -21,6 +21,7 @@ from src.enums import LifecycleStage
 from src.services.normalization_utils import normalize_email as _normalize_email, normalize_linkedin_url as _normalize_linkedin
 from src.services.phone_utils import normalize_phone
 from src.services.state_machine import InvalidTransition
+from src.constants import MAX_CONTACTS_PER_PAGE
 from src.web.dependencies import get_current_user, get_db
 from src.web.query_builder import QueryBuilder
 from src.models.database import get_cursor
@@ -373,8 +374,8 @@ def get_contact_events(
                LEFT JOIN templates t ON t.id = e.template_id
                WHERE e.contact_id = %s
                ORDER BY e.created_at DESC
-               LIMIT 200""",
-            (contact_id,),
+               LIMIT %s""",
+            (contact_id, MAX_CONTACTS_PER_PAGE),
         )
         events = cur.fetchall()
 

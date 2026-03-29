@@ -33,6 +33,7 @@ from src.services.compliance import (
 )
 from jinja2.sandbox import SandboxedEnvironment
 
+from src.constants import SMTP_RETRY_COUNT, SMTP_RETRY_DELAY
 from src.models.database import get_cursor
 from src.services.template_engine import get_template_context, render_template
 
@@ -43,8 +44,8 @@ _SANDBOX_ENV = SandboxedEnvironment()
 # Simple RFC-style email regex — enough to catch obvious bad data before SMTP.
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
-_RETRY_MAX_ATTEMPTS = 3
-_RETRY_BACKOFF_SECONDS = 1
+_RETRY_MAX_ATTEMPTS = SMTP_RETRY_COUNT
+_RETRY_BACKOFF_SECONDS = SMTP_RETRY_DELAY
 _TRANSIENT_ERRORS = (smtplib.SMTPServerDisconnected, smtplib.SMTPConnectError)
 
 
