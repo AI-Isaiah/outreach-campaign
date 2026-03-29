@@ -59,7 +59,7 @@ function Page({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <ErrorBoundary>
         <Suspense fallback={<PageFallback />}>
           <Routes>

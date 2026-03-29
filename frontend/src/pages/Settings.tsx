@@ -11,6 +11,7 @@ import {
   disconnectGmail,
 } from "../api/settings";
 import type { EmailConfig } from "../api/settings";
+import { SkeletonCard } from "../components/Skeleton";
 
 const apiKeysApi = {
   get: () => request<{
@@ -563,7 +564,13 @@ export default function Settings() {
     },
   });
 
-  if (isLoading) return <p className="text-gray-400">Loading...</p>;
+  if (isLoading) return (
+    <div className="space-y-6">
+      <SkeletonCard />
+      <SkeletonCard />
+      <SkeletonCard />
+    </div>
+  );
 
   const config = data?.engine_config || {};
 
