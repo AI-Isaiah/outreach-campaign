@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import logging
 import os
+from collections import defaultdict
 from itertools import combinations
 
 import psycopg2
@@ -53,8 +54,10 @@ def _pass_exact_email(conn, user_id: int | None = None) -> int:
             """SELECT email_normalized, string_agg(id::text, ',') AS ids
                FROM contacts
                WHERE email_normalized IS NOT NULL AND email_normalized != ''
+                 AND user_id = %s
                GROUP BY email_normalized
-               HAVING COUNT(*) > 1"""
+               HAVING COUNT(*) > 1""",
+            (user_id,),
         )
         rows = cursor.fetchall()
 
@@ -84,8 +87,10 @@ def _pass_exact_linkedin(conn, user_id: int | None = None) -> int:
             """SELECT linkedin_url_normalized, string_agg(id::text, ',') AS ids
                FROM contacts
                WHERE linkedin_url_normalized IS NOT NULL AND linkedin_url_normalized != ''
+                 AND user_id = %s
                GROUP BY linkedin_url_normalized
-               HAVING COUNT(*) > 1"""
+               HAVING COUNT(*) > 1""",
+            (user_id,),
         )
         rows = cursor.fetchall()
 
@@ -122,24 +127,34 @@ def _pass_fuzzy_company(conn, export_dir: str | None, *, user_id: int | None = N
 
     flagged_pairs: list[dict] = []
 
-    for (id_a, name_a, norm_a), (id_b, name_b, norm_b) in combinations(
-        [(r["id"], r["name"], r["name_normalized"]) for r in rows], 2
-    ):
-        score = fuzz.token_sort_ratio(norm_a, norm_b)
-        if score >= FUZZY_DEDUP_THRESHOLD:
-            flagged_pairs.append(
-                {
-                    "company_a_id": id_a,
-                    "company_a_name": name_a,
-                    "company_b_id": id_b,
-                    "company_b_name": name_b,
-                    "score": score,
-                }
-            )
-            logger.info(
-                "Dedup fuzzy_company: '%s' (id=%d) ~ '%s' (id=%d) score=%d",
-                name_a, id_a, name_b, id_b, score,
-            )
+    # Group by first letter of normalized name to reduce O(n^2) comparisons.
+    # Only names sharing a first letter are compared, cutting work ~26x for
+    # evenly distributed names across the alphabet.
+    groups: dict[str, list[tuple]] = defaultdict(list)
+    for r in rows:
+        norm = r["name_normalized"]
+        if not norm:  # skip None or empty
+            continue
+        key = norm[0].upper()
+        groups[key].append((r["id"], r["name"], norm))
+
+    for group in groups.values():
+        for (id_a, name_a, norm_a), (id_b, name_b, norm_b) in combinations(group, 2):
+            score = fuzz.token_sort_ratio(norm_a, norm_b)
+            if score >= FUZZY_DEDUP_THRESHOLD:
+                flagged_pairs.append(
+                    {
+                        "company_a_id": id_a,
+                        "company_a_name": name_a,
+                        "company_b_id": id_b,
+                        "company_b_name": name_b,
+                        "score": score,
+                    }
+                )
+                logger.info(
+                    "Dedup fuzzy_company: '%s' (id=%d) ~ '%s' (id=%d) score=%d",
+                    name_a, id_a, name_b, id_b, score,
+                )
 
     if export_dir and flagged_pairs:
         csv_path = os.path.join(export_dir, "dedup_review.csv")

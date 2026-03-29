@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import React, { useRef } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import type { Deal } from "../../types";
 
@@ -7,7 +7,7 @@ function formatAum(aum: number | null | undefined): string | null {
   return aum >= 1000 ? `$${(aum / 1000).toFixed(1)}B` : `$${aum.toLocaleString()}M`;
 }
 
-export function DealCardContent({ deal }: { deal: Deal }) {
+export const DealCardContent = React.memo(function DealCardContent({ deal }: { deal: Deal }) {
   const aum = formatAum(deal.aum_millions);
   return (
     <>
@@ -30,9 +30,9 @@ export function DealCardContent({ deal }: { deal: Deal }) {
       </div>
     </>
   );
-}
+});
 
-export default function DraggableDealCard({
+export default React.memo(function DraggableDealCard({
   deal,
   onClick,
 }: {
@@ -73,4 +73,4 @@ export default function DraggableDealCard({
       <DealCardContent deal={deal} />
     </div>
   );
-}
+});

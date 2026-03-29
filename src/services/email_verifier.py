@@ -161,11 +161,13 @@ def update_contact_email_status(
         conn.commit()
 
 
-def get_unverified_emails(conn) -> list[str]:
+def get_unverified_emails(conn, *, user_id: int | None = None) -> list[str]:
     """Return all ``email_normalized`` values where status is 'unverified' and email is not NULL."""
     with get_cursor(conn) as cursor:
         cursor.execute(
             "SELECT email_normalized FROM contacts "
             "WHERE email_status = 'unverified' AND email_normalized IS NOT NULL"
+            " AND user_id = %s",
+            (user_id,),
         )
         return [row["email_normalized"] for row in cursor.fetchall()]

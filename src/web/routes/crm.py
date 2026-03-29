@@ -276,9 +276,9 @@ def get_company_detail(
             """SELECT c.*, ccs.status AS campaign_status, ccs.current_step
                FROM contacts c
                LEFT JOIN contact_campaign_status ccs ON ccs.contact_id = c.id
-               WHERE c.company_id = %s
+               WHERE c.company_id = %s AND c.user_id = %s
                ORDER BY c.priority_rank""",
-            (company_id,),
+            (company_id, user["id"]),
         )
         contacts = cur.fetchall()
 
@@ -286,8 +286,8 @@ def get_company_detail(
         cur.execute(
             """SELECT COUNT(*) AS cnt FROM events e
                JOIN contacts c ON c.id = e.contact_id
-               WHERE c.company_id = %s""",
-            (company_id,),
+               WHERE c.company_id = %s AND e.user_id = %s""",
+            (company_id, user["id"]),
         )
         event_count = cur.fetchone()["cnt"]
 

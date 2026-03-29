@@ -171,6 +171,10 @@ def update_contact_product_stage(
         raise HTTPException(400, f"Invalid stage. Must be one of: {', '.join(sorted(VALID_STAGES))}")
 
     with get_cursor(conn) as cur:
+        cur.execute("SELECT id FROM contacts WHERE id = %s AND user_id = %s", (contact_id, user["id"]))
+        if not cur.fetchone():
+            raise HTTPException(404, "Contact not found")
+
         cur.execute(
             "SELECT id FROM contact_products WHERE contact_id = %s AND product_id = %s",
             (contact_id, product_id),
@@ -195,6 +199,10 @@ def remove_contact_product(
 ):
     """Remove a product interest from a contact."""
     with get_cursor(conn) as cur:
+        cur.execute("SELECT id FROM contacts WHERE id = %s AND user_id = %s", (contact_id, user["id"]))
+        if not cur.fetchone():
+            raise HTTPException(404, "Contact not found")
+
         cur.execute(
             "DELETE FROM contact_products WHERE contact_id = %s AND product_id = %s",
             (contact_id, product_id),

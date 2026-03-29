@@ -131,6 +131,6 @@ export const campaignsApi = {
     if (params.limit) query.set("limit", String(params.limit));
     if (params.offset) query.set("offset", String(params.offset));
     const qs = query.toString();
-    return request<{ messages: any[]; total: number }>(`/campaigns/${campaignId}/messages${qs ? `?${qs}` : ""}`);
+    return request<{ messages: Record<string, unknown>[]; total: number }>(`/campaigns/${campaignId}/messages${qs ? `?${qs}` : ""}`);
   },
 };

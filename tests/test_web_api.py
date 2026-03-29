@@ -354,37 +354,6 @@ def test_queue_override(client, db_conn):
     assert resp.json()["success"] is True
 
 
-# ---------- Phone Update ----------
-
-def test_update_phone(client, db_conn):
-    company_id = _seed_company(db_conn)
-    contact_id = _seed_contact(db_conn, company_id)
-
-    resp = client.post(f"/api/contacts/{contact_id}/phone", json={
-        "phone_number": "+1 (555) 123-4567",
-    })
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["phone_normalized"] == "+15551234567"
-
-
-def test_update_phone_invalid(client, db_conn):
-    company_id = _seed_company(db_conn)
-    contact_id = _seed_contact(db_conn, company_id)
-
-    resp = client.post(f"/api/contacts/{contact_id}/phone", json={
-        "phone_number": "abc",
-    })
-    assert resp.status_code == 400
-
-
-def test_update_phone_not_found(client):
-    resp = client.post("/api/contacts/9999/phone", json={
-        "phone_number": "+15551234567",
-    })
-    assert resp.status_code == 404
-
-
 # ---------- Settings ----------
 
 def test_get_settings(client):

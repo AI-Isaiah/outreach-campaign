@@ -18,15 +18,13 @@ import {
 import {
   smartImportApi,
   type AnalyzeResult,
-  type PreviewResult,
-  type ImportResult,
   type RowAction,
   type RowDecision,
 } from "../api/smartImport";
 import { campaignsApi } from "../api/campaigns";
 import PreviewTableRow from "../components/PreviewTableRow";
-import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import Pagination from "../components/Pagination";
+import { useImportState } from "../hooks/useImportState";
 
 type Step = "upload" | "mapping" | "preview";
 
@@ -108,53 +106,37 @@ function SmartImportInner() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Job ID persisted in URL — survives navigation
-  const [jobId, setJobId] = useState<string | null>(searchParams.get("job"));
-
-  // Wizard state
-  const [step, setStep] = useState<Step>("upload");
-  const [file, setFile] = useState<File | null>(null);
-  const [dragOver, setDragOver] = useState(false);
-  const [analysis, setAnalysis] = useState<AnalyzeResult | null>(null);
-  const [mapping, setMapping] = useState<Record<string, string>>({});
-  const [sourceLabel, setSourceLabel] = useState("");
-  const [previewData, setPreviewData] = useState<PreviewResult | null>(null);
-  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const wizardRef = useRef<HTMLDivElement>(null);
   const resumeCheckedRef = useRef(false);
 
-  // Preview table state
-  const [previewPage, setPreviewPage] = useState(1);
-  const [previewPageSize, setPreviewPageSize] = useState(50);
-  const [previewSortBy, setPreviewSortBy] = useState<string>("");
-  const [previewSortDir, setPreviewSortDir] = useState<"asc" | "desc">("asc");
-  const [previewFilter, setPreviewFilter] = useState("");
-  const debouncedPreviewFilter = useDebouncedValue(previewFilter, 300);
-  const [previewShowFilter, setPreviewShowFilter] = useState<"all" | "new" | "matches" | "file_dupes">("all");
-  const [excludedIndices, setExcludedIndices] = useState<Set<number>>(new Set());
-  const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
-  const [expandedDuplicate, setExpandedDuplicate] = useState<number | null>(null);
-  const [rowDecisions, setRowDecisions] = useState<Record<number, RowDecision>>({});
-  const [selectedCampaignId, setSelectedCampaignId] = useState<number | null>(null);
+  const {
+    jobId, setJobId,
+    step, setStep,
+    file, setFile,
+    dragOver, setDragOver,
+    analysis, setAnalysis,
+    mapping, setMapping,
+    sourceLabel, setSourceLabel,
+    previewData, setPreviewData,
+    importResult, setImportResult,
+    previewPage, setPreviewPage,
+    previewPageSize, setPreviewPageSize,
+    previewSortBy, setPreviewSortBy,
+    previewSortDir, setPreviewSortDir,
+    previewFilter, setPreviewFilter,
+    debouncedPreviewFilter,
+    previewShowFilter, setPreviewShowFilter,
+    excludedIndices, setExcludedIndices,
+    selectedIndices, setSelectedIndices,
+    expandedDuplicate, setExpandedDuplicate,
+    rowDecisions, setRowDecisions,
+    selectedCampaignId, setSelectedCampaignId,
+    applyAnalysisResult,
+  } = useImportState(searchParams.get("job"));
 
   // Accept file from ImportWizard navigation state
   const location = useLocation();
   const locationStateFile = (location.state as { file?: File } | null)?.file ?? null;
-
-  // --- Helper: apply analysis result from server to local state ---
-  const applyAnalysisResult = useCallback(
-    (id: string, result: Omit<AnalyzeResult, "import_job_id">) => {
-      const fullAnalysis: AnalyzeResult = { import_job_id: id, ...result };
-      setAnalysis(fullAnalysis);
-      const fullMapping: Record<string, string> = {};
-      for (const h of result.headers ?? []) {
-        fullMapping[h] = result.proposed_mapping[h] || "";
-      }
-      setMapping(fullMapping);
-      setStep("mapping");
-    },
-    [], // all deps are stable state setters
-  );
 
   // --- Persist jobId in URL ---
   useEffect(() => {
@@ -357,6 +339,18 @@ function SmartImportInner() {
     setSearchParams({}, { replace: true });
   };
 
+  // Focus first interactive element when wizard step changes
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!wizardRef.current) return;
+      const target = wizardRef.current.querySelector<HTMLElement>(
+        'input:not([type="hidden"]):not([type="file"]), select, textarea, button:not([disabled])'
+      );
+      target?.focus();
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [step]);
+
   // Derived
   const stepIndex = STEPS.findIndex((s) => s.key === step);
 
@@ -490,7 +484,7 @@ function SmartImportInner() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div ref={wizardRef} className="max-w-4xl mx-auto space-y-6">
       {/* Header */}
       <div>
         <button
@@ -618,6 +612,7 @@ function SmartImportInner() {
                   }}
                   className="p-2 text-gray-300 hover:text-gray-500 transition-colors rounded-lg hover:bg-gray-50"
                   title="Remove file"
+                  aria-label="Remove file"
                 >
                   <X size={16} />
                 </button>
@@ -627,7 +622,7 @@ function SmartImportInner() {
 
           {/* Animated progress bar during LLM analysis (upload in flight OR polling background job) */}
           {(analyzeMutation.isPending || isAnalyzingInBackground) && (
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-4">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-4" aria-live="polite">
               <div className="flex items-center gap-3">
                 <FileText size={20} className="text-gray-400" />
                 <div>
@@ -883,7 +878,7 @@ function SmartImportInner() {
           </div>
 
           {excludedIndices.size > 0 && (
-            <div className="flex items-center gap-2 text-sm text-gray-500">
+            <div className="flex items-center gap-2 text-sm text-gray-500" aria-live="polite">
               <Info size={14} className="shrink-0" />
               {excludedIndices.size} row{excludedIndices.size !== 1 ? "s" : ""} excluded
               <button
@@ -919,6 +914,7 @@ function SmartImportInner() {
                     setPreviewPage(1);
                   }}
                   className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  aria-label="Clear search"
                 >
                   <X size={14} />
                 </button>
@@ -1114,7 +1110,7 @@ function SmartImportInner() {
 
       {/* Success state */}
       {importResult && (
-        <div className="bg-white rounded-lg border border-gray-200 p-6 space-y-4">
+        <div className="bg-white rounded-lg border border-gray-200 p-6 space-y-4" aria-live="polite">
           <div className="flex items-center gap-3 text-green-600">
             <CheckCircle size={24} />
             <h3 className="text-lg font-semibold">Import Complete</h3>

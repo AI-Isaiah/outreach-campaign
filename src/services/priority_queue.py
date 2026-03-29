@@ -26,6 +26,8 @@ def get_daily_queue(
     target_date: Optional[str] = None,
     limit: int = 10,
     scope: str = "today",
+    *,
+    user_id: int,
 ) -> list[dict]:
     """Return the prioritized list of contacts to action today.
 
@@ -44,9 +46,12 @@ def get_daily_queue(
     if target_date is None:
         target_date = date.today().isoformat()
 
-    # Guard: verify campaign exists before running the heavy CTE query
+    # Guard: verify campaign exists and belongs to user before running the heavy CTE query
     with get_cursor(conn) as cursor:
-        cursor.execute("SELECT id FROM campaigns WHERE id = %s", (campaign_id,))
+        cursor.execute(
+            "SELECT id FROM campaigns WHERE id = %s AND user_id = %s",
+            (campaign_id, user_id),
+        )
         if not cursor.fetchone():
             raise ValueError(f"Campaign {campaign_id} not found")
 

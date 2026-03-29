@@ -180,7 +180,7 @@ def create_batch_drafts(
     config = load_config_safe()
 
     from src.services.priority_queue import get_daily_queue
-    items = get_daily_queue(conn, campaign_id, target_date=body.date, limit=body.limit)
+    items = get_daily_queue(conn, campaign_id, target_date=body.date, limit=body.limit, user_id=user["id"])
     email_items = [i for i in items if i["channel"] == "email"]
 
     results = []

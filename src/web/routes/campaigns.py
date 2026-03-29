@@ -18,6 +18,7 @@ from src.services.metrics import (
     get_weekly_summary,
 )
 from src.services.response_analyzer import annotate_is_winning, get_template_performance
+from src.services.campaign_sequence import reorder_campaign_sequence
 from src.web.dependencies import get_current_user, get_db
 from src.models.database import get_cursor, verify_ownership
 
@@ -427,110 +428,14 @@ def reorder_sequence(
 ):
     """Reorder sequence steps for a campaign. Recalculates next_action_date for affected contacts."""
     user_id = user["id"]
-    with get_cursor(conn) as cursor:
-        if not verify_ownership(conn, "campaigns", campaign_id, user_id):
-            raise HTTPException(404, "Campaign not found")
+    if not verify_ownership(conn, "campaigns", campaign_id, user_id):
+        raise HTTPException(404, "Campaign not found")
 
-        # Verify all steps belong to this campaign
-        step_ids = [s.step_id for s in body.steps]
-        placeholders = ",".join(["%s"] * len(step_ids))
-        cursor.execute(
-            f"SELECT id FROM sequence_steps WHERE campaign_id = %s AND id IN ({placeholders})",
-            [campaign_id] + step_ids,
-        )
-        found = {r["id"] for r in cursor.fetchall()}
-        if found != set(step_ids):
-            raise HTTPException(422, "Some step_ids do not belong to this campaign")
-
-        # Temp-slot reorder: phase 1 - offset all to temp range
-        cursor.execute(
-            "UPDATE sequence_steps SET step_order = step_order + 10000 WHERE campaign_id = %s",
-            (campaign_id,),
-        )
-
-        # Phase 2: set final values via parameterized CASE
-        order_case = " ".join("WHEN %s THEN %s" for _ in body.steps)
-        order_params = [v for s in body.steps for v in (s.step_id, s.step_order)]
-
-        # Build optional delay_days and channel CASE clauses
-        set_clauses = [f"step_order = CASE id {order_case} END"]
-        all_params = list(order_params)
-
-        if any(s.delay_days is not None for s in body.steps):
-            delay_case = " ".join("WHEN %s THEN %s" for _ in body.steps)
-            delay_params = [v for s in body.steps for v in (s.step_id, s.delay_days if s.delay_days is not None else 0)]
-            set_clauses.append(f"delay_days = CASE id {delay_case} END")
-            all_params.extend(delay_params)
-
-        if any(s.channel is not None for s in body.steps):
-            ch_case = " ".join("WHEN %s THEN %s" for _ in body.steps)
-            ch_params = [v for s in body.steps for v in (s.step_id, s.channel if s.channel is not None else "email")]
-            set_clauses.append(f"channel = CASE id {ch_case} END")
-            all_params.extend(ch_params)
-
-        cursor.execute(
-            f"UPDATE sequence_steps SET {', '.join(set_clauses)} "
-            f"WHERE campaign_id = %s AND id IN ({placeholders})",
-            all_params + [campaign_id] + step_ids,
-        )
-
-        # Count affected contacts
-        cursor.execute(
-            "SELECT COUNT(*) as cnt FROM contact_campaign_status "
-            "WHERE campaign_id = %s AND status IN ('queued', 'in_progress')",
-            (campaign_id,),
-        )
-        affected_count = cursor.fetchone()["cnt"]
-
-        # Update contacts who haven't been contacted yet to point to the new step 1
-        # These are contacts with status='queued' on the old step 1 who should now start
-        # at whatever step is now in position 1 after reorder.
-        cursor.execute(
-            """UPDATE contact_campaign_status ccs
-               SET current_step_id = (
-                   SELECT stable_id FROM sequence_steps
-                   WHERE campaign_id = %s AND step_order = 1
-               ),
-               current_step = 1
-               WHERE ccs.campaign_id = %s
-                 AND ccs.status = 'queued'
-                 AND ccs.current_step = 1""",
-            (campaign_id, campaign_id),
-        )
-
-        # Recalculate next_action_date for affected contacts
-        if affected_count > 0:
-            cursor.execute("""
-                UPDATE contact_campaign_status ccs
-                SET next_action_date = (
-                    SELECT CURRENT_DATE + (ss_next.delay_days || ' days')::interval
-                    FROM sequence_steps ss_cur
-                    JOIN sequence_steps ss_next
-                      ON ss_next.campaign_id = ss_cur.campaign_id
-                      AND ss_next.step_order = (
-                        SELECT MIN(step_order) FROM sequence_steps
-                        WHERE campaign_id = ss_cur.campaign_id AND step_order > ss_cur.step_order
-                      )
-                    WHERE ss_cur.stable_id = ccs.current_step_id
-                )
-                WHERE ccs.campaign_id = %s
-                  AND ccs.status IN ('queued', 'in_progress')
-                  AND ccs.current_step_id IS NOT NULL
-            """, (campaign_id,))
-
-        conn.commit()
-
-        # Return updated sequence
-        cursor.execute(
-            """SELECT ss.*, t.subject AS template_subject, t.body_template AS template_body
-               FROM sequence_steps ss
-               LEFT JOIN templates t ON ss.template_id = t.id
-               WHERE ss.campaign_id = %s ORDER BY ss.step_order""",
-            (campaign_id,),
-        )
-        steps = [_row_to_dict(r) for r in cursor.fetchall()]
-
-    return {"steps": steps, "affected_count": affected_count}
+    try:
+        step_dicts = [s.model_dump() for s in body.steps]
+        return reorder_campaign_sequence(conn, campaign_id, step_dicts, user_id=user_id)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
 
 
 class StepUpdateRequest(BaseModel):

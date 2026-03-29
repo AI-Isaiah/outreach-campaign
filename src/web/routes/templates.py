@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -19,9 +19,15 @@ _limiter = Limiter(key_func=get_remote_address)
 router = APIRouter(tags=["templates"])
 
 
+_CHANNEL_LITERAL = Literal[
+    "email", "linkedin_connect", "linkedin_message",
+    "linkedin_engage", "linkedin_insight", "linkedin_final",
+]
+
+
 class TemplateCreateRequest(BaseModel):
     name: str = Field(max_length=200)
-    channel: str = Field(max_length=50)
+    channel: _CHANNEL_LITERAL
     body_template: str = Field(max_length=5000)
     subject: Optional[str] = Field(default=None, max_length=200)
     variant_group: Optional[str] = Field(default=None, max_length=100)

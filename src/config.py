@@ -38,6 +38,10 @@ class AppConfig(BaseModel):
 def load_config() -> dict:
     """Load config from config.yaml or config.yaml.example (cached).
 
+    .. deprecated::
+        Use :func:`load_config_safe` (returns dict, never raises) or
+        :func:`load_validated_config` (returns :class:`AppConfig`) instead.
+
     Also injects the SMTP password from the environment variable
     ``SMTP_PASSWORD`` if it is set.
 

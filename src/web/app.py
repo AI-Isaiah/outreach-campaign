@@ -35,7 +35,7 @@ if _sentry_dsn:
     )
 
 from src.config import SUPABASE_DB_URL  # noqa: E402
-from src.models.database import close_pool, get_connection, init_pool, run_migrations  # noqa: E402
+from src.models.database import close_pool, get_connection, get_cursor, init_pool, run_migrations  # noqa: E402
 from src.web.dependencies import require_auth  # noqa: E402
 from src.web.routes import (  # noqa: E402
     auth,
@@ -82,6 +82,20 @@ async def lifespan(app: FastAPI):
             try:
                 run_migrations(conn)
                 logger.info("Database migrations completed")
+
+                # Recover deep_research records stuck from a previous crash
+                with get_cursor(conn) as cur:
+                    cur.execute(
+                        """UPDATE deep_research
+                           SET status = 'failed',
+                               error_message = 'Process restarted during research',
+                               updated_at = NOW()
+                           WHERE status IN ('researching', 'synthesizing')"""
+                    )
+                    stuck = cur.rowcount
+                conn.commit()
+                if stuck:
+                    logger.warning("Recovered %d stuck deep_research records", stuck)
             finally:
                 conn.close()
             init_pool(SUPABASE_DB_URL)
@@ -120,8 +134,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "X-Requested-With"],
 )
 
 # Health endpoint — no auth required

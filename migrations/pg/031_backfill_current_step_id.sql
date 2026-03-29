@@ -1,3 +1,4 @@
+-- ROLLBACK: UPDATE contact_campaign_status SET current_step_id = NULL WHERE current_step_id IS NOT NULL;
 -- Backfill current_step_id for enrollments that have NULL current_step_id.
 -- These were created before the auto-populate fix in enroll_contact() and
 -- update_contact_campaign_status(). Without current_step_id, contacts are

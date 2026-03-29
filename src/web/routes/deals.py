@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -11,6 +11,10 @@ from src.enums import DealStage
 from src.web.dependencies import get_current_user, get_db
 from src.web.query_builder import QueryBuilder
 from src.models.database import get_cursor
+
+_DEAL_STAGE_LITERAL = Literal[
+    "cold", "contacted", "engaged", "meeting_booked", "negotiating", "won", "lost"
+]
 
 router = APIRouter(prefix="/deals", tags=["deals"])
 
@@ -22,7 +26,7 @@ class DealCreate(BaseModel):
     contact_id: Optional[int] = None
     campaign_id: Optional[int] = None
     title: str = Field(max_length=200)
-    stage: str = Field(default="cold", max_length=50)
+    stage: _DEAL_STAGE_LITERAL = "cold"
     amount_millions: Optional[float] = None
     expected_close_date: Optional[str] = Field(default=None, max_length=50)
     notes: Optional[str] = Field(default=None, max_length=5000)
@@ -38,7 +42,7 @@ class DealUpdate(BaseModel):
 
 
 class StageUpdate(BaseModel):
-    stage: str = Field(max_length=50)
+    stage: _DEAL_STAGE_LITERAL
 
 
 @router.get("/pipeline")
@@ -144,11 +148,15 @@ def create_deal(
         if not cur.fetchone():
             raise HTTPException(404, f"Company {body.company_id} not found")
 
-        # Verify contact if provided
         if body.contact_id is not None:
             cur.execute("SELECT id FROM contacts WHERE id = %s AND user_id = %s", (body.contact_id, user["id"]))
             if not cur.fetchone():
                 raise HTTPException(404, f"Contact {body.contact_id} not found")
+
+        if body.campaign_id is not None:
+            cur.execute("SELECT id FROM campaigns WHERE id = %s AND user_id = %s", (body.campaign_id, user["id"]))
+            if not cur.fetchone():
+                raise HTTPException(404, f"Campaign {body.campaign_id} not found")
 
         cur.execute(
             """INSERT INTO deals (company_id, contact_id, campaign_id, title, stage,
@@ -232,6 +240,11 @@ def update_deal(
         if not cur.fetchone():
             raise HTTPException(404, f"Deal {deal_id} not found")
 
+        if body.campaign_id is not None:
+            cur.execute("SELECT id FROM campaigns WHERE id = %s AND user_id = %s", (body.campaign_id, user["id"]))
+            if not cur.fetchone():
+                raise HTTPException(404, f"Campaign {body.campaign_id} not found")
+
         updates = []
         params: list = []
         for field in ("title", "contact_id", "campaign_id", "amount_millions", "expected_close_date", "notes"):
@@ -311,7 +324,7 @@ def delete_deal(
         if not cur.fetchone():
             raise HTTPException(404, f"Deal {deal_id} not found")
 
-        cur.execute("DELETE FROM deals WHERE id = %s", (deal_id,))
+        cur.execute("DELETE FROM deals WHERE id = %s AND user_id = %s", (deal_id, user["id"]))
         conn.commit()
 
         return {"success": True}

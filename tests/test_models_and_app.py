@@ -25,8 +25,6 @@ from src.models.database import (
     get_cursor,
     run_migrations,
     get_table_names,
-    scoped_query,
-    scoped_query_one,
     verify_ownership,
     OWNED_TABLES,
 )
@@ -182,43 +180,6 @@ class TestRunMigrations:
             )
             dupes = cur.fetchall()
         assert dupes == [], f"Duplicate migrations: {dupes}"
-
-
-class TestScopedQuery:
-    """scoped_query and scoped_query_one helpers."""
-
-    def test_scoped_query_returns_rows(self, conn, company_id):
-        rows = scoped_query(
-            conn, TEST_USER_ID,
-            "SELECT id, name FROM companies WHERE id = %s AND user_id = %s",
-            (company_id,),
-        )
-        assert len(rows) == 1
-        assert rows[0]["id"] == company_id
-
-    def test_scoped_query_empty_for_wrong_user(self, conn, company_id, user_b):
-        rows = scoped_query(
-            conn, OTHER_USER_ID,
-            "SELECT id FROM companies WHERE id = %s AND user_id = %s",
-            (company_id,),
-        )
-        assert rows == []
-
-    def test_scoped_query_one_returns_dict(self, conn, company_id):
-        row = scoped_query_one(
-            conn, TEST_USER_ID,
-            "SELECT name FROM companies WHERE id = %s AND user_id = %s",
-            (company_id,),
-        )
-        assert row["name"] == "Acme Corp"
-
-    def test_scoped_query_one_returns_none(self, conn):
-        row = scoped_query_one(
-            conn, TEST_USER_ID,
-            "SELECT id FROM companies WHERE id = %s AND user_id = %s",
-            (99999,),
-        )
-        assert row is None
 
 
 class TestVerifyOwnership:

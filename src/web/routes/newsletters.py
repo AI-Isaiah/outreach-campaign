@@ -390,8 +390,21 @@ def _get_filtered_recipients(cur, lifecycle_stages, product_ids, newsletter_only
 
     joins = ""
     if product_ids:
-        joins = "JOIN contact_products cp ON cp.contact_id = c.id"
+        # Verify all product_ids belong to the current user
         placeholders = ", ".join(["%s"] * len(product_ids))
+        cur.execute(
+            f"SELECT id FROM products WHERE id IN ({placeholders}) AND user_id = %s",
+            (*product_ids, user_id),
+        )
+        valid_ids = {row["id"] for row in cur.fetchall()}
+        invalid_ids = set(product_ids) - valid_ids
+        if invalid_ids:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Product IDs not owned by user: {sorted(invalid_ids)}",
+            )
+
+        joins = "JOIN contact_products cp ON cp.contact_id = c.id"
         conditions.append(f"cp.product_id IN ({placeholders})")
         params.extend(product_ids)
 

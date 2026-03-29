@@ -9,8 +9,7 @@ vi.mock("../api/client", () => ({
   api: {
     markLinkedInDone: vi.fn().mockResolvedValue({ success: true }),
     deferContact: vi.fn().mockResolvedValue({ success: true }),
-    updateContactName: vi.fn().mockResolvedValue({ success: true }),
-    updateLinkedInUrl: vi.fn().mockResolvedValue({ success: true }),
+    patchContact: vi.fn().mockResolvedValue({ success: true }),
   },
 }));
 

@@ -545,7 +545,7 @@ class TestAutoSubscribeEligible:
         co = insert_company(conn, "SubCo", is_gdpr=False)
         ct = insert_contact(conn, co, is_gdpr=False)
         _enroll_contact(conn, ct, cid, status="no_response")
-        result = auto_subscribe_eligible(conn, cid)
+        result = auto_subscribe_eligible(conn, cid, user_id=TEST_USER_ID)
         assert result["subscribed"] == 1
         assert result["skipped_gdpr"] == 0
         conn.close()
@@ -557,7 +557,7 @@ class TestAutoSubscribeEligible:
         co = insert_company(conn, "GDPRCo", is_gdpr=True)
         ct = insert_contact(conn, co, is_gdpr=True)
         _enroll_contact(conn, ct, cid, status="no_response")
-        result = auto_subscribe_eligible(conn, cid)
+        result = auto_subscribe_eligible(conn, cid, user_id=TEST_USER_ID)
         assert result["subscribed"] == 0
         assert result["skipped_gdpr"] == 1
         conn.close()
@@ -574,7 +574,7 @@ class TestAutoSubscribeEligible:
         conn.commit()
         cur.close()
         _enroll_contact(conn, ct, cid, status="no_response")
-        result = auto_subscribe_eligible(conn, cid)
+        result = auto_subscribe_eligible(conn, cid, user_id=TEST_USER_ID)
         assert result["already_subscribed"] == 1
         conn.close()
 
@@ -585,7 +585,7 @@ class TestAutoSubscribeEligible:
         co = insert_company(conn, "NoEmCo")
         ct = insert_contact(conn, co, email=None)
         _enroll_contact(conn, ct, cid, status="no_response")
-        result = auto_subscribe_eligible(conn, cid)
+        result = auto_subscribe_eligible(conn, cid, user_id=TEST_USER_ID)
         assert result["subscribed"] == 0
         conn.close()
 
@@ -598,13 +598,13 @@ class TestSubscribeUnsubscribe:
         conn = _conn(tmp_db)
         co = insert_company(conn, "SubManual")
         ct = insert_contact(conn, co)
-        assert subscribe_contact(conn, ct) is True
+        assert subscribe_contact(conn, ct, user_id=TEST_USER_ID) is True
         conn.close()
 
     def test_subscribe_nonexistent_returns_false(self, tmp_db):
         from src.services.newsletter import subscribe_contact
         conn = _conn(tmp_db)
-        assert subscribe_contact(conn, 99999) is False
+        assert subscribe_contact(conn, 99999, user_id=TEST_USER_ID) is False
         conn.close()
 
     def test_unsubscribe_contact(self, tmp_db):
@@ -612,7 +612,7 @@ class TestSubscribeUnsubscribe:
         conn = _conn(tmp_db)
         co = insert_company(conn, "UnsubCo")
         ct = insert_contact(conn, co)
-        assert unsubscribe_contact(conn, ct) is True
+        assert unsubscribe_contact(conn, ct, user_id=TEST_USER_ID) is True
         # Verify
         cur = conn.cursor()
         cur.execute("SELECT newsletter_status, unsubscribed FROM contacts WHERE id = %s", (ct,))
@@ -625,7 +625,7 @@ class TestSubscribeUnsubscribe:
     def test_unsubscribe_nonexistent_returns_false(self, tmp_db):
         from src.services.newsletter import unsubscribe_contact
         conn = _conn(tmp_db)
-        assert unsubscribe_contact(conn, 99999) is False
+        assert unsubscribe_contact(conn, 99999, user_id=TEST_USER_ID) is False
         conn.close()
 
 
@@ -735,7 +735,7 @@ class TestDailyQueueEdgeCases:
         conn = _conn(tmp_db)
         cid = _create_campaign(conn)
         _create_sequence_step(conn, cid, step_order=1, channel="email")
-        result = get_daily_queue(conn, cid)
+        result = get_daily_queue(conn, cid, user_id=TEST_USER_ID)
         assert result == []
         conn.close()
 
@@ -749,7 +749,7 @@ class TestDailyQueueEdgeCases:
         c2 = insert_contact(conn, co, priority_rank=2, email_status="valid")
         _enroll_contact(conn, c1, cid, status="queued")
         _enroll_contact(conn, c2, cid, status="queued")
-        result = get_daily_queue(conn, cid)
+        result = get_daily_queue(conn, cid, user_id=TEST_USER_ID)
         ids = [r["contact_id"] for r in result]
         assert c1 in ids
         assert c2 not in ids
@@ -763,7 +763,7 @@ class TestDailyQueueEdgeCases:
         co = insert_company(conn, "UnsubQCo")
         ct = insert_contact(conn, co, unsubscribed=True, email_status="valid")
         _enroll_contact(conn, ct, cid, status="queued")
-        result = get_daily_queue(conn, cid)
+        result = get_daily_queue(conn, cid, user_id=TEST_USER_ID)
         assert len(result) == 0
         conn.close()
 
@@ -775,7 +775,7 @@ class TestDailyQueueEdgeCases:
         co = insert_company(conn, "InvalidEmCo")
         ct = insert_contact(conn, co, email_status="invalid")
         _enroll_contact(conn, ct, cid, status="queued")
-        result = get_daily_queue(conn, cid)
+        result = get_daily_queue(conn, cid, user_id=TEST_USER_ID)
         assert len(result) == 0
         conn.close()
 
@@ -787,7 +787,7 @@ class TestDailyQueueEdgeCases:
         co = insert_company(conn, "NoLICo")
         ct = insert_contact(conn, co, linkedin_url=None, email_status="valid")
         _enroll_contact(conn, ct, cid, status="queued")
-        result = get_daily_queue(conn, cid)
+        result = get_daily_queue(conn, cid, user_id=TEST_USER_ID)
         assert len(result) == 0
         conn.close()
 
@@ -800,7 +800,7 @@ class TestDailyQueueEdgeCases:
         ct = insert_contact(conn, co, email_status="valid")
         future = (date.today() + timedelta(days=5)).isoformat()
         _enroll_contact(conn, ct, cid, status="queued", next_action_date=future)
-        result = get_daily_queue(conn, cid)
+        result = get_daily_queue(conn, cid, user_id=TEST_USER_ID)
         assert len(result) == 0
         conn.close()
 
@@ -812,7 +812,7 @@ class TestDailyQueueEdgeCases:
         co = insert_company(conn, "NonGDPRCo")
         ct = insert_contact(conn, co, is_gdpr=False, email_status="valid")
         _enroll_contact(conn, ct, cid, status="queued")
-        result = get_daily_queue(conn, cid)
+        result = get_daily_queue(conn, cid, user_id=TEST_USER_ID)
         assert len(result) == 0
         conn.close()
 
@@ -824,7 +824,7 @@ class TestDailyQueueEdgeCases:
         co = insert_company(conn, "GDPROnlyCo", is_gdpr=True)
         ct = insert_contact(conn, co, is_gdpr=True, email_status="valid")
         _enroll_contact(conn, ct, cid, status="queued")
-        result = get_daily_queue(conn, cid)
+        result = get_daily_queue(conn, cid, user_id=TEST_USER_ID)
         assert len(result) == 0
         conn.close()
 
@@ -836,7 +836,7 @@ class TestDailyQueueEdgeCases:
         co = insert_company(conn, "OverrideCo")
         ct = insert_contact(conn, co, email_status="valid")
         _enroll_contact(conn, ct, cid, status="queued", channel_override="linkedin_connect")
-        result = get_daily_queue(conn, cid)
+        result = get_daily_queue(conn, cid, user_id=TEST_USER_ID)
         if result:
             assert result[0]["channel"] == "linkedin_connect"
         conn.close()
@@ -850,7 +850,7 @@ class TestDailyQueueEdgeCases:
             co = insert_company(conn, f"LimitCo{i}", aum_millions=100 + i)
             ct = insert_contact(conn, co, email_status="valid")
             _enroll_contact(conn, ct, cid, status="queued")
-        result = get_daily_queue(conn, cid, limit=2)
+        result = get_daily_queue(conn, cid, limit=2, user_id=TEST_USER_ID)
         assert len(result) == 2
         conn.close()
 

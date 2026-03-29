@@ -140,7 +140,7 @@ def is_contact_gdpr(conn, contact_id: int) -> bool:
         return bool(row["contact_gdpr"]) or bool(row["company_gdpr"] or 0)
 
 
-def process_unsubscribe(conn, email: str) -> bool:
+def process_unsubscribe(conn, email: str, *, user_id: int) -> bool:
     """Process an unsubscribe request for a contact by email address.
 
     Sets ``unsubscribed=1`` and ``unsubscribed_at`` to the current timestamp
@@ -149,6 +149,7 @@ def process_unsubscribe(conn, email: str) -> bool:
     Args:
         conn: database connection
         email: the email address that requested unsubscription
+        user_id: the owner user ID for tenant isolation
 
     Returns:
         True if at least one contact was found and unsubscribed,
@@ -160,8 +161,8 @@ def process_unsubscribe(conn, email: str) -> bool:
     normalized = email.lower().strip()
     with get_cursor(conn) as cursor:
         cursor.execute(
-            "UPDATE contacts SET unsubscribed = true, unsubscribed_at = %s WHERE email_normalized = %s",
-            (now, normalized),
+            "UPDATE contacts SET unsubscribed = true, unsubscribed_at = %s WHERE email_normalized = %s AND user_id = %s",
+            (now, normalized, user_id),
         )
         conn.commit()
         return cursor.rowcount > 0

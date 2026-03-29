@@ -25,7 +25,7 @@ def get_adaptive_queue(
     diverse: bool = True,
     scope: str = "today",
     *,
-    user_id: Optional[int] = None,
+    user_id: int,
 ) -> list[dict]:
     """Get the daily queue with adaptive scoring and template recommendations.
 
@@ -40,7 +40,7 @@ def get_adaptive_queue(
     Falls back to static queue on error.
     """
     # Get base queue items (eligibility)
-    items = get_daily_queue(conn, campaign_id, target_date=target_date, limit=limit * 3, scope=scope)
+    items = get_daily_queue(conn, campaign_id, target_date=target_date, limit=limit * 3, scope=scope, user_id=user_id)
 
     if not items:
         return []
@@ -95,10 +95,16 @@ def get_adaptive_queue(
 
             # Check for manual override
             override_key = f"override_{contact_id}_{campaign_id}"
-            cursor.execute(
-                "SELECT value FROM engine_config WHERE key = %s",
-                (override_key,),
-            )
+            if user_id is not None:
+                cursor.execute(
+                    "SELECT value FROM engine_config WHERE key = %s AND user_id = %s",
+                    (override_key, user_id),
+                )
+            else:
+                cursor.execute(
+                    "SELECT value FROM engine_config WHERE key = %s",
+                    (override_key,),
+                )
             override_row = cursor.fetchone()
 
             if override_row:
@@ -110,7 +116,10 @@ def get_adaptive_queue(
                     "alternatives": [],
                 }
                 # Clean up the override (one-time use)
-                cursor.execute("DELETE FROM engine_config WHERE key = %s", (override_key,))
+                if user_id is not None:
+                    cursor.execute("DELETE FROM engine_config WHERE key = %s AND user_id = %s", (override_key, user_id))
+                else:
+                    cursor.execute("DELETE FROM engine_config WHERE key = %s", (override_key,))
                 conn.commit()
             else:
                 # Adaptive template selection

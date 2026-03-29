@@ -13,7 +13,7 @@ export interface ContactEditState {
   setEditLast: (v: string) => void;
   editLinkedIn: string;
   setEditLinkedIn: (v: string) => void;
-  handleSaveEdit: () => Promise<void>;
+  handleSaveEdit: () => void;
   handleCancelEdit: () => void;
   isSaving: boolean;
   editError: Error | null;
@@ -27,44 +27,30 @@ export function useContactEdit(item: QueueItem): ContactEditState {
 
   const queryClient = useQueryClient();
 
-  const nameMutation = useMutation({
-    mutationFn: () => api.updateContactName(item.contact_id, editFirst, editLast),
+  const patchMutation = useMutation({
+    mutationFn: (fields: Parameters<typeof api.patchContact>[1]) =>
+      api.patchContact(item.contact_id, fields),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["queue-all"] });
-    },
-  });
-
-  const linkedInMutation = useMutation({
-    mutationFn: () => api.updateLinkedInUrl(item.contact_id, editLinkedIn),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["queue-all"] });
-    },
-  });
-
-  const handleSaveEdit = async () => {
-    const promises: Promise<unknown>[] = [];
-    const currentName = item.contact_name;
-    const newName = `${editFirst} ${editLast}`.trim();
-    if (newName !== currentName) {
-      promises.push(nameMutation.mutateAsync());
-    }
-    if (editLinkedIn !== (item.linkedin_url || "")) {
-      promises.push(linkedInMutation.mutateAsync());
-    }
-    try {
-      if (promises.length > 0) {
-        await Promise.all(promises);
-      }
       setShowEdit(false);
-    } catch {
-      // Error is surfaced via mutation state
-    }
+    },
+  });
+
+  const handleSaveEdit = () => {
+    const fields: Record<string, string> = {};
+    const [curFirst, curLast] = splitName(item.contact_name);
+    if (editFirst !== curFirst) fields.first_name = editFirst;
+    if (editLast !== curLast) fields.last_name = editLast;
+    if (editLinkedIn !== (item.linkedin_url || "")) fields.linkedin_url = editLinkedIn;
+    if (Object.keys(fields).length === 0) { setShowEdit(false); return; }
+    patchMutation.mutate(fields);
   };
 
   const handleCancelEdit = () => {
     setEditFirst(splitName(item.contact_name)[0]);
     setEditLast(splitName(item.contact_name)[1]);
     setEditLinkedIn(item.linkedin_url || "");
+    patchMutation.reset();
     setShowEdit(false);
   };
 
@@ -79,7 +65,7 @@ export function useContactEdit(item: QueueItem): ContactEditState {
     setEditLinkedIn,
     handleSaveEdit,
     handleCancelEdit,
-    isSaving: nameMutation.isPending || linkedInMutation.isPending,
-    editError: (nameMutation.error || linkedInMutation.error) as Error | null,
+    isSaving: patchMutation.isPending,
+    editError: patchMutation.error as Error | null,
   };
 }

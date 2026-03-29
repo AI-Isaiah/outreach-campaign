@@ -6,6 +6,7 @@ and campaign-specific context variables.
 
 from __future__ import annotations
 
+import functools
 from pathlib import Path
 from typing import Optional
 
@@ -19,8 +20,12 @@ from src.services.compliance import build_unsubscribe_url
 _TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 
 
+@functools.lru_cache(maxsize=4)
 def _get_jinja_env(templates_dir: Optional[str] = None) -> Environment:
-    """Create a Jinja2 Environment pointing at the templates directory.
+    """Return a cached Jinja2 Environment pointing at the templates directory.
+
+    The Environment is created once per unique ``templates_dir`` value and
+    then reused on subsequent calls (via ``lru_cache``).
 
     Args:
         templates_dir: override path to templates directory (for testing).

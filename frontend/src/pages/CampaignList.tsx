@@ -191,6 +191,7 @@ function CampaignCard({ campaign: c, viewMode }: { campaign: CampaignWithMetrics
           <button
             onClick={(e) => { e.preventDefault(); setMenuOpen(!menuOpen); }}
             className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+            aria-label="Campaign actions"
           >
             <MoreVertical size={16} />
           </button>

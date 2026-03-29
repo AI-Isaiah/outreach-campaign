@@ -56,7 +56,7 @@ def test_adaptive_queue_basic(tmp_db):
     run_migrations(conn)
     _, contact_id, campaign_id, _ = _full_setup(conn)
 
-    items = get_adaptive_queue(conn, campaign_id)
+    items = get_adaptive_queue(conn, campaign_id, user_id=TEST_USER_ID)
     assert len(items) >= 1
 
     item = items[0]
@@ -74,7 +74,7 @@ def test_adaptive_queue_empty(tmp_db):
     run_migrations(conn)
     campaign_id = create_campaign(conn, "empty_adaptive", user_id=TEST_USER_ID)
 
-    items = get_adaptive_queue(conn, campaign_id)
+    items = get_adaptive_queue(conn, campaign_id, user_id=TEST_USER_ID)
     assert items == []
     conn.close()
 
@@ -85,7 +85,7 @@ def test_adaptive_queue_has_alternatives(tmp_db):
     run_migrations(conn)
     _, _, campaign_id, _ = _full_setup(conn)
 
-    items = get_adaptive_queue(conn, campaign_id)
+    items = get_adaptive_queue(conn, campaign_id, user_id=TEST_USER_ID)
     assert len(items) >= 1
     assert "alternatives" in items[0]
     conn.close()
@@ -117,7 +117,7 @@ def test_adaptive_queue_respects_limit(tmp_db):
         conn.commit()
         enroll_contact(conn, c_id, campaign_id, next_action_date=today, user_id=TEST_USER_ID)
 
-    items = get_adaptive_queue(conn, campaign_id, limit=3)
+    items = get_adaptive_queue(conn, campaign_id, user_id=TEST_USER_ID, limit=3)
     assert len(items) <= 3
     conn.close()
 
@@ -148,7 +148,7 @@ def test_adaptive_queue_sorted_by_score(tmp_db):
     today = date.today().isoformat()
     enroll_contact(conn, tiny_id, campaign_id, next_action_date=today, user_id=TEST_USER_ID)
 
-    items = get_adaptive_queue(conn, campaign_id)
+    items = get_adaptive_queue(conn, campaign_id, user_id=TEST_USER_ID)
     if len(items) >= 2:
         for i in range(len(items) - 1):
             assert items[i]["priority_score"] >= items[i + 1]["priority_score"]

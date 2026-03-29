@@ -9,7 +9,7 @@ from rich.console import Console
 
 load_dotenv()
 
-from src.config import load_config, SUPABASE_DB_URL  # noqa: E402
+from src.config import load_config_safe, SUPABASE_DB_URL  # noqa: E402
 
 # Configure logging for all modules
 logging.basicConfig(
@@ -27,11 +27,11 @@ CLI_USER_ID = 1
 
 def _load_config() -> dict:
     """Load config, wrapping errors for CLI display."""
-    try:
-        return load_config()
-    except FileNotFoundError as e:
-        console.print(f"[red]ERROR: {e}[/red]")
+    config = load_config_safe()
+    if not config:
+        console.print("[red]ERROR: No config.yaml or config.yaml.example found[/red]")
         raise typer.Exit(1)
+    return config
 
 
 @app.command()
@@ -99,7 +99,7 @@ def verify():
     conn = get_connection(SUPABASE_DB_URL)
     try:
         run_migrations(conn)
-        emails = get_unverified_emails(conn)
+        emails = get_unverified_emails(conn, user_id=CLI_USER_ID)
         console.print(f"[bold]Verifying {len(emails)} email addresses via {provider}...[/bold]")
 
         if not emails:
@@ -494,7 +494,7 @@ def send(
         campaign_id = camp["id"]
 
         # Get today's queue (all channels)
-        queue_items = get_daily_queue(conn, campaign_id, target_date=date, limit=limit)
+        queue_items = get_daily_queue(conn, campaign_id, target_date=date, limit=limit, user_id=CLI_USER_ID)
 
         # Filter to email-channel only
         email_items = [item for item in queue_items if item["channel"] == "email"]
@@ -545,6 +545,7 @@ def send(
                 campaign_id,
                 item["template_id"],
                 config,
+                user_id=CLI_USER_ID,
             )
             if success:
                 sent += 1
@@ -692,7 +693,7 @@ def unsubscribe(
     conn = get_connection(SUPABASE_DB_URL)
     try:
         run_migrations(conn)
-        result = process_unsubscribe(conn, email)
+        result = process_unsubscribe(conn, email, user_id=CLI_USER_ID)
 
         if result:
             console.print(f"[green]Unsubscribed: {email}[/green]")
@@ -963,7 +964,7 @@ def newsletter_send(
     config = _load_config()
 
     # Show subscriber count first
-    subscribers = get_newsletter_subscribers(conn)
+    subscribers = get_newsletter_subscribers(conn, user_id=CLI_USER_ID)
     console.print(f"[bold]Newsletter subscribers: {len(subscribers)}[/bold]")
 
     if not subscribers:
@@ -1011,7 +1012,7 @@ def newsletter_subscribers(
 
     try:
         if action == "list":
-            subscribers = get_newsletter_subscribers(conn)
+            subscribers = get_newsletter_subscribers(conn, user_id=CLI_USER_ID)
             if not subscribers:
                 console.print("[yellow]No newsletter subscribers found.[/yellow]")
                 return
@@ -1041,7 +1042,7 @@ def newsletter_subscribers(
                 console.print(f"[red]ERROR: Campaign '{campaign}' not found[/red]")
                 raise typer.Exit(1)
 
-            result = auto_subscribe_eligible(conn, camp["id"])
+            result = auto_subscribe_eligible(conn, camp["id"], user_id=CLI_USER_ID)
             console.print(f"[green]Subscribed: {result['subscribed']}[/green]")
             console.print(f"[yellow]Skipped (GDPR): {result['skipped_gdpr']}[/yellow]")
             console.print(f"[dim]Already subscribed: {result['already_subscribed']}[/dim]")
@@ -1062,7 +1063,7 @@ def newsletter_subscribers(
                 console.print(f"[red]ERROR: Contact not found with email: {email}[/red]")
                 raise typer.Exit(1)
 
-            if subscribe_contact(conn, contact["id"]):
+            if subscribe_contact(conn, contact["id"], user_id=CLI_USER_ID):
                 console.print(f"[green]Subscribed: {email}[/green]")
             else:
                 console.print(f"[yellow]Could not subscribe: {email}[/yellow]")
@@ -1083,7 +1084,7 @@ def newsletter_subscribers(
                 console.print(f"[red]ERROR: Contact not found with email: {email}[/red]")
                 raise typer.Exit(1)
 
-            if unsubscribe_contact(conn, contact["id"]):
+            if unsubscribe_contact(conn, contact["id"], user_id=CLI_USER_ID):
                 console.print(f"[green]Unsubscribed: {email}[/green]")
             else:
                 console.print(f"[yellow]Could not unsubscribe: {email}[/yellow]")

@@ -13,11 +13,19 @@ import os
 
 import httpx as _httpx
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from src.config import SUPABASE_DB_URL
 from src.models.database import get_cursor
 from src.web.dependencies import get_current_user, get_db
+
+_limiter = Limiter(
+    key_func=get_remote_address,
+    enabled=os.getenv("RATE_LIMIT_ENABLED", "true").lower() != "false",
+)
+_MAX_DEEP_RESEARCH_PER_DAY = 20
 from src.web.routes.settings import get_user_api_keys
 
 _logger = logging.getLogger(__name__)
@@ -66,14 +74,15 @@ def _trigger_deep_research(deep_research_id: int, api_keys: dict) -> None:
 # ---------------------------------------------------------------------------
 
 @router.post("/{company_id}", status_code=202)
+@_limiter.limit("5/hour")
 def trigger_deep_research(
+    request: Request,
     company_id: int,
     conn=Depends(get_db),
     user=Depends(get_current_user),
 ):
     """Trigger a deep research job for a specific company."""
     with get_cursor(conn) as cur:
-        # Validate company exists and belongs to user
         cur.execute(
             "SELECT id, name, country FROM companies WHERE id = %s AND user_id = %s",
             (company_id, user["id"]),
@@ -82,7 +91,16 @@ def trigger_deep_research(
         if not company:
             raise HTTPException(404, "Company not found")
 
-        # Check no active deep research already running
+        # Per-user daily cost cap
+        cur.execute(
+            """SELECT COUNT(*) AS cnt FROM deep_research
+               WHERE user_id = %s AND created_at > NOW() - INTERVAL '24 hours'""",
+            (user["id"],),
+        )
+        if cur.fetchone()["cnt"] >= _MAX_DEEP_RESEARCH_PER_DAY:
+            _logger.warning("User %s hit deep research daily cap", user["id"])
+            raise HTTPException(429, f"Daily limit of {_MAX_DEEP_RESEARCH_PER_DAY} deep research jobs reached")
+
         cur.execute(
             """SELECT id FROM deep_research
                WHERE company_id = %s AND user_id = %s

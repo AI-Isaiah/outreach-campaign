@@ -162,7 +162,7 @@ def _make_subscribed_contacts(conn, company_id, count=3):
 class TestGetNewsletterSubscribers:
     def test_returns_subscribed_contacts(self, conn, sample_company):
         ids = _make_subscribed_contacts(conn, sample_company, count=3)
-        result = get_newsletter_subscribers(conn)
+        result = get_newsletter_subscribers(conn, user_id=TEST_USER_ID)
         assert len(result) == 3
         result_ids = [r["id"] for r in result]
         for cid in ids:
@@ -170,7 +170,7 @@ class TestGetNewsletterSubscribers:
 
     def test_excludes_none_status(self, conn, sample_contact):
         """Contacts with newsletter_status='none' should NOT be returned."""
-        result = get_newsletter_subscribers(conn)
+        result = get_newsletter_subscribers(conn, user_id=TEST_USER_ID)
         assert len(result) == 0
 
     def test_excludes_unsubscribed(self, conn, sample_company):
@@ -182,7 +182,7 @@ class TestGetNewsletterSubscribers:
             (sample_company, "Gone", "gone@example.com", "csv", "unsubscribed", True, TEST_USER_ID),
         )
         conn.commit()
-        result = get_newsletter_subscribers(conn)
+        result = get_newsletter_subscribers(conn, user_id=TEST_USER_ID)
         assert len(result) == 0
 
     def test_excludes_subscribed_but_unsubscribed_flag(self, conn, sample_company):
@@ -194,7 +194,7 @@ class TestGetNewsletterSubscribers:
             (sample_company, "Weird", "weird@example.com", "csv", "subscribed", True, TEST_USER_ID),
         )
         conn.commit()
-        result = get_newsletter_subscribers(conn)
+        result = get_newsletter_subscribers(conn, user_id=TEST_USER_ID)
         assert len(result) == 0
 
     def test_excludes_contacts_without_email(self, conn, sample_company):
@@ -206,11 +206,11 @@ class TestGetNewsletterSubscribers:
             (sample_company, "NoEmail", "csv", "subscribed", TEST_USER_ID),
         )
         conn.commit()
-        result = get_newsletter_subscribers(conn)
+        result = get_newsletter_subscribers(conn, user_id=TEST_USER_ID)
         assert len(result) == 0
 
     def test_empty_database(self, conn):
-        result = get_newsletter_subscribers(conn)
+        result = get_newsletter_subscribers(conn, user_id=TEST_USER_ID)
         assert result == []
 
     def test_mixed_statuses(self, conn, sample_company):
@@ -236,7 +236,7 @@ class TestGetNewsletterSubscribers:
         )
         conn.commit()
 
-        result = get_newsletter_subscribers(conn)
+        result = get_newsletter_subscribers(conn, user_id=TEST_USER_ID)
         assert len(result) == 1
         assert result[0]["email"] == "sub@example.com"
 
@@ -255,7 +255,7 @@ class TestAutoSubscribeEligible:
             conn, sample_contact, sample_campaign, status="no_response", user_id=1,
         )
 
-        result = auto_subscribe_eligible(conn, sample_campaign)
+        result = auto_subscribe_eligible(conn, sample_campaign, user_id=TEST_USER_ID)
         assert result["subscribed"] == 1
         assert result["skipped_gdpr"] == 0
         assert result["already_subscribed"] == 0
@@ -278,7 +278,7 @@ class TestAutoSubscribeEligible:
             conn, gdpr_contact, sample_campaign, status="no_response", user_id=1,
         )
 
-        result = auto_subscribe_eligible(conn, sample_campaign)
+        result = auto_subscribe_eligible(conn, sample_campaign, user_id=TEST_USER_ID)
         assert result["subscribed"] == 0
         assert result["skipped_gdpr"] == 1
 
@@ -307,7 +307,7 @@ class TestAutoSubscribeEligible:
             conn, contact_id, sample_campaign, status="no_response", user_id=1,
         )
 
-        result = auto_subscribe_eligible(conn, sample_campaign)
+        result = auto_subscribe_eligible(conn, sample_campaign, user_id=TEST_USER_ID)
         assert result["subscribed"] == 0
         assert result["skipped_gdpr"] == 1
 
@@ -329,7 +329,7 @@ class TestAutoSubscribeEligible:
             conn, contact_id, sample_campaign, status="no_response", user_id=1,
         )
 
-        result = auto_subscribe_eligible(conn, sample_campaign)
+        result = auto_subscribe_eligible(conn, sample_campaign, user_id=TEST_USER_ID)
         assert result["subscribed"] == 0
         assert result["already_subscribed"] == 1
 
@@ -351,7 +351,7 @@ class TestAutoSubscribeEligible:
             conn, contact_id, sample_campaign, status="no_response", user_id=1,
         )
 
-        result = auto_subscribe_eligible(conn, sample_campaign)
+        result = auto_subscribe_eligible(conn, sample_campaign, user_id=TEST_USER_ID)
         assert result["subscribed"] == 0
         assert result["already_subscribed"] == 1
 
@@ -362,7 +362,7 @@ class TestAutoSubscribeEligible:
         enroll_contact(conn, sample_contact, sample_campaign, user_id=1)
         # status is 'queued' by default -- should not be subscribed
 
-        result = auto_subscribe_eligible(conn, sample_campaign)
+        result = auto_subscribe_eligible(conn, sample_campaign, user_id=TEST_USER_ID)
         assert result["subscribed"] == 0
         assert result["skipped_gdpr"] == 0
         assert result["already_subscribed"] == 0
@@ -385,7 +385,7 @@ class TestAutoSubscribeEligible:
             conn, contact_id, sample_campaign, status="no_response", user_id=1,
         )
 
-        result = auto_subscribe_eligible(conn, sample_campaign)
+        result = auto_subscribe_eligible(conn, sample_campaign, user_id=TEST_USER_ID)
         assert result["subscribed"] == 0
 
     def test_mixed_contacts(
@@ -433,7 +433,7 @@ class TestAutoSubscribeEligible:
                 conn, cid, sample_campaign, status="no_response", user_id=1,
             )
 
-        result = auto_subscribe_eligible(conn, sample_campaign)
+        result = auto_subscribe_eligible(conn, sample_campaign, user_id=TEST_USER_ID)
         assert result["subscribed"] == 2
         assert result["skipped_gdpr"] == 1
         assert result["already_subscribed"] == 1
@@ -445,7 +445,7 @@ class TestAutoSubscribeEligible:
 
 class TestSubscribeContact:
     def test_subscribes_existing_contact(self, conn, sample_contact):
-        result = subscribe_contact(conn, sample_contact)
+        result = subscribe_contact(conn, sample_contact, user_id=TEST_USER_ID)
         assert result is True
 
         cursor = conn.cursor()
@@ -457,12 +457,12 @@ class TestSubscribeContact:
         assert row["newsletter_status"] == "subscribed"
 
     def test_nonexistent_contact_returns_false(self, conn):
-        result = subscribe_contact(conn, 99999)
+        result = subscribe_contact(conn, 99999, user_id=TEST_USER_ID)
         assert result is False
 
     def test_idempotent(self, conn, sample_contact):
-        subscribe_contact(conn, sample_contact)
-        result = subscribe_contact(conn, sample_contact)
+        subscribe_contact(conn, sample_contact, user_id=TEST_USER_ID)
+        result = subscribe_contact(conn, sample_contact, user_id=TEST_USER_ID)
         assert result is True
 
         cursor = conn.cursor()
@@ -480,8 +480,8 @@ class TestSubscribeContact:
 
 class TestUnsubscribeContact:
     def test_unsubscribes_existing_contact(self, conn, sample_contact):
-        subscribe_contact(conn, sample_contact)
-        result = unsubscribe_contact(conn, sample_contact)
+        subscribe_contact(conn, sample_contact, user_id=TEST_USER_ID)
+        result = unsubscribe_contact(conn, sample_contact, user_id=TEST_USER_ID)
         assert result is True
 
         cursor = conn.cursor()
@@ -494,13 +494,13 @@ class TestUnsubscribeContact:
         assert row["unsubscribed"] is True
 
     def test_nonexistent_contact_returns_false(self, conn):
-        result = unsubscribe_contact(conn, 99999)
+        result = unsubscribe_contact(conn, 99999, user_id=TEST_USER_ID)
         assert result is False
 
     def test_sets_both_fields(self, conn, sample_contact):
         """Both newsletter_status and unsubscribed flag are set."""
-        subscribe_contact(conn, sample_contact)
-        unsubscribe_contact(conn, sample_contact)
+        subscribe_contact(conn, sample_contact, user_id=TEST_USER_ID)
+        unsubscribe_contact(conn, sample_contact, user_id=TEST_USER_ID)
 
         cursor = conn.cursor()
         cursor.execute(
@@ -513,10 +513,10 @@ class TestUnsubscribeContact:
 
     def test_unsubscribed_contact_not_in_subscribers(self, conn, sample_contact):
         """After unsubscribe, contact should not appear in subscriber list."""
-        subscribe_contact(conn, sample_contact)
-        unsubscribe_contact(conn, sample_contact)
+        subscribe_contact(conn, sample_contact, user_id=TEST_USER_ID)
+        unsubscribe_contact(conn, sample_contact, user_id=TEST_USER_ID)
 
-        subscribers = get_newsletter_subscribers(conn)
+        subscribers = get_newsletter_subscribers(conn, user_id=TEST_USER_ID)
         ids = [s["id"] for s in subscribers]
         assert sample_contact not in ids
 
@@ -791,18 +791,18 @@ class TestNewsletterIntegration:
     def test_full_subscription_lifecycle(self, conn, sample_contact):
         """Subscribe -> verify listed -> unsubscribe -> verify not listed."""
         # Initially not subscribed
-        subs = get_newsletter_subscribers(conn)
+        subs = get_newsletter_subscribers(conn, user_id=TEST_USER_ID)
         assert len(subs) == 0
 
         # Subscribe
-        subscribe_contact(conn, sample_contact)
-        subs = get_newsletter_subscribers(conn)
+        subscribe_contact(conn, sample_contact, user_id=TEST_USER_ID)
+        subs = get_newsletter_subscribers(conn, user_id=TEST_USER_ID)
         assert len(subs) == 1
         assert subs[0]["id"] == sample_contact
 
         # Unsubscribe
-        unsubscribe_contact(conn, sample_contact)
-        subs = get_newsletter_subscribers(conn)
+        unsubscribe_contact(conn, sample_contact, user_id=TEST_USER_ID)
+        subs = get_newsletter_subscribers(conn, user_id=TEST_USER_ID)
         assert len(subs) == 0
 
     def test_auto_subscribe_then_unsubscribe(
@@ -814,15 +814,15 @@ class TestNewsletterIntegration:
             conn, sample_contact, sample_campaign, status="no_response", user_id=1,
         )
 
-        auto_subscribe_eligible(conn, sample_campaign)
+        auto_subscribe_eligible(conn, sample_campaign, user_id=TEST_USER_ID)
 
         # Should be subscribed
-        subs = get_newsletter_subscribers(conn)
+        subs = get_newsletter_subscribers(conn, user_id=TEST_USER_ID)
         assert len(subs) == 1
 
         # Unsubscribe
-        unsubscribe_contact(conn, sample_contact)
-        subs = get_newsletter_subscribers(conn)
+        unsubscribe_contact(conn, sample_contact, user_id=TEST_USER_ID)
+        subs = get_newsletter_subscribers(conn, user_id=TEST_USER_ID)
         assert len(subs) == 0
 
     def test_auto_subscribe_respects_prior_unsubscribe(
@@ -843,7 +843,7 @@ class TestNewsletterIntegration:
             conn, contact_id, sample_campaign, status="no_response", user_id=1,
         )
 
-        result = auto_subscribe_eligible(conn, sample_campaign)
+        result = auto_subscribe_eligible(conn, sample_campaign, user_id=TEST_USER_ID)
         assert result["subscribed"] == 0
         assert result["already_subscribed"] == 1
 

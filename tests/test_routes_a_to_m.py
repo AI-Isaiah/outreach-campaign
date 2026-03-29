@@ -764,61 +764,6 @@ class TestContactEvents:
         assert len(resp.json()) >= 1
 
 
-class TestContactPhone:
-    def test_update_phone_success(self, client, db_conn):
-        coid = _seed_company(db_conn)
-        ctid = _seed_contact(db_conn, coid)
-        resp = client.post(f"/api/contacts/{ctid}/phone", json={
-            "phone_number": "+1 (555) 123-4567",
-        })
-        assert resp.status_code == 200
-        assert resp.json()["phone_normalized"] == "+15551234567"
-
-    def test_update_phone_invalid(self, client, db_conn):
-        coid = _seed_company(db_conn)
-        ctid = _seed_contact(db_conn, coid)
-        resp = client.post(f"/api/contacts/{ctid}/phone", json={"phone_number": "abc"})
-        assert resp.status_code == 400
-
-    def test_update_phone_not_found(self, client):
-        resp = client.post("/api/contacts/99999/phone", json={"phone_number": "+15551234567"})
-        assert resp.status_code == 404
-
-
-class TestContactLinkedIn:
-    def test_update_linkedin(self, client, db_conn):
-        coid = _seed_company(db_conn)
-        ctid = _seed_contact(db_conn, coid)
-        resp = client.post(f"/api/contacts/{ctid}/linkedin-url", json={
-            "linkedin_url": "https://linkedin.com/in/testuser",
-        })
-        assert resp.status_code == 200
-        assert resp.json()["success"] is True
-
-    def test_update_linkedin_not_found(self, client):
-        resp = client.post("/api/contacts/99999/linkedin-url", json={
-            "linkedin_url": "https://linkedin.com/in/ghost",
-        })
-        assert resp.status_code == 404
-
-
-class TestContactName:
-    def test_update_name(self, client, db_conn):
-        coid = _seed_company(db_conn)
-        ctid = _seed_contact(db_conn, coid)
-        resp = client.post(f"/api/contacts/{ctid}/name", json={
-            "first_name": "Updated", "last_name": "Name",
-        })
-        assert resp.status_code == 200
-        assert resp.json()["full_name"] == "Updated Name"
-
-    def test_update_name_not_found(self, client):
-        resp = client.post("/api/contacts/99999/name", json={
-            "first_name": "Ghost", "last_name": "User",
-        })
-        assert resp.status_code == 404
-
-
 class TestContactPatch:
     """Tests for PATCH /contacts/{id} — partial contact update."""
 
@@ -910,7 +855,6 @@ class TestContactPatch:
         """Email change should clear channel_override for queue dedup re-evaluation."""
         coid = _seed_company(db_conn)
         ctid = _seed_contact(db_conn, coid, email="old@test.com")
-        # Enroll in a campaign and set channel_override
         from src.models.campaigns import create_campaign
         camp = create_campaign(db_conn, "TestCamp", user_id=TEST_USER_ID)
         from src.models.enrollment import enroll_contact
@@ -922,7 +866,6 @@ class TestContactPatch:
                 (ctid,),
             )
         db_conn.commit()
-        # Patch email
         resp = client.patch(f"/api/contacts/{ctid}", json={"email": "new@test.com"})
         assert resp.status_code == 200
         with get_cursor(db_conn) as cur:
@@ -932,6 +875,35 @@ class TestContactPatch:
             )
             row = cur.fetchone()
         assert row["channel_override"] is None
+
+    def test_patch_phone(self, client, db_conn):
+        coid = _seed_company(db_conn)
+        ctid = _seed_contact(db_conn, coid)
+        resp = client.patch(f"/api/contacts/{ctid}", json={"phone_number": "+1 (555) 123-4567"})
+        assert resp.status_code == 200
+        contact = resp.json()["contact"]
+        assert contact["phone_number"] == "+1 (555) 123-4567"
+        assert contact["phone_normalized"] == "+15551234567"
+
+    def test_patch_phone_invalid(self, client, db_conn):
+        coid = _seed_company(db_conn)
+        ctid = _seed_contact(db_conn, coid)
+        resp = client.patch(f"/api/contacts/{ctid}", json={"phone_number": "abc"})
+        assert resp.status_code == 400
+
+    def test_patch_only_first_name_preserves_last(self, client, db_conn):
+        """Patching only first_name should keep the existing last_name."""
+        coid = _seed_company(db_conn)
+        ctid = _seed_contact(db_conn, coid)
+        # Set initial name
+        client.patch(f"/api/contacts/{ctid}", json={"first_name": "Alice", "last_name": "Johnson"})
+        # Patch only first_name
+        resp = client.patch(f"/api/contacts/{ctid}", json={"first_name": "Bob"})
+        assert resp.status_code == 200
+        contact = resp.json()["contact"]
+        assert contact["first_name"] == "Bob"
+        assert contact["last_name"] == "Johnson"
+        assert contact["full_name"] == "Bob Johnson"
 
 
 class TestContactNotes:
@@ -981,7 +953,7 @@ class TestConversations:
         resp = client.post(f"/api/contacts/{ctid}/conversations", json={
             "channel": "pigeon", "title": "Bad channel",
         })
-        assert resp.status_code == 400
+        assert resp.status_code in (400, 422)
 
     def test_create_conversation_invalid_outcome(self, client, db_conn):
         coid = _seed_company(db_conn)
@@ -989,7 +961,7 @@ class TestConversations:
         resp = client.post(f"/api/contacts/{ctid}/conversations", json={
             "channel": "phone", "title": "Test", "outcome": "maybe",
         })
-        assert resp.status_code == 400
+        assert resp.status_code in (400, 422)
 
     def test_create_conversation_not_found(self, client):
         resp = client.post("/api/contacts/99999/conversations", json={
@@ -1033,7 +1005,7 @@ class TestConversations:
         resp2 = client.put(f"/api/conversations/{conv_id}", json={
             "channel": "pigeon",
         })
-        assert resp2.status_code == 400
+        assert resp2.status_code in (400, 422)
 
     def test_delete_conversation(self, client, db_conn):
         coid = _seed_company(db_conn)
@@ -1243,7 +1215,7 @@ class TestDealCreate:
             "company_id": coid, "title": "Bad Stage",
             "stage": "invalid_stage",
         })
-        assert resp.status_code == 400
+        assert resp.status_code in (400, 422)
 
     def test_create_company_not_found(self, client):
         resp = client.post("/api/deals", json={
@@ -1324,7 +1296,7 @@ class TestDealStageChange:
         coid = _seed_company(db_conn)
         did = _seed_deal(db_conn, coid)
         resp = client.patch(f"/api/deals/{did}/stage", json={"stage": "invalid"})
-        assert resp.status_code == 400
+        assert resp.status_code in (400, 422)
 
     def test_stage_change_not_found(self, client):
         resp = client.patch("/api/deals/99999/stage", json={"stage": "won"})

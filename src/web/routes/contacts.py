@@ -15,7 +15,6 @@ from slowapi.util import get_remote_address
 
 from src.application.contact_service import transition_contact_status
 from src.models.campaigns import get_campaign_by_name
-from src.models.enrollment import get_contact_campaign_status
 from src.models.events import log_event
 from src.config import DEFAULT_CAMPAIGN
 from src.enums import LifecycleStage
@@ -68,25 +67,13 @@ class ResponseNoteRequest(BaseModel):
     content: str = Field(max_length=5000)
 
 
-class PhoneUpdateRequest(BaseModel):
-    phone_number: str = Field(max_length=50)
-
-
-class LinkedInUrlUpdateRequest(BaseModel):
-    linkedin_url: str = Field(max_length=2048)
-
-
-class NameUpdateRequest(BaseModel):
-    first_name: str = Field(max_length=200)
-    last_name: str = Field(max_length=200)
-
-
 class ContactPatchRequest(BaseModel):
     first_name: Optional[str] = Field(None, max_length=200)
     last_name: Optional[str] = Field(None, max_length=200)
     email: Optional[str] = Field(None, max_length=320)
     linkedin_url: Optional[str] = Field(None, max_length=2048)
     title: Optional[str] = Field(None, max_length=200)
+    phone_number: Optional[str] = Field(None, max_length=50)
 
 
 class BulkLifecycleRequest(BaseModel):
@@ -449,106 +436,6 @@ def add_response_note(
         return {"success": True}
 
 
-@router.post("/contacts/{contact_id}/phone")
-def update_phone(
-    contact_id: int,
-    body: PhoneUpdateRequest,
-    conn=Depends(get_db),
-    user=Depends(get_current_user),
-):
-    """Add or update a contact's phone number with E.164 normalization."""
-    with get_cursor(conn) as cur:
-        cur.execute(
-            """SELECT c.id FROM contacts c
-               WHERE c.id = %s AND c.user_id = %s""",
-            (contact_id, user["id"]),
-        )
-        if not cur.fetchone():
-            raise HTTPException(404, f"Contact {contact_id} not found")
-
-        normalized = normalize_phone(body.phone_number)
-        if not normalized:
-            raise HTTPException(400, "Invalid phone number format")
-
-        cur.execute(
-            "UPDATE contacts SET phone_number = %s, phone_normalized = %s WHERE id = %s",
-            (body.phone_number, normalized, contact_id),
-        )
-        conn.commit()
-
-        return {
-            "success": True,
-            "contact_id": contact_id,
-            "phone_number": body.phone_number,
-            "phone_normalized": normalized,
-        }
-
-
-@router.post("/contacts/{contact_id}/linkedin-url")
-def update_linkedin_url(
-    contact_id: int,
-    body: LinkedInUrlUpdateRequest,
-    conn=Depends(get_db),
-    user=Depends(get_current_user),
-):
-    """Update a contact's LinkedIn URL with normalization."""
-    with get_cursor(conn) as cur:
-        cur.execute(
-            """SELECT c.id FROM contacts c
-               WHERE c.id = %s AND c.user_id = %s""",
-            (contact_id, user["id"]),
-        )
-        if not cur.fetchone():
-            raise HTTPException(404, f"Contact {contact_id} not found")
-
-        normalized = _normalize_linkedin(body.linkedin_url)
-
-        cur.execute(
-            "UPDATE contacts SET linkedin_url = %s, linkedin_url_normalized = %s WHERE id = %s",
-            (body.linkedin_url, normalized, contact_id),
-        )
-        conn.commit()
-
-        return {
-            "success": True,
-            "contact_id": contact_id,
-            "linkedin_url": body.linkedin_url,
-            "linkedin_url_normalized": normalized,
-        }
-
-
-@router.post("/contacts/{contact_id}/name")
-def update_contact_name(
-    contact_id: int,
-    body: NameUpdateRequest,
-    conn=Depends(get_db),
-    user=Depends(get_current_user),
-):
-    """Update a contact's first name, last name, and full name."""
-    with get_cursor(conn) as cur:
-        cur.execute(
-            """SELECT c.id FROM contacts c
-               WHERE c.id = %s AND c.user_id = %s""",
-            (contact_id, user["id"]),
-        )
-        if not cur.fetchone():
-            raise HTTPException(404, f"Contact {contact_id} not found")
-
-        full_name = f"{body.first_name} {body.last_name}"
-
-        cur.execute(
-            "UPDATE contacts SET first_name = %s, last_name = %s, full_name = %s WHERE id = %s",
-            (body.first_name, body.last_name, full_name, contact_id),
-        )
-        conn.commit()
-
-        return {
-            "success": True,
-            "contact_id": contact_id,
-            "full_name": full_name,
-        }
-
-
 @router.patch("/contacts/{contact_id}")
 def patch_contact(
     contact_id: int,
@@ -558,14 +445,15 @@ def patch_contact(
 ):
     """Update any subset of contact fields in one request.
 
-    Normalizes email, LinkedIn URL, and name. Resets email_status when
-    email changes. Clears channel_override for queue dedup re-evaluation.
+    Normalizes email, LinkedIn URL, phone, and name. Resets email_status
+    when email changes. Clears channel_override for queue dedup re-evaluation.
+    When only first_name or last_name is provided, the other defaults to
+    the current database value.
     """
     user_id = user["id"]
     with get_cursor(conn) as cur:
-        # Verify ownership
         cur.execute(
-            "SELECT id, email_normalized FROM contacts WHERE id = %s AND user_id = %s",
+            "SELECT first_name, last_name FROM contacts WHERE id = %s AND user_id = %s",
             (contact_id, user_id),
         )
         existing = cur.fetchone()
@@ -576,13 +464,11 @@ def patch_contact(
         params: list = []
         changed_fields: list[str] = []
 
-        # Email
         if body.email is not None:
             email = body.email.strip()
             if not _EMAIL_RE.match(email):
                 raise HTTPException(400, "Invalid email format")
             email_norm = _normalize_email(email)
-            # Check uniqueness within this user's contacts
             cur.execute(
                 "SELECT id FROM contacts WHERE email_normalized = %s AND user_id = %s AND id != %s",
                 (email_norm, user_id, contact_id),
@@ -593,17 +479,16 @@ def patch_contact(
             params.extend([email, email_norm])
             changed_fields.append("email")
 
-        # LinkedIn URL
         if body.linkedin_url is not None:
             li_norm = _normalize_linkedin(body.linkedin_url.strip())
             fields.extend(["linkedin_url = %s", "linkedin_url_normalized = %s"])
             params.extend([body.linkedin_url.strip(), li_norm])
             changed_fields.append("linkedin_url")
 
-        # Name
         if body.first_name is not None or body.last_name is not None:
-            first = (body.first_name or "").strip()
-            last = (body.last_name or "").strip()
+            # Default to current DB values so a partial name update doesn't blank the other
+            first = (body.first_name if body.first_name is not None else existing["first_name"] or "").strip()
+            last = (body.last_name if body.last_name is not None else existing["last_name"] or "").strip()
             if not first:
                 raise HTTPException(400, "First name is required")
             full = f"{first} {last}".strip()
@@ -611,31 +496,39 @@ def patch_contact(
             params.extend([first, last, full])
             changed_fields.append("name")
 
-        # Title
         if body.title is not None:
             title = _HTML_TAG_RE.sub("", body.title).strip()[:200]
             fields.append("title = %s")
             params.append(title)
             changed_fields.append("title")
 
+        if body.phone_number is not None:
+            normalized = normalize_phone(body.phone_number)
+            if not normalized:
+                raise HTTPException(400, "Invalid phone number format")
+            fields.extend(["phone_number = %s", "phone_normalized = %s"])
+            params.extend([body.phone_number, normalized])
+            changed_fields.append("phone")
+
         if not fields:
             raise HTTPException(400, "No fields to update")
 
-        # Update contact
         params.extend([contact_id, user_id])
         cur.execute(
-            f"UPDATE contacts SET {', '.join(fields)} WHERE id = %s AND user_id = %s",
+            f"UPDATE contacts SET {', '.join(fields)} WHERE id = %s AND user_id = %s RETURNING *",
             params,
         )
+        contact = cur.fetchone()
+        if not contact:
+            raise HTTPException(404, f"Contact {contact_id} not found")
 
-        # Email cascade: clear channel_override so dedup re-evaluates
+        # Email change: clear channel_override so queue dedup re-evaluates
         if "email" in changed_fields:
             cur.execute(
                 "UPDATE contact_campaign_status SET channel_override = NULL WHERE contact_id = %s",
                 (contact_id,),
             )
 
-        # Log the update
         log_event(
             conn, contact_id, "contact_updated",
             metadata=json.dumps({"fields": changed_fields}),
@@ -643,16 +536,7 @@ def patch_contact(
         )
 
     conn.commit()
-
-    # Return fresh contact data
-    with get_cursor(conn) as cur:
-        cur.execute(
-            "SELECT * FROM contacts WHERE id = %s AND user_id = %s",
-            (contact_id, user_id),
-        )
-        contact = cur.fetchone()
-
-    return {"success": True, "contact": dict(contact) if contact else None}
+    return {"success": True, "contact": dict(contact)}
 
 
 @router.post("/contacts/bulk/lifecycle")
@@ -744,15 +628,17 @@ def gdpr_delete_contact(
             "DELETE FROM events WHERE contact_id = %s AND user_id = %s",
             (contact_id, user["id"]),
         )
-        # 2. Campaign enrollment status
+        # 2. Campaign enrollment status (child table — join through contact ownership)
         cur.execute(
-            "DELETE FROM contact_campaign_status WHERE contact_id = %s",
-            (contact_id,),
+            """DELETE FROM contact_campaign_status
+               WHERE contact_id = %s
+                 AND contact_id IN (SELECT id FROM contacts WHERE user_id = %s)""",
+            (contact_id, user["id"]),
         )
         # 3. Dedup log references
         cur.execute(
-            "DELETE FROM dedup_log WHERE kept_contact_id = %s OR merged_contact_id = %s",
-            (contact_id, contact_id),
+            "DELETE FROM dedup_log WHERE (kept_contact_id = %s OR merged_contact_id = %s) AND user_id = %s",
+            (contact_id, contact_id, user["id"]),
         )
         # 4. Audit log entry
         cur.execute(

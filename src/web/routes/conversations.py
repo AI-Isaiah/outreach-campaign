@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -14,6 +14,12 @@ from src.models.database import get_cursor
 
 router = APIRouter(tags=["conversations"])
 
+_CONVERSATION_CHANNEL = Literal[
+    "conference", "phone", "telegram", "whatsapp",
+    "email", "linkedin", "in_person", "video_call",
+]
+_CONVERSATION_OUTCOME = Literal["successful", "unsuccessful"]
+
 VALID_CHANNELS = {
     "conference", "phone", "telegram", "whatsapp",
     "email", "linkedin", "in_person", "video_call",
@@ -22,18 +28,18 @@ VALID_OUTCOMES = {"successful", "unsuccessful", None}
 
 
 class ConversationCreate(BaseModel):
-    channel: str = Field(max_length=50)
+    channel: _CONVERSATION_CHANNEL
     title: str = Field(max_length=200)
     notes: Optional[str] = Field(default=None, max_length=5000)
-    outcome: Optional[str] = Field(default=None, max_length=50)
+    outcome: Optional[_CONVERSATION_OUTCOME] = None
     occurred_at: Optional[str] = Field(default=None, max_length=50)
 
 
 class ConversationUpdate(BaseModel):
-    channel: Optional[str] = Field(default=None, max_length=50)
+    channel: Optional[_CONVERSATION_CHANNEL] = None
     title: Optional[str] = Field(default=None, max_length=200)
     notes: Optional[str] = Field(default=None, max_length=5000)
-    outcome: Optional[str] = Field(default=None, max_length=50)
+    outcome: Optional[_CONVERSATION_OUTCOME] = None
     occurred_at: Optional[str] = Field(default=None, max_length=50)
 
 

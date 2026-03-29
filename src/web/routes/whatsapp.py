@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -44,7 +42,7 @@ def whatsapp_scan(request: Request, conn=Depends(get_db), user=Depends(get_curre
 
         scanner = WhatsAppScanner()
         scanner.setup()
-        result = scanner.scan_contacts(conn)
+        result = scanner.scan_contacts(conn, user_id=user["id"])
         scanner.close()
         return {"status": "ok", **result}
     except ImportError:
@@ -60,9 +58,12 @@ def whatsapp_scan(request: Request, conn=Depends(get_db), user=Depends(get_curre
 def whatsapp_scan_status(conn=Depends(get_db), user=Depends(get_current_user)):
     """Get the last scan time and message counts."""
     with get_cursor(conn) as cur:
-        # Last scan time
         cur.execute(
-            "SELECT MAX(last_scanned_at) AS last_scan FROM whatsapp_scan_state"
+            """SELECT MAX(wss.last_scanned_at) AS last_scan
+               FROM whatsapp_scan_state wss
+               JOIN contacts c ON c.id = wss.contact_id
+               WHERE c.user_id = %s""",
+            (user["id"],),
         )
         row = cur.fetchone()
         last_scan = row["last_scan"] if row else None

@@ -22,7 +22,7 @@ import io
 import json
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -45,11 +45,19 @@ from src.services.crypto_research import (
     start_retry_background,
 )
 from src.services.normalization_utils import normalize_company_name
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
 from src.web.dependencies import get_current_user, get_db
 from src.web.routes.settings import get_user_api_keys
 from src.models.database import get_cursor
 
 _logger = logging.getLogger(__name__)
+_limiter = Limiter(
+    key_func=get_remote_address,
+    enabled=os.getenv("RATE_LIMIT_ENABLED", "true").lower() != "false",
+)
+_MAX_RESEARCH_JOBS_PER_DAY = 10
 _SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 _SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
@@ -127,7 +135,9 @@ def preview_csv(
 # ---------------------------------------------------------------------------
 
 @router.post("/jobs", status_code=202)
+@_limiter.limit("3/hour")
 def create_research_job(
+    request: Request,
     file: UploadFile = File(...),
     name: str = Form(...),
     method: str = Form(default="hybrid"),
@@ -143,8 +153,18 @@ def create_research_job(
     if method not in ("web_search", "website_crawl", "hybrid"):
         raise HTTPException(400, "method must be web_search, website_crawl, or hybrid")
 
-    # Enforce max 1 running job for this user
     with get_cursor(conn) as cur:
+        # Per-user daily cap
+        cur.execute(
+            """SELECT COUNT(*) AS cnt FROM research_jobs
+               WHERE user_id = %s AND created_at > NOW() - INTERVAL '24 hours'""",
+            (user["id"],),
+        )
+        if cur.fetchone()["cnt"] >= _MAX_RESEARCH_JOBS_PER_DAY:
+            _logger.warning("User %s hit research job daily cap", user["id"])
+            raise HTTPException(429, f"Daily limit of {_MAX_RESEARCH_JOBS_PER_DAY} research jobs reached")
+
+        # Enforce max 1 running job for this user
         cur.execute(
             """SELECT id, name FROM research_jobs
                WHERE status IN ('pending', 'researching', 'classifying')

@@ -112,7 +112,7 @@ class TestGetDailyQueue:
             user_id=TEST_USER_ID,
         )
 
-        queue = get_daily_queue(conn, campaign, target_date=_today())
+        queue = get_daily_queue(conn, campaign, target_date=_today(), user_id=TEST_USER_ID)
 
         assert len(queue) == 1
         item = queue[0]
@@ -147,7 +147,7 @@ class TestGetDailyQueue:
                 user_id=TEST_USER_ID,
             )
 
-        queue = get_daily_queue(conn, campaign, target_date=_today())
+        queue = get_daily_queue(conn, campaign, target_date=_today(), user_id=TEST_USER_ID)
 
         assert len(queue) == 1
         assert queue[0]["contact_id"] == c1
@@ -189,7 +189,7 @@ class TestGetDailyQueue:
             user_id=TEST_USER_ID,
         )
 
-        queue = get_daily_queue(conn, campaign, target_date=_today(), limit=10)
+        queue = get_daily_queue(conn, campaign, target_date=_today(), limit=10, user_id=TEST_USER_ID)
 
         assert len(queue) == 3
         assert queue[0]["step_order"] == 1
@@ -222,7 +222,7 @@ class TestGetDailyQueue:
             user_id=TEST_USER_ID,
         )
 
-        queue = get_daily_queue(conn, campaign, target_date=_today())
+        queue = get_daily_queue(conn, campaign, target_date=_today(), user_id=TEST_USER_ID)
 
         assert len(queue) == 2
         # Older action date should come first
@@ -253,7 +253,7 @@ class TestGetDailyQueue:
             user_id=TEST_USER_ID,
         )
 
-        queue = get_daily_queue(conn, campaign, target_date=_today())
+        queue = get_daily_queue(conn, campaign, target_date=_today(), user_id=TEST_USER_ID)
 
         assert len(queue) == 1
         assert queue[0]["contact_name"] == "Past Contact"
@@ -273,7 +273,7 @@ class TestGetDailyQueue:
             user_id=TEST_USER_ID,
         )
 
-        queue = get_daily_queue(conn, campaign, target_date=_today())
+        queue = get_daily_queue(conn, campaign, target_date=_today(), user_id=TEST_USER_ID)
         assert len(queue) == 0
 
     def test_email_step_includes_valid_email(self, conn, campaign):
@@ -290,7 +290,7 @@ class TestGetDailyQueue:
             user_id=TEST_USER_ID,
         )
 
-        queue = get_daily_queue(conn, campaign, target_date=_today())
+        queue = get_daily_queue(conn, campaign, target_date=_today(), user_id=TEST_USER_ID)
         assert len(queue) == 1
         assert queue[0]["channel"] == "email"
 
@@ -308,7 +308,7 @@ class TestGetDailyQueue:
             user_id=TEST_USER_ID,
         )
 
-        queue = get_daily_queue(conn, campaign, target_date=_today())
+        queue = get_daily_queue(conn, campaign, target_date=_today(), user_id=TEST_USER_ID)
         assert len(queue) == 0
 
     def test_linkedin_step_skips_empty_linkedin(self, conn, campaign):
@@ -325,7 +325,7 @@ class TestGetDailyQueue:
             user_id=TEST_USER_ID,
         )
 
-        queue = get_daily_queue(conn, campaign, target_date=_today())
+        queue = get_daily_queue(conn, campaign, target_date=_today(), user_id=TEST_USER_ID)
         assert len(queue) == 0
 
     def test_unsubscribed_contacts_skipped(self, conn, campaign):
@@ -342,7 +342,7 @@ class TestGetDailyQueue:
             user_id=TEST_USER_ID,
         )
 
-        queue = get_daily_queue(conn, campaign, target_date=_today())
+        queue = get_daily_queue(conn, campaign, target_date=_today(), user_id=TEST_USER_ID)
         assert len(queue) == 0
 
     def test_limit_parameter(self, conn, campaign):
@@ -360,12 +360,12 @@ class TestGetDailyQueue:
                 user_id=TEST_USER_ID,
             )
 
-        queue = get_daily_queue(conn, campaign, target_date=_today(), limit=3)
+        queue = get_daily_queue(conn, campaign, target_date=_today(), limit=3, user_id=TEST_USER_ID)
         assert len(queue) == 3
 
     def test_empty_queue_no_contacts_ready(self, conn, campaign):
         """Returns empty list when no contacts are ready."""
-        queue = get_daily_queue(conn, campaign, target_date=_today())
+        queue = get_daily_queue(conn, campaign, target_date=_today(), user_id=TEST_USER_ID)
         assert queue == []
 
     def test_completed_status_excluded(self, conn, campaign):
@@ -378,7 +378,7 @@ class TestGetDailyQueue:
             user_id=TEST_USER_ID,
         )
 
-        queue = get_daily_queue(conn, campaign, target_date=_today())
+        queue = get_daily_queue(conn, campaign, target_date=_today(), user_id=TEST_USER_ID)
         assert len(queue) == 0
 
     def test_queued_status_included(self, conn, campaign):
@@ -391,7 +391,7 @@ class TestGetDailyQueue:
             user_id=TEST_USER_ID,
         )
 
-        queue = get_daily_queue(conn, campaign, target_date=_today())
+        queue = get_daily_queue(conn, campaign, target_date=_today(), user_id=TEST_USER_ID)
         assert len(queue) == 1
 
     def test_default_target_date_is_today(self, conn, campaign):
@@ -404,7 +404,7 @@ class TestGetDailyQueue:
             user_id=TEST_USER_ID,
         )
 
-        queue = get_daily_queue(conn, campaign)  # no target_date
+        queue = get_daily_queue(conn, campaign, user_id=TEST_USER_ID)  # no target_date
         assert len(queue) == 1
 
     def test_queue_returns_total_steps(self, conn, campaign):
@@ -417,7 +417,7 @@ class TestGetDailyQueue:
             user_id=TEST_USER_ID,
         )
 
-        queue = get_daily_queue(conn, campaign, target_date=_today())
+        queue = get_daily_queue(conn, campaign, target_date=_today(), user_id=TEST_USER_ID)
         assert len(queue) == 1
         # Non-GDPR contact: all 5 steps are applicable
         assert queue[0]["total_steps"] == 5
@@ -434,7 +434,7 @@ class TestGetDailyQueue:
             user_id=TEST_USER_ID,
         )
 
-        queue = get_daily_queue(conn, campaign, target_date=_today())
+        queue = get_daily_queue(conn, campaign, target_date=_today(), user_id=TEST_USER_ID)
         assert len(queue) == 1
         # GDPR contact: steps 4 and 5 (non_gdpr_only) are excluded => 3 steps
         assert queue[0]["total_steps"] == 3
@@ -467,7 +467,7 @@ class TestGetDailyQueue:
                 user_id=TEST_USER_ID,
             )
 
-        queue = get_daily_queue(conn, campaign, target_date=_today())
+        queue = get_daily_queue(conn, campaign, target_date=_today(), user_id=TEST_USER_ID)
         assert len(queue) == 2
         contact_ids = [q["contact_id"] for q in queue]
         assert ca1 in contact_ids  # lowest rank for Company A
@@ -497,7 +497,7 @@ class TestGetDailyQueue:
                 user_id=TEST_USER_ID,
             )
 
-        queue = get_daily_queue(conn, campaign, target_date=_today())
+        queue = get_daily_queue(conn, campaign, target_date=_today(), user_id=TEST_USER_ID)
         contact_ids = [q["contact_id"] for q in queue]
         assert c_us in contact_ids  # non-GDPR on non_gdpr_only step => OK
         assert c_eu not in contact_ids  # GDPR on non_gdpr_only step => skip
@@ -706,8 +706,8 @@ class TestCrossCampaignEmailDedup:
                 user_id=TEST_USER_ID,
             )
 
-        items_a = get_daily_queue(conn, camp_a, target_date=_today())
-        items_b = get_daily_queue(conn, camp_b, target_date=_today())
+        items_a = get_daily_queue(conn, camp_a, target_date=_today(), user_id=TEST_USER_ID)
+        items_b = get_daily_queue(conn, camp_b, target_date=_today(), user_id=TEST_USER_ID)
         assert items_a[0]["channel"] == "email"
         assert items_b[0]["channel"] == "email"
 
@@ -736,8 +736,8 @@ class TestCrossCampaignEmailDedup:
         enroll_contact(conn, c_b, camp_b, next_action_date=_today(), user_id=TEST_USER_ID)
         update_contact_campaign_status(conn, c_b, camp_b, status="in_progress", current_step=1, user_id=TEST_USER_ID)
 
-        items_a = get_daily_queue(conn, camp_a, target_date=_today())
-        items_b = get_daily_queue(conn, camp_b, target_date=_today())
+        items_a = get_daily_queue(conn, camp_a, target_date=_today(), user_id=TEST_USER_ID)
+        items_b = get_daily_queue(conn, camp_b, target_date=_today(), user_id=TEST_USER_ID)
         result = apply_cross_campaign_email_dedup(items_a + items_b)
 
         assert all(item["channel"] == "email" for item in result)
@@ -757,8 +757,8 @@ class TestCrossCampaignEmailDedup:
             enroll_contact(conn, cid, camp_id, next_action_date=_today(), user_id=TEST_USER_ID)
             update_contact_campaign_status(conn, cid, camp_id, status="in_progress", current_step=1, user_id=TEST_USER_ID)
 
-        items_a = get_daily_queue(conn, camp_a, target_date=_today())
-        items_b = get_daily_queue(conn, camp_b, target_date=_today())
+        items_a = get_daily_queue(conn, camp_a, target_date=_today(), user_id=TEST_USER_ID)
+        items_b = get_daily_queue(conn, camp_b, target_date=_today(), user_id=TEST_USER_ID)
         result = apply_cross_campaign_email_dedup(items_a + items_b)
 
         assert all(item["channel"] == "linkedin_connect" for item in result)
@@ -772,7 +772,7 @@ class TestCrossCampaignEmailDedup:
         enroll_contact(conn, cid, camp, next_action_date=_today(), user_id=TEST_USER_ID)
         update_contact_campaign_status(conn, cid, camp, status="in_progress", current_step=1, user_id=TEST_USER_ID)
 
-        items = get_daily_queue(conn, camp, target_date=_today())
+        items = get_daily_queue(conn, camp, target_date=_today(), user_id=TEST_USER_ID)
         result = apply_cross_campaign_email_dedup(items)
 
         assert len(result) == 1

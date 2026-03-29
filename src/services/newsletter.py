@@ -30,7 +30,7 @@ from src.services.email_sender import send_email, send_emails_batch
 logger = logging.getLogger(__name__)
 
 
-def get_newsletter_subscribers(conn) -> list:
+def get_newsletter_subscribers(conn, *, user_id: int) -> list:
     """Get all contacts with newsletter_status = 'subscribed' and unsubscribed = 0.
 
     Returns list of dicts with contact info.
@@ -42,13 +42,15 @@ def get_newsletter_subscribers(conn) -> list:
                  AND unsubscribed = false
                  AND email IS NOT NULL
                  AND email != ''
+                 AND user_id = %s
                ORDER BY id
-               LIMIT 5000"""
+               LIMIT 5000""",
+            (user_id,),
         )
         return cursor.fetchall()
 
 
-def auto_subscribe_eligible(conn, campaign_id: int) -> dict:
+def auto_subscribe_eligible(conn, campaign_id: int, *, user_id: int) -> dict:
     """Auto-subscribe non-GDPR contacts who finished the campaign without replying.
 
     Rules:
@@ -94,8 +96,8 @@ def auto_subscribe_eligible(conn, campaign_id: int) -> dict:
 
             # Subscribe
             cursor.execute(
-                "UPDATE contacts SET newsletter_status = 'subscribed' WHERE id = %s",
-                (row["id"],),
+                "UPDATE contacts SET newsletter_status = 'subscribed' WHERE id = %s AND user_id = %s",
+                (row["id"], user_id),
             )
             result["subscribed"] += 1
 
@@ -103,7 +105,7 @@ def auto_subscribe_eligible(conn, campaign_id: int) -> dict:
     return result
 
 
-def subscribe_contact(conn, contact_id: int) -> bool:
+def subscribe_contact(conn, contact_id: int, *, user_id: int) -> bool:
     """Manually subscribe a contact to the newsletter.
 
     Sets newsletter_status = 'subscribed'.
@@ -111,14 +113,14 @@ def subscribe_contact(conn, contact_id: int) -> bool:
     """
     with get_cursor(conn) as cursor:
         cursor.execute(
-            "UPDATE contacts SET newsletter_status = 'subscribed' WHERE id = %s",
-            (contact_id,),
+            "UPDATE contacts SET newsletter_status = 'subscribed' WHERE id = %s AND user_id = %s",
+            (contact_id, user_id),
         )
         conn.commit()
         return cursor.rowcount > 0
 
 
-def unsubscribe_contact(conn, contact_id: int) -> bool:
+def unsubscribe_contact(conn, contact_id: int, *, user_id: int) -> bool:
     """Unsubscribe a contact from the newsletter.
 
     Sets newsletter_status = 'unsubscribed' and unsubscribed = 1.
@@ -126,8 +128,8 @@ def unsubscribe_contact(conn, contact_id: int) -> bool:
     """
     with get_cursor(conn) as cursor:
         cursor.execute(
-            "UPDATE contacts SET newsletter_status = 'unsubscribed', unsubscribed = true WHERE id = %s",
-            (contact_id,),
+            "UPDATE contacts SET newsletter_status = 'unsubscribed', unsubscribed = true WHERE id = %s AND user_id = %s",
+            (contact_id, user_id),
         )
         conn.commit()
         return cursor.rowcount > 0
@@ -235,7 +237,7 @@ def send_newsletter(
     subject = _extract_subject(raw_md, md_path.stem)
 
     # Get subscribers
-    subscribers = get_newsletter_subscribers(conn)
+    subscribers = get_newsletter_subscribers(conn, user_id=user_id)
     result["subscribers"] = len(subscribers)
 
     if dry_run:

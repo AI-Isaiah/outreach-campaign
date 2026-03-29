@@ -39,26 +39,11 @@ export const contactsApi = {
       method: "POST", body: JSON.stringify({ content, note_type: noteType, campaign }),
     }),
 
-  updatePhone: (id: number, phoneNumber: string) =>
-    request<{ success: boolean }>(`/contacts/${id}/phone`, {
-      method: "POST", body: JSON.stringify({ phone_number: phoneNumber }),
-    }),
-
-  updateLinkedInUrl: (id: number, linkedinUrl: string) =>
-    request<{ success: boolean }>(`/contacts/${id}/linkedin-url`, {
-      method: "POST", body: JSON.stringify({ linkedin_url: linkedinUrl }),
-    }),
-
-  updateContactName: (id: number, firstName: string, lastName: string) =>
-    request<{ success: boolean }>(`/contacts/${id}/name`, {
-      method: "POST", body: JSON.stringify({ first_name: firstName, last_name: lastName }),
-    }),
-
   patchContact: (id: number, fields: {
     first_name?: string; last_name?: string; email?: string;
-    linkedin_url?: string; title?: string;
+    linkedin_url?: string; title?: string; phone_number?: string;
   }) =>
-    request<{ success: boolean; contact: any }>(`/contacts/${id}`, {
+    request<{ success: boolean; contact: Record<string, unknown> }>(`/contacts/${id}`, {
       method: "PATCH", body: JSON.stringify(fields),
     }),
 

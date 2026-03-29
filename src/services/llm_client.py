@@ -65,9 +65,16 @@ def _call_openai(prompt: str, api_key: str, *, model: str = DEFAULT_MODEL_OPENAI
     return resp.json()["choices"][0]["message"]["content"]
 
 
+_gemini_key_warned = False
+
+
 def _call_gemini(prompt: str, api_key: str, *, model: str = DEFAULT_MODEL_GEMINI,
                  max_tokens: int = 2000, timeout: float = 30.0) -> str:
     """Call Google Gemini API and return the raw text response."""
+    global _gemini_key_warned
+    if not _gemini_key_warned:
+        logger.warning("Gemini API key passed as URL parameter (Google API design limitation)")
+        _gemini_key_warned = True
     resp = httpx.post(
         f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}",
         headers={"Content-Type": "application/json"},

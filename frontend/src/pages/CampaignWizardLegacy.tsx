@@ -877,6 +877,7 @@ function SortableStep({
         {...listeners}
         className="text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing shrink-0"
         tabIndex={-1}
+        aria-label="Drag to reorder"
       >
         <GripVertical size={16} />
       </button>

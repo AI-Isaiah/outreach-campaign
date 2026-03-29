@@ -39,11 +39,9 @@ export default function ContactDetail() {
   });
 
   const [showLogResponse, setShowLogResponse] = useState(false);
-  const [phoneInput, setPhoneInput] = useState("");
   const [noteInput, setNoteInput] = useState("");
   const [isEditing, setIsEditing] = useState(false);
-  const [editForm, setEditForm] = useState({ first_name: "", last_name: "", email: "", linkedin_url: "", title: "" });
-  const [editError, setEditError] = useState("");
+  const [editForm, setEditForm] = useState({ first_name: "", last_name: "", email: "", linkedin_url: "", title: "", phone_number: "" });
 
   const { data: dealsData } = useQuery({
     queryKey: ["contact-deals", contactId],
@@ -80,23 +78,14 @@ export default function ContactDetail() {
     },
   });
 
-  const phoneMutation = useMutation({
-    mutationFn: () => api.updatePhone(contactId, phoneInput),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["contact", contactId] });
-      setPhoneInput("");
-    },
-  });
-
   const patchMutation = useMutation({
     mutationFn: (fields: Parameters<typeof api.patchContact>[1]) =>
       api.patchContact(contactId, fields),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["contact", contactId] });
+      queryClient.invalidateQueries({ queryKey: ["timeline", contactId], exact: false });
       setIsEditing(false);
-      setEditError("");
     },
-    onError: (err: Error) => setEditError(err.message),
   });
 
   // Set default campaign from first enrollment
@@ -177,8 +166,9 @@ export default function ContactDetail() {
                     email: contact.email || "",
                     linkedin_url: contact.linkedin_url || "",
                     title: contact.title || "",
+                    phone_number: contact.phone_number || "",
                   });
-                  setEditError("");
+                  if (patchMutation.isError) patchMutation.reset();
                   setIsEditing(true);
                 }}
                 className="text-gray-400 hover:text-gray-600 transition-colors"
@@ -190,7 +180,7 @@ export default function ContactDetail() {
           </div>
 
           {isEditing ? (
-            <div className="space-y-3" onKeyDown={(e) => { if (e.key === "Escape") { setIsEditing(false); setEditError(""); } }}>
+            <div className="space-y-3" onKeyDown={(e) => { if (e.key === "Escape") { setIsEditing(false); if (patchMutation.isError) patchMutation.reset(); } }}>
               <div>
                 <label className="text-xs text-gray-500 block mb-1">Name</label>
                 <div className="flex gap-2">
@@ -227,7 +217,14 @@ export default function ContactDetail() {
                 onChange={(e) => setEditForm((f) => ({ ...f, title: e.target.value }))}
                 placeholder="e.g. Portfolio Manager"
               />
-              {editError && <p className="text-xs text-red-600">{editError}</p>}
+              <Input
+                label="Phone"
+                type="tel"
+                value={editForm.phone_number}
+                onChange={(e) => setEditForm((f) => ({ ...f, phone_number: e.target.value }))}
+                placeholder="+1 555 123 4567"
+              />
+              {patchMutation.error && <p className="text-xs text-red-600">{(patchMutation.error as Error).message}</p>}
               <div className="flex gap-2 pt-1">
                 <Button
                   variant="accent"
@@ -235,18 +232,16 @@ export default function ContactDetail() {
                   loading={patchMutation.isPending}
                   onClick={() => {
                     const fields: Record<string, string> = {};
-                    if (editForm.first_name !== (contact.first_name || "")) fields.first_name = editForm.first_name;
-                    if (editForm.last_name !== (contact.last_name || "")) fields.last_name = editForm.last_name;
-                    if (editForm.email !== (contact.email || "")) fields.email = editForm.email;
-                    if (editForm.linkedin_url !== (contact.linkedin_url || "")) fields.linkedin_url = editForm.linkedin_url;
-                    if (editForm.title !== (contact.title || "")) fields.title = editForm.title;
+                    for (const key of ["first_name", "last_name", "email", "linkedin_url", "title", "phone_number"] as const) {
+                      if (editForm[key] !== (contact[key] || "")) fields[key] = editForm[key];
+                    }
                     if (Object.keys(fields).length === 0) { setIsEditing(false); return; }
                     patchMutation.mutate(fields);
                   }}
                 >
                   Save
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => { setIsEditing(false); setEditError(""); }}>
+                <Button variant="ghost" size="sm" onClick={() => { setIsEditing(false); if (patchMutation.isError) patchMutation.reset(); }}>
                   Cancel
                 </Button>
               </div>
@@ -276,30 +271,9 @@ export default function ContactDetail() {
                   <span className="text-gray-400">-</span>
                 )}
               </div>
-              <div className="flex justify-between items-center">
+              <div className="flex justify-between">
                 <span className="text-gray-500">Phone</span>
-                {contact.phone_number ? (
-                  <span className="text-gray-900">{contact.phone_number}</span>
-                ) : (
-                  <div className="flex gap-1">
-                    <input
-                      type="text"
-                      value={phoneInput}
-                      onChange={(e) => setPhoneInput(e.target.value)}
-                      placeholder="+1 555 123 4567"
-                      className="w-36 px-2 py-1 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={() => phoneMutation.mutate()}
-                      disabled={!phoneInput}
-                      loading={phoneMutation.isPending}
-                    >
-                      Add
-                    </Button>
-                  </div>
-                )}
+                <span className="text-gray-900">{contact.phone_number || "-"}</span>
               </div>
             <div className="flex justify-between items-center">
               <span className="text-gray-500">Lifecycle</span>

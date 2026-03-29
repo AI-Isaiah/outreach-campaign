@@ -363,7 +363,7 @@ class TestIsContactGdpr:
 
 class TestProcessUnsubscribe:
     def test_marks_contact_as_unsubscribed(self, conn, sample_contact):
-        result = process_unsubscribe(conn, "alice@example.com")
+        result = process_unsubscribe(conn, "alice@example.com", user_id=TEST_USER_ID)
         assert result is True
 
         cursor = conn.cursor()
@@ -376,7 +376,7 @@ class TestProcessUnsubscribe:
         assert row["unsubscribed_at"] is not None
 
     def test_returns_false_for_unknown_email(self, conn):
-        result = process_unsubscribe(conn, "unknown@nowhere.com")
+        result = process_unsubscribe(conn, "unknown@nowhere.com", user_id=TEST_USER_ID)
         assert result is False
 
     def test_does_not_affect_other_contacts(self, conn, sample_company):
@@ -392,7 +392,7 @@ class TestProcessUnsubscribe:
         )
         conn.commit()
 
-        process_unsubscribe(conn, "bob@example.com")
+        process_unsubscribe(conn, "bob@example.com", user_id=TEST_USER_ID)
 
         cursor = conn.cursor()
         cursor.execute(
@@ -402,8 +402,8 @@ class TestProcessUnsubscribe:
         assert carol["unsubscribed"] is False
 
     def test_idempotent(self, conn, sample_contact):
-        process_unsubscribe(conn, "alice@example.com")
-        result = process_unsubscribe(conn, "alice@example.com")
+        process_unsubscribe(conn, "alice@example.com", user_id=TEST_USER_ID)
+        result = process_unsubscribe(conn, "alice@example.com", user_id=TEST_USER_ID)
         assert result is True
 
         cursor = conn.cursor()
@@ -829,7 +829,7 @@ class TestSendCampaignEmail:
         mock_smtp_class.return_value.__exit__ = MagicMock(return_value=False)
 
         # Unsubscribe the contact first
-        process_unsubscribe(conn, "alice@example.com")
+        process_unsubscribe(conn, "alice@example.com", user_id=TEST_USER_ID)
         enroll_contact(conn, sample_contact, sample_campaign, user_id=TEST_USER_ID)
 
         result = send_campaign_email(

@@ -274,7 +274,7 @@ class TestProcessUnsubscribe:
         company_id = _create_company(conn)
         _create_contact(conn, company_id, email="unsub@example.com")
 
-        result = process_unsubscribe(conn, "unsub@example.com")
+        result = process_unsubscribe(conn, "unsub@example.com", user_id=TEST_USER_ID)
         assert result is True
 
         # Verify contact is marked unsubscribed
@@ -290,15 +290,15 @@ class TestProcessUnsubscribe:
 
     def test_unsubscribe_nonexistent_email(self, tmp_db):
         conn = _setup_db(tmp_db)
-        result = process_unsubscribe(conn, "nobody@example.com")
+        result = process_unsubscribe(conn, "nobody@example.com", user_id=TEST_USER_ID)
         assert result is False
         conn.close()
 
     def test_unsubscribe_empty_email(self, tmp_db):
         conn = _setup_db(tmp_db)
-        assert process_unsubscribe(conn, "") is False
-        assert process_unsubscribe(conn, "   ") is False
-        assert process_unsubscribe(conn, None) is False
+        assert process_unsubscribe(conn, "", user_id=TEST_USER_ID) is False
+        assert process_unsubscribe(conn, "   ", user_id=TEST_USER_ID) is False
+        assert process_unsubscribe(conn, None, user_id=TEST_USER_ID) is False
         conn.close()
 
     def test_unsubscribe_case_insensitive(self, tmp_db):
@@ -306,6 +306,6 @@ class TestProcessUnsubscribe:
         company_id = _create_company(conn)
         _create_contact(conn, company_id, email="Case@Example.COM")
 
-        result = process_unsubscribe(conn, "CASE@EXAMPLE.COM")
+        result = process_unsubscribe(conn, "CASE@EXAMPLE.COM", user_id=TEST_USER_ID)
         assert result is True
         conn.close()

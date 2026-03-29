@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { generateLocalSequence, parseCsv } from "../pages/CampaignWizard";
+import { generateLocalSequence, parseCsv } from "../pages/CampaignWizardLegacy";
 
 describe("generateLocalSequence", () => {
   it("generates 3-step email-only sequence", () => {

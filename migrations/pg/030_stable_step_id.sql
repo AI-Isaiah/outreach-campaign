@@ -1,3 +1,8 @@
+-- ROLLBACK: ALTER TABLE contact_campaign_status DROP CONSTRAINT IF EXISTS fk_ccs_current_step_id;
+--           DROP INDEX IF EXISTS idx_ccs_current_step_id;
+--           ALTER TABLE contact_campaign_status DROP COLUMN IF EXISTS current_step_id;
+--           DROP INDEX IF EXISTS idx_sequence_steps_stable_id;
+--           ALTER TABLE sequence_steps DROP COLUMN IF EXISTS stable_id;
 -- Migration 030: Add stable_id to sequence_steps and current_step_id to contact_campaign_status
 -- Purpose: Enable safe step reordering without corrupting contact-to-step linkage.
 -- Before: contact_campaign_status.current_step (INTEGER) JOINs on sequence_steps.step_order.

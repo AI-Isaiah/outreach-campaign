@@ -11,6 +11,7 @@ import QueueLinkedInCard from "../components/QueueLinkedInCard";
 import ReviewGateModal from "../components/ReviewGateModal";
 import { useBatchSendLoop } from "../hooks/useBatchSendLoop";
 import { SkeletonCard } from "../components/Skeleton";
+import ErrorBoundary from "../components/ErrorBoundary";
 import ErrorCard from "../components/ui/ErrorCard";
 import Button from "../components/ui/Button";
 
@@ -125,22 +126,25 @@ export default function Queue() {
   const allItems: QueueItem[] = data?.items || [];
 
   // Apply filters
-  let items = allItems;
-  if (channelFilter === "email") {
-    items = items.filter((i) => i.channel === "email");
-  } else if (channelFilter === "linkedin") {
-    items = items.filter((i) => i.channel.startsWith("linkedin"));
-  }
-  if (campaignFilter) {
-    items = items.filter((i) => i.campaign_name === campaignFilter);
-  }
+  const items = useMemo(() => {
+    let filtered = allItems;
+    if (channelFilter === "email") {
+      filtered = filtered.filter((i) => i.channel === "email");
+    } else if (channelFilter === "linkedin") {
+      filtered = filtered.filter((i) => i.channel.startsWith("linkedin"));
+    }
+    if (campaignFilter) {
+      filtered = filtered.filter((i) => i.campaign_name === campaignFilter);
+    }
+    return filtered;
+  }, [allItems, channelFilter, campaignFilter]);
 
-  const emailItems = items.filter((i) => i.channel === "email");
-  const linkedinItems = items.filter((i) => i.channel.startsWith("linkedin"));
+  const emailItems = useMemo(() => items.filter((i) => i.channel === "email"), [items]);
+  const linkedinItems = useMemo(() => items.filter((i) => i.channel.startsWith("linkedin")), [items]);
 
   const flatItems = useMemo(
     () => [...emailItems, ...linkedinItems],
-    [items]
+    [emailItems, linkedinItems]
   );
 
   const handleDeferred = useCallback(
@@ -148,7 +152,10 @@ export default function Queue() {
     [queryClient],
   );
 
-  const campaignNames = [...new Set(allItems.map((i) => i.campaign_name).filter((n): n is string => !!n))];
+  const campaignNames = useMemo(
+    () => [...new Set(allItems.map((i) => i.campaign_name).filter((n): n is string => !!n))],
+    [allItems],
+  );
 
   // Clamp focused index
   useEffect(() => {
@@ -360,7 +367,7 @@ export default function Queue() {
             </label>
           )}
           {selectedIds.size > 0 && (
-            <span className="bg-blue-100 text-blue-700 text-xs font-medium px-2 py-0.5 rounded-full">
+            <span className="bg-blue-100 text-blue-700 text-xs font-medium px-2 py-0.5 rounded-full" aria-live="polite">
               {selectedIds.size} selected
             </span>
           )}
@@ -432,6 +439,15 @@ export default function Queue() {
 
       {showHint && flatItems.length > 0 && <KeyboardHint onDismiss={dismissHint} />}
 
+      {skipMutation.isError && (
+        <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-2 text-sm text-red-700 flex items-center justify-between">
+          <span>Skip failed: {(skipMutation.error as Error).message}</span>
+          <button onClick={() => skipMutation.reset()} className="text-red-400 hover:text-red-600 ml-3 flex-shrink-0" aria-label="Dismiss error">
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
       {isLoading && (
         <div className="space-y-4">
           <SkeletonCard /><SkeletonCard /><SkeletonCard />
@@ -452,58 +468,60 @@ export default function Queue() {
         </div>
       )}
 
-      {/* Email section */}
-      {emailItems.length > 0 && (
-        <div>
-          <h2 className="flex items-center gap-1.5 text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
-            <Mail size={16} className="text-amber-600" />
-            Email ({emailItems.length})
-          </h2>
-          <div className="space-y-3">
-            {emailItems.map((item, i) => (
-              <div key={`${item.contact_id}-email`} ref={(el) => setCardRef(i, el)}>
-                <QueueEmailCard
-                  item={item}
-                  campaign={item.campaign_name || ""}
-                  onDeferred={handleDeferred}
-                  isFocused={focusedIndex === i}
-                  
-                  isSelected={selectedIds.has(item.contact_id)}
-                  onToggle={toggleSelected}
-                />
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* LinkedIn section */}
-      {linkedinItems.length > 0 && (
-        <div>
-          <h2 className="flex items-center gap-1.5 text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
-            <Linkedin size={16} className="text-blue-600" />
-            LinkedIn ({linkedinItems.length})
-          </h2>
-          <div className="space-y-3">
-            {linkedinItems.map((item, i) => {
-              const flatIdx = emailItems.length + i;
-              return (
-                <div key={`${item.contact_id}-li`} ref={(el) => setCardRef(flatIdx, el)}>
-                  <QueueLinkedInCard
+      <ErrorBoundary>
+        {/* Email section */}
+        {emailItems.length > 0 && (
+          <div>
+            <h2 className="flex items-center gap-1.5 text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+              <Mail size={16} className="text-amber-600" />
+              Email ({emailItems.length})
+            </h2>
+            <div className="space-y-3">
+              {emailItems.map((item, i) => (
+                <div key={`${item.contact_id}-email`} ref={(el) => setCardRef(i, el)}>
+                  <QueueEmailCard
                     item={item}
                     campaign={item.campaign_name || ""}
                     onDeferred={handleDeferred}
-                    isFocused={focusedIndex === flatIdx}
-                    
+                    isFocused={focusedIndex === i}
+
                     isSelected={selectedIds.has(item.contact_id)}
                     onToggle={toggleSelected}
                   />
                 </div>
-              );
-            })}
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+
+        {/* LinkedIn section */}
+        {linkedinItems.length > 0 && (
+          <div>
+            <h2 className="flex items-center gap-1.5 text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+              <Linkedin size={16} className="text-blue-600" />
+              LinkedIn ({linkedinItems.length})
+            </h2>
+            <div className="space-y-3">
+              {linkedinItems.map((item, i) => {
+                const flatIdx = emailItems.length + i;
+                return (
+                  <div key={`${item.contact_id}-li`} ref={(el) => setCardRef(flatIdx, el)}>
+                    <QueueLinkedInCard
+                      item={item}
+                      campaign={item.campaign_name || ""}
+                      onDeferred={handleDeferred}
+                      isFocused={focusedIndex === flatIdx}
+
+                      isSelected={selectedIds.has(item.contact_id)}
+                      onToggle={toggleSelected}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </ErrorBoundary>
 
       {/* Review Gate Modal */}
       <ReviewGateModal

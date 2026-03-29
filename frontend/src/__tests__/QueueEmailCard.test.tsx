@@ -4,6 +4,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import QueueEmailCard from "../components/QueueEmailCard";
 import type { QueueItem, MessageDraft } from "../types";
 
+vi.mock("../api/client", () => ({
+  api: {
+    patchContact: vi.fn().mockResolvedValue({ success: true }),
+    generateDraft: vi.fn().mockResolvedValue({}),
+  },
+}));
+
 function makeQueueItem(overrides: Partial<QueueItem> = {}): QueueItem {
   return {
     contact_id: 1,

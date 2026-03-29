@@ -11,7 +11,7 @@ import jwt
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from src.config import SUPABASE_DB_URL, load_config
+from src.config import SUPABASE_DB_URL, load_validated_config
 from src.models.database import get_connection, get_pool_connection, is_pool_initialized, put_pool_connection
 
 _security = HTTPBearer(auto_error=False)
@@ -114,5 +114,5 @@ def get_db() -> Generator:
 
 
 def get_config() -> dict:
-    """Return the application config."""
-    return load_config()
+    """Return the application config as a dict (validated via Pydantic)."""
+    return load_validated_config().model_dump()

@@ -93,7 +93,7 @@ def test_create_deal_invalid_stage(client, db_conn):
         "title": "Bad Deal",
         "stage": "invalid_stage",
     })
-    assert resp.status_code == 400
+    assert resp.status_code in (400, 422)
 
 
 def test_create_deal_company_not_found(client):

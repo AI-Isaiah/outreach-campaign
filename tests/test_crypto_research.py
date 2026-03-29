@@ -268,7 +268,7 @@ def test_discover_contacts_success(mock_post):
 # ---------- Warm Intros ----------
 
 def test_find_warm_intros_no_matches(db_conn):
-    result = find_warm_intros(db_conn, "Nonexistent Corp", None)
+    result = find_warm_intros(db_conn, "Nonexistent Corp", None, user_id=TEST_USER_ID)
     assert result["contact_ids"] == []
     assert result["notes"] is None
 
@@ -290,7 +290,7 @@ def test_find_warm_intros_by_company_id(db_conn):
     contact_id = cur.fetchone()["id"]
     db_conn.commit()
 
-    result = find_warm_intros(db_conn, "Test Co", company_id)
+    result = find_warm_intros(db_conn, "Test Co", company_id, user_id=TEST_USER_ID)
     assert contact_id in result["contact_ids"]
     assert "Alice Smith" in result["notes"]
 
@@ -310,7 +310,7 @@ def test_find_warm_intros_by_name(db_conn):
     )
     db_conn.commit()
 
-    result = find_warm_intros(db_conn, "Name Match LLC", None)
+    result = find_warm_intros(db_conn, "Name Match LLC", None, user_id=TEST_USER_ID)
     assert len(result["contact_ids"]) == 1
 
 

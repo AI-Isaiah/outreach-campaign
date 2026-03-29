@@ -349,8 +349,8 @@ class TestProcessUnsubscribeMultipleContacts:
         cur.close()
 
         # Unsubscribe each email independently
-        assert process_unsubscribe(conn, "alpha@test.com") is True
-        assert process_unsubscribe(conn, "beta@test.com") is True
+        assert process_unsubscribe(conn, "alpha@test.com", user_id=TEST_USER_ID) is True
+        assert process_unsubscribe(conn, "beta@test.com", user_id=TEST_USER_ID) is True
 
         cur = conn.cursor()
         cur.execute(

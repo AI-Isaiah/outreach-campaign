@@ -30,4 +30,4 @@ def queue_today(
     campaign = get_campaign_by_name(conn, campaign_name, user_id=1)
     if not campaign:
         return []
-    return get_daily_queue(conn, campaign["id"], target_date=target_date, limit=limit)
+    return get_daily_queue(conn, campaign["id"], target_date=target_date, limit=limit, user_id=1)

@@ -82,7 +82,7 @@ def test_get_unverified_emails(tmp_db):
     _insert_contact_with_email(conn, "one@example.com", status="unverified")
     _insert_contact_with_email(conn, "two@example.com", status="unverified")
 
-    result = get_unverified_emails(conn)
+    result = get_unverified_emails(conn, user_id=TEST_USER_ID)
 
     assert sorted(result) == ["one@example.com", "two@example.com"]
     conn.close()
@@ -93,7 +93,7 @@ def test_get_unverified_emails_excludes_verified(tmp_db):
     _insert_contact_with_email(conn, "verified@example.com", status="valid")
     _insert_contact_with_email(conn, "unverified@example.com", status="unverified")
 
-    result = get_unverified_emails(conn)
+    result = get_unverified_emails(conn, user_id=TEST_USER_ID)
 
     assert result == ["unverified@example.com"]
     conn.close()
@@ -104,7 +104,7 @@ def test_get_unverified_emails_excludes_null(tmp_db):
     _insert_contact_with_email(conn, None, status="unverified")
     _insert_contact_with_email(conn, "real@example.com", status="unverified")
 
-    result = get_unverified_emails(conn)
+    result = get_unverified_emails(conn, user_id=TEST_USER_ID)
 
     assert result == ["real@example.com"]
     conn.close()

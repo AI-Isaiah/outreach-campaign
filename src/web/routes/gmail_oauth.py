@@ -1,8 +1,10 @@
 """Gmail OAuth connect/callback/disconnect routes."""
 
+import hashlib
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -20,26 +22,27 @@ SCOPES = "https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/
 
 @router.get("/connect")
 def gmail_connect(conn=Depends(get_db), user=Depends(get_current_user)):
-    """Redirect to Google OAuth consent screen."""
+    """Redirect to Google OAuth consent screen with PKCE binding."""
     if not GOOGLE_CLIENT_ID:
         raise HTTPException(500, "Google OAuth not configured (GOOGLE_CLIENT_ID missing)")
 
-    # Generate state token for CSRF protection
     state = secrets.token_urlsafe(32)
+    code_verifier = secrets.token_urlsafe(43)
+    code_challenge = hashlib.sha256(code_verifier.encode()).hexdigest()
+
     cur = conn.cursor()
     try:
-        # Clean up expired states
         cur.execute("DELETE FROM oauth_states WHERE expires_at < NOW()")
-        # Store state
+        # One active state per user — invalidate any previous flow
+        cur.execute("DELETE FROM oauth_states WHERE user_id = %s", (user["id"],))
         cur.execute(
-            "INSERT INTO oauth_states (state, user_id, expires_at) VALUES (%s, %s, %s)",
-            (state, user["id"], datetime.now(timezone.utc) + timedelta(minutes=10)),
+            "INSERT INTO oauth_states (state, user_id, expires_at, code_challenge) VALUES (%s, %s, %s, %s)",
+            (state, user["id"], datetime.now(timezone.utc) + timedelta(minutes=10), code_challenge),
         )
         conn.commit()
     finally:
         cur.close()
 
-    from urllib.parse import urlencode
     params = urlencode({
         "client_id": GOOGLE_CLIENT_ID,
         "redirect_uri": GOOGLE_REDIRECT_URI,
@@ -50,35 +53,43 @@ def gmail_connect(conn=Depends(get_db), user=Depends(get_current_user)):
         "state": state,
     })
     auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{params}"
-    return RedirectResponse(auth_url)
+    response = RedirectResponse(auth_url)
+    response.set_cookie(
+        "oauth_verifier", code_verifier,
+        max_age=600, httponly=True, samesite="strict", secure=os.getenv("ENVIRONMENT") == "production",
+    )
+    return response
 
 
 @router.get("/callback")
-def gmail_callback(code: str = None, state: str = None, error: str = None, conn=Depends(get_db)):
-    """Handle OAuth callback from Google."""
+def gmail_callback(request: Request, code: str = None, state: str = None, error: str = None, conn=Depends(get_db)):
+    """Handle OAuth callback from Google with PKCE verification."""
     import httpx
 
-    # Handle user denial
     if error:
         return RedirectResponse("/settings?gmail=error&reason=access_denied")
 
     if not code or not state:
         return RedirectResponse("/settings?gmail=error&reason=missing_params")
 
-    # Validate state token
+    # PKCE: verify the browser that started the flow is the one completing it
+    cookie_verifier = request.cookies.get("oauth_verifier")
+    if not cookie_verifier:
+        return RedirectResponse("/settings?gmail=error&reason=invalid_state")
+
+    expected_challenge = hashlib.sha256(cookie_verifier.encode()).hexdigest()
+
     cur = conn.cursor()
     try:
         cur.execute(
-            "SELECT user_id FROM oauth_states WHERE state = %s AND expires_at > NOW()",
-            (state,),
+            "SELECT user_id FROM oauth_states WHERE state = %s AND code_challenge = %s AND expires_at > NOW()",
+            (state, expected_challenge),
         )
         row = cur.fetchone()
         if not row:
             return RedirectResponse("/settings?gmail=error&reason=invalid_state")
 
         user_id = row["user_id"]
-
-        # Delete used state
         cur.execute("DELETE FROM oauth_states WHERE state = %s", (state,))
 
         # Exchange code for tokens
@@ -134,7 +145,9 @@ def gmail_callback(code: str = None, state: str = None, error: str = None, conn=
     finally:
         cur.close()
 
-    return RedirectResponse("/settings?gmail=connected")
+    response = RedirectResponse("/settings?gmail=connected")
+    response.delete_cookie("oauth_verifier")
+    return response
 
 
 @router.post("/disconnect")

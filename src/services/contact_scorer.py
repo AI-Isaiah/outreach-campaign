@@ -40,13 +40,10 @@ def score_contacts(
 
     # Get max AUM for normalization
     with get_cursor(conn) as cursor:
-        if user_id is not None:
-            cursor.execute(
-                "SELECT MAX(aum_millions) AS max_aum FROM companies WHERE aum_millions IS NOT NULL AND user_id = %s",
-                (user_id,),
-            )
-        else:
-            cursor.execute("SELECT MAX(aum_millions) AS max_aum FROM companies WHERE aum_millions IS NOT NULL")
+        cursor.execute(
+            "SELECT MAX(aum_millions) AS max_aum FROM companies WHERE aum_millions IS NOT NULL AND user_id = %s",
+            (user_id,),
+        )
         max_aum_row = cursor.fetchone()
         max_aum = max_aum_row["max_aum"] if max_aum_row and max_aum_row["max_aum"] else 1.0
 

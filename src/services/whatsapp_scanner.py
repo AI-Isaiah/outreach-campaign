@@ -88,7 +88,7 @@ class WhatsAppScanner:
                 path=str(Path(self.session_dir, "state.json"))
             )
 
-    def scan_contacts(self, conn) -> dict:
+    def scan_contacts(self, conn, *, user_id: int) -> dict:
         """Scan WhatsApp for messages from contacts with phone numbers.
 
         Args:
@@ -102,7 +102,9 @@ class WhatsAppScanner:
                 """SELECT id, phone_normalized, full_name
                    FROM contacts
                    WHERE phone_normalized IS NOT NULL
-                     AND phone_normalized != ''"""
+                     AND phone_normalized != ''
+                     AND user_id = %s""",
+                (user_id,),
             )
             contacts = cur.fetchall()
 

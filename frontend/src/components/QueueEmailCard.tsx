@@ -1,16 +1,13 @@
 import { useState, useRef } from "react";
 import React from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Mail, Pencil, Sparkles, CheckCircle } from "lucide-react";
+import { Mail, Sparkles } from "lucide-react";
 import { api } from "../api/client";
 import { queueApi } from "../api/queue";
 import AiDraftControls from "./AiDraftControls";
 import type { QueueItem } from "../types";
-import AumTierBadge from "./AumTierBadge";
-import SignalBadge from "./SignalBadge";
 import StatusBadge from "./StatusBadge";
-import ContactEditPanel from "./ContactEditPanel";
-import SkipMenu from "./SkipMenu";
+import QueueCardBase, { QueueCardBaseSkipped } from "./QueueCardBase";
 import { useContactEdit } from "../hooks/useContactEdit";
 
 function QueueEmailCard({
@@ -83,70 +80,25 @@ function QueueEmailCard({
   });
 
   if (skipped) {
-    return (
-      <div className="bg-gray-50 border border-gray-200 rounded-lg p-5">
-        <div className="flex items-center gap-2">
-          <span className="text-gray-400 text-lg">&#8594;</span>
-          <span className="font-medium text-gray-500">
-            {item.contact_name} &mdash; Skipped (back tomorrow)
-          </span>
-        </div>
-      </div>
-    );
+    return <QueueCardBaseSkipped contactName={item.contact_name} />;
   }
 
   return (
-    <div
-      className={`bg-white border rounded-lg shadow-sm overflow-hidden ${
-        isFocused ? "ring-2 ring-blue-500 ring-offset-2 border-blue-300" : "border-gray-200"
-      } ${isSelected ? "border-l-4 border-l-blue-500 bg-blue-50/30" : ""}`}
-      aria-label={`Email: ${item.contact_name}`}
+    <QueueCardBase
+      item={item}
+      campaign={campaign}
+      isFocused={isFocused}
+      isApproved={isApproved}
+      isSelected={isSelected}
+      onToggle={onToggle}
+      headerIcon={<Mail size={16} className="text-amber-600 flex-shrink-0" />}
+      headerBg="bg-amber-50"
+      headerBorder="border-amber-100"
+      contactEdit={contactEdit}
+      skipMutation={skipMutation}
+      stepColor="text-amber-700"
+      headerRight={draftStatus ? <StatusBadge status={draftStatus} /> : undefined}
     >
-      <div className="bg-amber-50 px-5 py-3 flex items-center justify-between border-b border-amber-100">
-        <div className="flex items-center gap-1.5">
-          <input
-            type="checkbox"
-            checked={isSelected}
-            onChange={(e) => { e.stopPropagation(); onToggle?.(item.contact_id); }}
-            className="w-4 h-4 accent-blue-600 flex-shrink-0 cursor-pointer"
-            aria-label={`Select ${item.contact_name}`}
-          />
-          {isApproved && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
-          <Mail size={16} className="text-amber-600 flex-shrink-0" />
-          <span className="font-semibold text-gray-900">
-            {item.contact_name}
-          </span>
-          <button
-            onClick={() => contactEdit.setShowEdit(!contactEdit.showEdit)}
-            className="p-0.5 text-gray-400 hover:text-gray-600 transition-colors"
-            title="Edit contact details"
-            data-role="edit-contact"
-          >
-            <Pencil size={14} />
-          </button>
-          <span className="text-gray-500 mx-1">&middot;</span>
-          <span className="text-gray-600">
-            {item.company_name}
-            {item.firm_type && (
-              <span className="text-gray-400 text-sm ml-1">({item.firm_type})</span>
-            )}
-          </span>
-          <AumTierBadge tier={item.aum_tier} />
-          {item.fund_signals && item.fund_signals.length > 0 && (
-            <SignalBadge signals={item.fund_signals} />
-          )}
-        </div>
-        <div className="flex items-center gap-3">
-          {draftStatus && <StatusBadge status={draftStatus} />}
-          <span className="text-sm text-amber-700 font-medium">
-            Step {item.step_order}/{item.total_steps}
-          </span>
-          <SkipMenu onSkip={(reason) => skipMutation.mutate(reason)} isPending={skipMutation.isPending} />
-        </div>
-      </div>
-
-      <ContactEditPanel edit={contactEdit} />
-
       {item.rendered_email || item.message_draft || generateMutation.isSuccess ? (
         <div className="p-5 space-y-4">
           <div className="text-sm">
@@ -224,7 +176,7 @@ function QueueEmailCard({
           Could not render email preview. Check contact eligibility.
         </div>
       )}
-    </div>
+    </QueueCardBase>
   );
 }
 

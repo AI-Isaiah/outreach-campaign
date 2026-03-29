@@ -112,7 +112,7 @@ class TestConversations:
             "channel": "pigeon_mail",
             "title": "Bad channel",
         })
-        assert resp.status_code == 400
+        assert resp.status_code in (400, 422)
 
     def test_invalid_outcome(self, client, contact_id):
         resp = client.post(f"/api/contacts/{contact_id}/conversations", json={
@@ -120,7 +120,7 @@ class TestConversations:
             "title": "Bad outcome",
             "outcome": "maybe",
         })
-        assert resp.status_code == 400
+        assert resp.status_code in (400, 422)
 
     def test_contact_not_found(self, client):
         resp = client.post("/api/contacts/99999/conversations", json={

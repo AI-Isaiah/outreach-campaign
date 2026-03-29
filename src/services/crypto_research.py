@@ -194,7 +194,7 @@ def check_duplicate_companies(conn, company_names: list[str], user_id: int | Non
 # Warm Intros
 # ---------------------------------------------------------------------------
 
-def find_warm_intros(conn, company_name: str, company_id: int | None) -> dict:
+def find_warm_intros(conn, company_name: str, company_id: int | None, *, user_id: int) -> dict:
     """Find existing contacts at the same or related company."""
     contact_ids = []
     notes_parts = []
@@ -203,8 +203,8 @@ def find_warm_intros(conn, company_name: str, company_id: int | None) -> dict:
         if company_id:
             cur.execute(
                 """SELECT id, full_name, email, title
-                   FROM contacts WHERE company_id = %s""",
-                (company_id,),
+                   FROM contacts WHERE company_id = %s AND user_id = %s""",
+                (company_id, user_id),
             )
             for row in cur.fetchall():
                 contact_ids.append(row["id"])
@@ -218,8 +218,9 @@ def find_warm_intros(conn, company_name: str, company_id: int | None) -> dict:
                FROM contacts c
                JOIN companies co ON co.id = c.company_id
                WHERE co.name_normalized = %s
+                 AND c.user_id = %s
                  AND c.id != ALL(%s)""",
-            (name_norm, contact_ids or [0]),
+            (name_norm, user_id, contact_ids or [0]),
         )
         for row in cur.fetchall():
             contact_ids.append(row["id"])
@@ -235,11 +236,12 @@ def find_warm_intros(conn, company_name: str, company_id: int | None) -> dict:
                    JOIN contact_campaign_status ccs ON ccs.contact_id = c.id
                    WHERE ccs.status = 'replied_positive'
                      AND co.firm_type = (
-                         SELECT firm_type FROM companies WHERE id = %s
+                         SELECT firm_type FROM companies WHERE id = %s AND user_id = %s
                      )
+                     AND c.user_id = %s
                      AND c.id != ALL(%s)
                    LIMIT 5""",
-                (company_id, contact_ids or [0]),
+                (company_id, user_id, user_id, contact_ids or [0]),
             )
             for row in cur.fetchall():
                 notes_parts.append(
@@ -256,38 +258,26 @@ def find_warm_intros(conn, company_name: str, company_id: int | None) -> dict:
 # Shared Contact Import Helper
 # ---------------------------------------------------------------------------
 
-def resolve_or_create_company(cur, company_name: str, user_id: int | None = None) -> int:
+def resolve_or_create_company(cur, company_name: str, *, user_id: int) -> int:
     """Find existing company by normalized name or create a new one. Returns company_id."""
     if not company_name or not company_name.strip():
         raise ValueError("company_name must be a non-empty string")
     name_norm = normalize_company_name(company_name)
-    if user_id is not None:
-        cur.execute(
-            "SELECT id FROM companies WHERE name_normalized = %s AND user_id = %s",
-            (name_norm, user_id),
-        )
-    else:
-        cur.execute(
-            "SELECT id FROM companies WHERE name_normalized = %s",
-            (name_norm,),
-        )
+    cur.execute(
+        "SELECT id FROM companies WHERE name_normalized = %s AND user_id = %s",
+        (name_norm, user_id),
+    )
     match = cur.fetchone()
     if match:
         return match["id"]
-    if user_id is not None:
-        cur.execute(
-            "INSERT INTO companies (name, name_normalized, user_id) VALUES (%s, %s, %s) RETURNING id",
-            (company_name, name_norm, user_id),
-        )
-    else:
-        cur.execute(
-            "INSERT INTO companies (name, name_normalized) VALUES (%s, %s) RETURNING id",
-            (company_name, name_norm),
-        )
+    cur.execute(
+        "INSERT INTO companies (name, name_normalized, user_id) VALUES (%s, %s, %s) RETURNING id",
+        (company_name, name_norm, user_id),
+    )
     return cur.fetchone()["id"]
 
 
-def import_single_contact(cur, contact: dict, company_id: int, user_id: int | None = None) -> int | None:
+def import_single_contact(cur, contact: dict, company_id: int, *, user_id: int) -> int | None:
     """Import a single discovered contact. Returns contact_id or None if skipped."""
     name = (contact.get("name") or "").strip()
     if not name:
@@ -319,14 +309,13 @@ def import_single_contact(cur, contact: dict, company_id: int, user_id: int | No
     row = cur.fetchone()
     if row:
         return row["id"]
-    # Conflict -- look up the existing contact so we can still enroll them
     if email_norm:
-        cur.execute("SELECT id FROM contacts WHERE email_normalized = %s", (email_norm,))
+        cur.execute("SELECT id FROM contacts WHERE email_normalized = %s AND user_id = %s", (email_norm, user_id))
         existing = cur.fetchone()
         if existing:
             return existing["id"]
     if linkedin_norm:
-        cur.execute("SELECT id FROM contacts WHERE linkedin_url_normalized = %s", (linkedin_norm,))
+        cur.execute("SELECT id FROM contacts WHERE linkedin_url_normalized = %s AND user_id = %s", (linkedin_norm, user_id))
         existing = cur.fetchone()
         if existing:
             return existing["id"]
@@ -342,7 +331,8 @@ def batch_import_and_enroll(
     result_ids: list[int],
     create_deals: bool = False,
     campaign_name: str | None = None,
-    user_id: int | None = None,
+    *,
+    user_id: int,
 ) -> dict:
     """Import discovered contacts, optionally create deals and enroll in campaign.
 
@@ -568,7 +558,7 @@ def retry_failed_results(job_id: int, db_url: str, api_keys: dict | None = None)
                     result["company_name"], result.get("company_website")
                 )
                 actual_cost += COST_CONTACT_DISCOVERY
-                warm = find_warm_intros(conn, result["company_name"], result.get("company_id"))
+                warm = find_warm_intros(conn, result["company_name"], result.get("company_id"), user_id=user_id)
 
                 with get_cursor(conn) as cur:
                     cur.execute(
@@ -665,6 +655,7 @@ def _execute_research_job(conn, job_id: int) -> None:
         if not job:
             return
         method = job["method"]
+        user_id = job["user_id"]
 
     with get_cursor(conn) as cur:
         cur.execute(
@@ -758,7 +749,7 @@ def _execute_research_job(conn, job_id: int) -> None:
             )
             actual_cost += COST_CONTACT_DISCOVERY
 
-            warm = find_warm_intros(conn, result["company_name"], result.get("company_id"))
+            warm = find_warm_intros(conn, result["company_name"], result.get("company_id"), user_id=user_id)
 
             with get_cursor(conn) as cur:
                 cur.execute(

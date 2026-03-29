@@ -17,6 +17,8 @@ from email.mime.text import MIMEText
 from pathlib import Path
 from typing import Optional
 
+import psycopg2
+
 from src.enums import EventType
 from src.models.enrollment import get_sequence_steps, record_template_usage
 from src.services.sequence_utils import advance_to_next_step
@@ -314,7 +316,7 @@ def render_campaign_email(
     template_id: int,
     config: dict,
     *,
-    user_id: int = None,
+    user_id: int,
     pre_fetched_research: dict = None,
 ) -> Optional[dict]:
     """Render a campaign email without sending it.
@@ -360,7 +362,7 @@ def send_campaign_email(
     template_id: int,
     config: dict,
     *,
-    user_id: int = None,
+    user_id: int,
     pre_fetched_research: dict = None,
 ) -> bool:
     """Send a campaign email to a contact.
@@ -494,8 +496,8 @@ def send_campaign_email(
     try:
         from src.services.lifecycle import on_email_sent
         on_email_sent(conn, contact_id, user_id=user_id)
-    except Exception:
-        logger.debug("Lifecycle advance failed for contact %d (non-blocking)", contact_id)
+    except (ValueError, KeyError, psycopg2.Error) as exc:
+        logger.warning("Lifecycle advance failed for contact %d: %s", contact_id, exc)
 
     logger.info("Campaign email sent to contact %d (campaign %d)", contact_id, campaign_id)
     return True

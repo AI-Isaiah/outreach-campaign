@@ -46,7 +46,7 @@ def export_expandi_csv(
         target_date = date.today().isoformat()
 
     # Get the full daily queue (high limit to capture all LinkedIn items)
-    queue = get_daily_queue(conn, campaign["id"], target_date=target_date, limit=9999)
+    queue = get_daily_queue(conn, campaign["id"], target_date=target_date, limit=9999, user_id=1)
 
     # Filter to LinkedIn-only actions
     linkedin_items = [

@@ -15,7 +15,7 @@ import jwt
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from src.config import load_config
+from src.config import load_config_safe
 from src.web.dependencies import get_current_user, get_db
 from src.models.database import get_cursor
 
@@ -231,9 +231,8 @@ def get_me(user=Depends(get_current_user)):
 
 def _send_reset_email(to_email: str, to_name: str, token: str) -> None:
     """Send password reset email using the app's SMTP config."""
-    try:
-        config = load_config()
-    except FileNotFoundError:
+    config = load_config_safe()
+    if not config:
         logger.warning("No config.yaml found — cannot send reset email")
         return
 
