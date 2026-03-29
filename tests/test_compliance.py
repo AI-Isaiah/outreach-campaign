@@ -231,7 +231,7 @@ class TestIsContactGdpr:
         company_id = _create_company(conn, is_gdpr=False)
         contact_id = _create_contact(conn, company_id, is_gdpr=False)
 
-        assert is_contact_gdpr(conn, contact_id) is False
+        assert is_contact_gdpr(conn, contact_id, user_id=TEST_USER_ID) is False
         conn.close()
 
     def test_gdpr_contact_flag(self, tmp_db):
@@ -239,7 +239,7 @@ class TestIsContactGdpr:
         company_id = _create_company(conn, is_gdpr=False)
         contact_id = _create_contact(conn, company_id, is_gdpr=True)
 
-        assert is_contact_gdpr(conn, contact_id) is True
+        assert is_contact_gdpr(conn, contact_id, user_id=TEST_USER_ID) is True
         conn.close()
 
     def test_gdpr_company_flag(self, tmp_db):
@@ -247,7 +247,7 @@ class TestIsContactGdpr:
         company_id = _create_company(conn, is_gdpr=True)
         contact_id = _create_contact(conn, company_id, is_gdpr=False)
 
-        assert is_contact_gdpr(conn, contact_id) is True
+        assert is_contact_gdpr(conn, contact_id, user_id=TEST_USER_ID) is True
         conn.close()
 
     def test_both_flags_set(self, tmp_db):
@@ -255,12 +255,12 @@ class TestIsContactGdpr:
         company_id = _create_company(conn, is_gdpr=True)
         contact_id = _create_contact(conn, company_id, is_gdpr=True)
 
-        assert is_contact_gdpr(conn, contact_id) is True
+        assert is_contact_gdpr(conn, contact_id, user_id=TEST_USER_ID) is True
         conn.close()
 
     def test_nonexistent_contact(self, tmp_db):
         conn = _setup_db(tmp_db)
-        assert is_contact_gdpr(conn, 99999) is False
+        assert is_contact_gdpr(conn, 99999, user_id=TEST_USER_ID) is False
         conn.close()
 
 

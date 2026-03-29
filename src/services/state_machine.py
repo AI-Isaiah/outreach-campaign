@@ -109,8 +109,8 @@ def _activate_next_contact(
     """
     with get_cursor(conn) as cursor:
         cursor.execute(
-            "SELECT company_id, priority_rank FROM contacts WHERE id = %s",
-            (contact_id,),
+            "SELECT company_id, priority_rank FROM contacts WHERE id = %s AND user_id = %s",
+            (contact_id, user_id),
         )
         contact_row = cursor.fetchone()
 
@@ -125,13 +125,14 @@ def _activate_next_contact(
         cursor.execute(
             """SELECT c.id FROM contacts c
                WHERE c.company_id = %s AND c.priority_rank > %s
+               AND c.user_id = %s
                AND c.id NOT IN (
                    SELECT contact_id FROM contact_campaign_status WHERE campaign_id = %s
                )
                ORDER BY c.priority_rank ASC
                LIMIT 1
                FOR UPDATE OF c""",
-            (company_id, current_rank, campaign_id),
+            (company_id, current_rank, user_id, campaign_id),
         )
         next_contact = cursor.fetchone()
 

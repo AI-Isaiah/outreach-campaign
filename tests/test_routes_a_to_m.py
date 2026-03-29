@@ -1541,8 +1541,8 @@ class TestInbox:
         ctid = _seed_contact(db_conn, coid)
         cur = db_conn.cursor()
         cur.execute(
-            "INSERT INTO response_notes (contact_id, note_type, content) VALUES (%s, 'general', 'Test note')",
-            (ctid,),
+            "INSERT INTO response_notes (contact_id, note_type, content, user_id) VALUES (%s, 'general', 'Test note', %s)",
+            (ctid, TEST_USER_ID),
         )
         db_conn.commit()
         cur.close()

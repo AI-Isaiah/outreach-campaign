@@ -2,6 +2,12 @@
 
 Provides functions to compute campaign-level metrics, A/B variant comparisons,
 weekly summaries, and firm-type breakdowns for outreach campaigns.
+
+Multi-tenancy note: all functions in this module query by campaign_id, which
+provides tenant isolation via FK -- campaigns.user_id is verified by the caller
+(route or CLI) before the campaign_id reaches these functions.  This is
+defense-by-FK, not a direct user_id WHERE clause, but is safe as long as
+callers always verify campaign ownership first.
 """
 
 from __future__ import annotations

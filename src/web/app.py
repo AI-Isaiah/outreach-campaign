@@ -82,7 +82,7 @@ async def lifespan(app: FastAPI):
                 run_migrations(conn)
                 logger.info("Database migrations completed")
 
-                # Recover deep_research records stuck from a previous crash
+                # Global recovery: marks ALL users' stuck jobs as failed on restart (intentional)
                 with get_cursor(conn) as cur:
                     cur.execute(
                         """UPDATE deep_research

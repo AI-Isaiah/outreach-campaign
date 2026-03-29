@@ -17,7 +17,7 @@ from src.models.database import get_cursor
 logger = logging.getLogger(__name__)
 
 
-def run_dedup(conn, export_dir: str | None = None, user_id: int | None = None) -> dict:
+def run_dedup(conn, export_dir: str | None = None, *, user_id: int) -> dict:
     """Run the 3-pass deduplication pipeline.
 
     Pass 1: Exact email match
@@ -45,7 +45,7 @@ def run_dedup(conn, export_dir: str | None = None, user_id: int | None = None) -
     }
 
 
-def _pass_exact_email(conn, user_id: int | None = None) -> int:
+def _pass_exact_email(conn, *, user_id: int) -> int:
     """Pass 1: find contacts sharing the same email_normalized, keep lowest id."""
     dupes_removed = 0
 
@@ -78,7 +78,7 @@ def _pass_exact_email(conn, user_id: int | None = None) -> int:
     return dupes_removed
 
 
-def _pass_exact_linkedin(conn, user_id: int | None = None) -> int:
+def _pass_exact_linkedin(conn, *, user_id: int) -> int:
     """Pass 2: find contacts sharing the same linkedin_url_normalized, keep lowest id."""
     dupes_removed = 0
 
@@ -111,18 +111,13 @@ def _pass_exact_linkedin(conn, user_id: int | None = None) -> int:
     return dupes_removed
 
 
-def _pass_fuzzy_company(conn, export_dir: str | None, *, user_id: int | None = None) -> int:
+def _pass_fuzzy_company(conn, export_dir: str | None, *, user_id: int) -> int:
     """Pass 3: fuzzy match company names, flag for manual review (no deletes)."""
     with get_cursor(conn) as cursor:
-        if user_id is not None:
-            cursor.execute(
-                "SELECT id, name, name_normalized FROM companies WHERE user_id = %s ORDER BY id",
-                (user_id,),
-            )
-        else:
-            cursor.execute(
-                "SELECT id, name, name_normalized FROM companies ORDER BY id"
-            )
+        cursor.execute(
+            "SELECT id, name, name_normalized FROM companies WHERE user_id = %s ORDER BY id",
+            (user_id,),
+        )
         rows = cursor.fetchall()
 
     flagged_pairs: list[dict] = []

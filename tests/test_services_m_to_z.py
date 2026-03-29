@@ -877,7 +877,7 @@ class TestDeferContact:
         _create_campaign(conn)
         co = insert_company(conn, "NotEnrCo")
         ct = insert_contact(conn, co)
-        result = defer_contact(conn, ct, 9999, reason="test")
+        result = defer_contact(conn, ct, 9999, reason="test", user_id=TEST_USER_ID)
         assert result["success"] is False
         conn.close()
 
@@ -1842,7 +1842,7 @@ class TestCountStepsForContact:
         _create_sequence_step(conn, cid, step_order=3, channel="email")
         co = insert_company(conn, "CountStepsCo")
         ct = insert_contact(conn, co, is_gdpr=False)
-        count = count_steps_for_contact(conn, ct, cid)
+        count = count_steps_for_contact(conn, ct, cid, user_id=TEST_USER_ID)
         assert count == 3
         conn.close()
 
@@ -1855,7 +1855,7 @@ class TestCountStepsForContact:
         _create_sequence_step(conn, cid, step_order=3, channel="email")
         co = insert_company(conn, "GDPRCountCo", is_gdpr=True)
         ct = insert_contact(conn, co, is_gdpr=True)
-        count = count_steps_for_contact(conn, ct, cid)
+        count = count_steps_for_contact(conn, ct, cid, user_id=TEST_USER_ID)
         assert count == 2  # step 2 excluded
         conn.close()
 
@@ -1863,6 +1863,6 @@ class TestCountStepsForContact:
         from src.services.priority_queue import count_steps_for_contact
         conn = _conn(tmp_db)
         cid = _create_campaign(conn)
-        count = count_steps_for_contact(conn, 99999, cid)
+        count = count_steps_for_contact(conn, 99999, cid, user_id=TEST_USER_ID)
         assert count == 0
         conn.close()

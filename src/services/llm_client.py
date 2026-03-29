@@ -75,6 +75,9 @@ def _call_gemini(prompt: str, api_key: str, *, model: str = DEFAULT_MODEL_GEMINI
     if not _gemini_key_warned:
         logger.warning("Gemini API key passed as URL parameter (Google API design limitation)")
         _gemini_key_warned = True
+    # NOTE: Google's Generative Language API requires the key as a URL query parameter.
+    # There is no Authorization header option — this is a Google API design limitation,
+    # not an implementation choice. The google-generativeai SDK uses the same mechanism.
     resp = httpx.post(
         f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}",
         headers={"Content-Type": "application/json"},

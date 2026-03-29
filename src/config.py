@@ -89,7 +89,7 @@ def load_config_safe() -> dict:
         return {}
 
 
-DB_PATH = os.getenv("DATABASE_PATH", "outreach.db")
 SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL", "")
 
+# TODO: make configurable via .env or remove default
 DEFAULT_CAMPAIGN = "Q1_2026_initial"

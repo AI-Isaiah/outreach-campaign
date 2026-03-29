@@ -2,7 +2,8 @@
 
 import base64
 import logging
-from datetime import datetime, timezone
+import re
+from datetime import datetime, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -55,7 +56,7 @@ class GmailSender:
         expiry = self.token_expiry
         if expiry.tzinfo is None:
             expiry = expiry.replace(tzinfo=timezone.utc)
-        return now >= (expiry - __import__("datetime").timedelta(seconds=60))
+        return now >= (expiry - timedelta(seconds=60))
 
     def refresh(self) -> dict:
         """Refresh access token using refresh_token.
@@ -104,7 +105,6 @@ class GmailSender:
             msg["From"] = from_email
 
         # Add plain text version (strip HTML)
-        import re
         plain_text = re.sub(r"<[^>]+>", "", html_body)
         msg.attach(MIMEText(plain_text, "plain"))
         msg.attach(MIMEText(html_body, "html"))

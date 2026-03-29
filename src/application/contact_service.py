@@ -76,9 +76,9 @@ def transition_contact_status(
         # Save response note if provided
         if note:
             cur.execute(
-                """INSERT INTO response_notes (contact_id, campaign_id, note_type, content)
-                   VALUES (%s, %s, %s, %s)""",
-                (contact_id, campaign_id, new_status, note),
+                """INSERT INTO response_notes (contact_id, campaign_id, note_type, content, user_id)
+                   VALUES (%s, %s, %s, %s, %s)""",
+                (contact_id, campaign_id, new_status, note, user_id),
             )
 
         conn.commit()

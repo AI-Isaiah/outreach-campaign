@@ -113,7 +113,7 @@ def check_gdpr_email_limit(
         return count < max_emails
 
 
-def is_contact_gdpr(conn, contact_id: int) -> bool:
+def is_contact_gdpr(conn, contact_id: int, *, user_id: int) -> bool:
     """Check if a contact is subject to GDPR restrictions.
 
     A contact is GDPR-subject if their ``is_gdpr`` flag is set, or if their
@@ -122,6 +122,7 @@ def is_contact_gdpr(conn, contact_id: int) -> bool:
     Args:
         conn: database connection
         contact_id: the contact to check
+        user_id: the owner user ID for tenant isolation
 
     Returns:
         True if the contact is under GDPR, False otherwise.
@@ -131,8 +132,8 @@ def is_contact_gdpr(conn, contact_id: int) -> bool:
             """SELECT c.is_gdpr as contact_gdpr, co.is_gdpr as company_gdpr
                FROM contacts c
                LEFT JOIN companies co ON co.id = c.company_id
-               WHERE c.id = %s""",
-            (contact_id,),
+               WHERE c.id = %s AND c.user_id = %s""",
+            (contact_id, user_id),
         )
         row = cursor.fetchone()
         if row is None:

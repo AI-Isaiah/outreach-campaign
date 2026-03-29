@@ -141,8 +141,8 @@ def create_contact(
         # Add initial note if provided
         if body.notes:
             cur.execute(
-                "INSERT INTO response_notes (contact_id, note_type, content) VALUES (%s, 'general', %s)",
-                (contact_id, body.notes),
+                "INSERT INTO response_notes (contact_id, note_type, content, user_id) VALUES (%s, 'general', %s, %s)",
+                (contact_id, body.notes, user["id"]),
             )
 
         conn.commit()
@@ -175,8 +175,8 @@ def update_lifecycle_stage(
             return {"success": True, "lifecycle_stage": old_stage}
 
         cur.execute(
-            "UPDATE contacts SET lifecycle_stage = %s WHERE id = %s",
-            (body.lifecycle_stage, contact_id),
+            "UPDATE contacts SET lifecycle_stage = %s WHERE id = %s AND user_id = %s",
+            (body.lifecycle_stage, contact_id, user["id"]),
         )
         log_event(
             conn, contact_id, "lifecycle_changed",
@@ -319,9 +319,9 @@ def get_contact(
             """SELECT ccs.*, cam.name AS campaign_name
                FROM contact_campaign_status ccs
                JOIN campaigns cam ON cam.id = ccs.campaign_id
-               WHERE ccs.contact_id = %s
+               WHERE ccs.contact_id = %s AND cam.user_id = %s
                ORDER BY ccs.id DESC""",
-            (contact_id,),
+            (contact_id, user["id"]),
         )
         enrollments = cur.fetchall()
 
@@ -427,9 +427,9 @@ def add_response_note(
                 campaign_id = camp["id"]
 
         cur.execute(
-            """INSERT INTO response_notes (contact_id, campaign_id, note_type, content)
-               VALUES (%s, %s, %s, %s)""",
-            (contact_id, campaign_id, body.note_type, body.content),
+            """INSERT INTO response_notes (contact_id, campaign_id, note_type, content, user_id)
+               VALUES (%s, %s, %s, %s, %s)""",
+            (contact_id, campaign_id, body.note_type, body.content, user["id"]),
         )
         conn.commit()
 

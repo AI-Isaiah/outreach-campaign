@@ -16,6 +16,9 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+// NOTE: JWT is stored in localStorage (XSS-accessible). Migrating to httpOnly cookies
+// requires backend proxy changes (cookie-based auth, CSRF tokens). Acceptable tradeoff
+// for now — all sensitive mutations are server-validated. Revisit if adding payment flows.
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);

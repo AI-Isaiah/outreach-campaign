@@ -68,7 +68,7 @@ def get_template_context(
     contact_id: int,
     config: dict,
     *,
-    user_id: int = None,
+    user_id: int,
     pre_fetched_research: dict = None,
 ) -> dict:
     """Build the template context dictionary for a contact.

@@ -588,7 +588,7 @@ def defer_queue_contact(
     if not camp:
         raise HTTPException(404, f"Campaign '{body.campaign}' not found")
 
-    result = defer_contact(conn, contact_id, camp["id"], reason=body.reason)
+    result = defer_contact(conn, contact_id, camp["id"], reason=body.reason, user_id=user["id"])
     if not result["success"]:
         raise HTTPException(404, result.get("error", "Defer failed"))
 

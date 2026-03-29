@@ -174,9 +174,9 @@ def confirm_reply(
         # Save note if provided
         if body.note and campaign_id:
             cur.execute(
-                """INSERT INTO response_notes (contact_id, campaign_id, note_type, content)
-                   VALUES (%s, %s, %s, %s)""",
-                (reply["contact_id"], campaign_id, body.outcome, body.note),
+                """INSERT INTO response_notes (contact_id, campaign_id, note_type, content, user_id)
+                   VALUES (%s, %s, %s, %s, %s)""",
+                (reply["contact_id"], campaign_id, body.outcome, body.note, user["id"]),
             )
 
         conn.commit()

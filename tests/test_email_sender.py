@@ -336,10 +336,10 @@ class TestCheckGdprEmailLimit:
 
 class TestIsContactGdpr:
     def test_gdpr_contact(self, conn, gdpr_contact):
-        assert is_contact_gdpr(conn, gdpr_contact) is True
+        assert is_contact_gdpr(conn, gdpr_contact, user_id=TEST_USER_ID) is True
 
     def test_non_gdpr_contact(self, conn, sample_contact):
-        assert is_contact_gdpr(conn, sample_contact) is False
+        assert is_contact_gdpr(conn, sample_contact, user_id=TEST_USER_ID) is False
 
     def test_contact_gdpr_via_company(self, conn, gdpr_company):
         """Contact is not GDPR but company is."""
@@ -351,10 +351,10 @@ class TestIsContactGdpr:
         )
         contact_id = cursor.fetchone()["id"]
         conn.commit()
-        assert is_contact_gdpr(conn, contact_id) is True
+        assert is_contact_gdpr(conn, contact_id, user_id=TEST_USER_ID) is True
 
     def test_nonexistent_contact(self, conn):
-        assert is_contact_gdpr(conn, 99999) is False
+        assert is_contact_gdpr(conn, 99999, user_id=TEST_USER_ID) is False
 
 
 # ===========================================================================

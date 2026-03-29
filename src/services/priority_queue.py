@@ -253,6 +253,8 @@ def count_steps_for_contact(
     conn,
     contact_id: int,
     campaign_id: int,
+    *,
+    user_id: int,
 ) -> int:
     """Return the total number of steps this contact would go through.
 
@@ -261,8 +263,8 @@ def count_steps_for_contact(
     """
     with get_cursor(conn) as cursor:
         cursor.execute(
-            "SELECT is_gdpr FROM contacts WHERE id = %s",
-            (contact_id,),
+            "SELECT is_gdpr FROM contacts WHERE id = %s AND user_id = %s",
+            (contact_id, user_id),
         )
         row = cursor.fetchone()
 
@@ -290,7 +292,8 @@ def defer_contact(
     contact_id: int,
     campaign_id: int,
     reason: Optional[str] = None,
-    user_id: Optional[int] = None,
+    *,
+    user_id: int,
 ) -> dict:
     """Defer a contact to the back of the queue.
 

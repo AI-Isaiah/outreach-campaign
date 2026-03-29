@@ -337,7 +337,7 @@ def render_campaign_email(
     if contact is None or contact["unsubscribed"]:
         return None
 
-    if is_contact_gdpr(conn, contact_id):
+    if is_contact_gdpr(conn, contact_id, user_id=user_id):
         if not check_gdpr_email_limit(conn, contact_id, campaign_id):
             return None
 
@@ -410,7 +410,7 @@ def send_campaign_email(
         return False
 
     # GDPR email limit check
-    if is_contact_gdpr(conn, contact_id):
+    if is_contact_gdpr(conn, contact_id, user_id=user_id):
         if not check_gdpr_email_limit(conn, contact_id, campaign_id):
             logger.info("GDPR limit reached for contact %d in campaign %d", contact_id, campaign_id)
             return False

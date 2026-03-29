@@ -133,8 +133,9 @@ def update_newsletter(newsletter_id: int, body: NewsletterUpdate, conn=Depends(g
         if updates:
             updates.append("updated_at = NOW()")
             params.append(newsletter_id)
+            params.append(user["id"])
             cur.execute(
-                f"UPDATE newsletters SET {', '.join(updates)} WHERE id = %s",
+                f"UPDATE newsletters SET {', '.join(updates)} WHERE id = %s AND user_id = %s",
                 params,
             )
             conn.commit()
@@ -152,7 +153,7 @@ def delete_newsletter(newsletter_id: int, conn=Depends(get_db), user=Depends(get
         if nl["status"] != "draft":
             raise HTTPException(400, "Can only delete draft newsletters")
 
-        cur.execute("DELETE FROM newsletters WHERE id = %s", (newsletter_id,))
+        cur.execute("DELETE FROM newsletters WHERE id = %s AND user_id = %s", (newsletter_id, user["id"]))
         conn.commit()
         return {"success": True}
 
@@ -322,8 +323,8 @@ def send_newsletter_route(
 
         # Mark as sending
         cur.execute(
-            "UPDATE newsletters SET status = 'sending', updated_at = NOW() WHERE id = %s",
-            (newsletter_id,),
+            "UPDATE newsletters SET status = 'sending', updated_at = NOW() WHERE id = %s AND user_id = %s",
+            (newsletter_id, user["id"]),
         )
         conn.commit()
 
@@ -331,6 +332,7 @@ def send_newsletter_route(
         newsletter_data = dict(newsletter)
         recipients_data = [dict(r) for r in recipients]
         config_copy = dict(config)
+        bg_user_id = user["id"]
 
     def _send_in_background():
         bg_conn = None
@@ -347,8 +349,8 @@ def send_newsletter_route(
                 try:
                     with get_cursor(bg_conn) as bg_cur:
                         bg_cur.execute(
-                            "UPDATE newsletters SET status = 'failed', updated_at = NOW() WHERE id = %s",
-                            (newsletter_id,),
+                            "UPDATE newsletters SET status = 'failed', updated_at = NOW() WHERE id = %s AND user_id = %s",
+                            (newsletter_id, bg_user_id),
                         )
                         bg_conn.commit()
                 except Exception:

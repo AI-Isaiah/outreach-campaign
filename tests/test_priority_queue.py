@@ -618,7 +618,7 @@ class TestCountStepsForContact:
         comp = insert_company(conn, "US Corp", aum_millions=500)
         cid = insert_contact(conn, comp, first_name="US", last_name="Contact", is_gdpr=False)
 
-        count = count_steps_for_contact(conn, cid, campaign)
+        count = count_steps_for_contact(conn, cid, campaign, user_id=TEST_USER_ID)
         assert count == 5
 
     def test_gdpr_excludes_non_gdpr_only_steps(self, conn, campaign):
@@ -626,12 +626,12 @@ class TestCountStepsForContact:
         comp = insert_company(conn, "EU Corp", aum_millions=500, is_gdpr=True)
         cid = insert_contact(conn, comp, first_name="EU", last_name="Contact", is_gdpr=True)
 
-        count = count_steps_for_contact(conn, cid, campaign)
+        count = count_steps_for_contact(conn, cid, campaign, user_id=TEST_USER_ID)
         assert count == 3
 
     def test_nonexistent_contact_returns_zero(self, conn, campaign):
         """Returns 0 for a contact ID that doesn't exist."""
-        count = count_steps_for_contact(conn, 9999, campaign)
+        count = count_steps_for_contact(conn, 9999, campaign, user_id=TEST_USER_ID)
         assert count == 0
 
     def test_with_gdpr_only_steps(self, conn):
@@ -656,9 +656,9 @@ class TestCountStepsForContact:
         )
 
         # Non-GDPR contact: step 2 (gdpr_only) is skipped => 2 steps
-        assert count_steps_for_contact(conn, c_us, campaign_id) == 2
+        assert count_steps_for_contact(conn, c_us, campaign_id, user_id=TEST_USER_ID) == 2
         # GDPR contact: all 3 steps are available
-        assert count_steps_for_contact(conn, c_eu, campaign_id) == 3
+        assert count_steps_for_contact(conn, c_eu, campaign_id, user_id=TEST_USER_ID) == 3
 
 
 # ---------------------------------------------------------------------------

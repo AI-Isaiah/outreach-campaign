@@ -74,7 +74,7 @@ def dedupe():
     try:
         run_migrations(conn)
         console.print("[bold]Running deduplication pipeline...[/bold]")
-        stats = run_dedup(conn, export_dir="data/exports")
+        stats = run_dedup(conn, export_dir="data/exports", user_id=CLI_USER_ID)
         console.print(f"  Email duplicates removed: {stats['email_dupes']}")
         console.print(f"  LinkedIn duplicates removed: {stats['linkedin_dupes']}")
         console.print(f"  Fuzzy company matches flagged: {stats['fuzzy_flagged']}")

@@ -107,8 +107,8 @@ def test_inbox_channel_filter(client, db_conn):
     )
     # Add note
     cur.execute(
-        "INSERT INTO response_notes (contact_id, note_type, content) VALUES (%s, 'general', 'A note')",
-        (contact_id,),
+        "INSERT INTO response_notes (contact_id, note_type, content, user_id) VALUES (%s, 'general', 'A note', %s)",
+        (contact_id, TEST_USER_ID),
     )
     db_conn.commit()
 
