@@ -77,6 +77,7 @@ export default function GlobalSearchBar() {
           ref={inputRef}
           type="text"
           placeholder="Search..."
+          aria-label="Search campaigns, contacts, and companies"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           className="w-full px-3 py-1.5 pr-12 bg-gray-800 border border-gray-700 rounded-md text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"

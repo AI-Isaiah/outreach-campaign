@@ -282,6 +282,7 @@ export default function ContactDetail() {
                 <select
                   value={contact.lifecycle_stage || "cold"}
                   onChange={(e) => lifecycleMutation.mutate(e.target.value)}
+                  aria-label="Lifecycle stage"
                   className="px-2 py-1 border border-gray-200 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   {LIFECYCLE_STAGES.map((s) => (
@@ -526,6 +527,7 @@ export default function ContactDetail() {
                 onChange={(e) =>
                   setStatusForm((s) => ({ ...s, campaign: e.target.value }))
                 }
+                aria-label="Campaign"
                 className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 {enrollments
@@ -544,6 +546,7 @@ export default function ContactDetail() {
                 onChange={(e) =>
                   setStatusForm((s) => ({ ...s, newStatus: e.target.value }))
                 }
+                aria-label="Response outcome"
                 className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="replied_positive">Positive Reply</option>
