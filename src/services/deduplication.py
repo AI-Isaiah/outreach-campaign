@@ -135,6 +135,9 @@ def _pass_fuzzy_company(conn, export_dir: str | None, *, user_id: int) -> int:
 
     for group in groups.values():
         for (id_a, name_a, norm_a), (id_b, name_b, norm_b) in combinations(group, 2):
+            # Skip if lengths differ by >50% (can't be a fuzzy match)
+            if len(norm_a) > 2 * len(norm_b) or len(norm_b) > 2 * len(norm_a):
+                continue
             score = fuzz.token_sort_ratio(norm_a, norm_b)
             if score >= FUZZY_DEDUP_THRESHOLD:
                 flagged_pairs.append(

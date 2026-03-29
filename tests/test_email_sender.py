@@ -576,7 +576,7 @@ class TestSendEmail:
         )
 
         assert result is True
-        mock_smtp_class.assert_called_once_with("smtp.gmail.com", 587)
+        mock_smtp_class.assert_called_once_with("smtp.gmail.com", 587, timeout=30)
         mock_server.starttls.assert_called_once()
         mock_server.login.assert_called_once_with("user@domain.com", "password123")
         mock_server.sendmail.assert_called_once()

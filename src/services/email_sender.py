@@ -132,7 +132,7 @@ def send_email(
         last_error = None
         for attempt in range(_RETRY_MAX_ATTEMPTS):
             try:
-                with smtplib.SMTP(smtp_host, smtp_port) as server:
+                with smtplib.SMTP(smtp_host, smtp_port, timeout=30) as server:
                     server.starttls()
                     server.login(smtp_username, smtp_password)
                     server.sendmail(from_email, to_email, msg.as_string())
@@ -231,7 +231,7 @@ def send_emails_batch(
         return results
 
     try:
-        with smtplib.SMTP(smtp_host, smtp_port) as server:
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=30) as server:
             server.starttls()
             server.login(smtp_username, smtp_password)
 

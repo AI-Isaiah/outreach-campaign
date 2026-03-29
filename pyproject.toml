@@ -45,6 +45,8 @@ whatsapp = [
 [project.scripts]
 outreach = "src.cli:app"
 
+# To generate a pinned lockfile: pip-compile pyproject.toml -o requirements.lock
+
 [build-system]
 requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
