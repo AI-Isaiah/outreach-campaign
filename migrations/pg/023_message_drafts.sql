@@ -1,3 +1,4 @@
+-- ROLLBACK: DROP TABLE IF EXISTS message_drafts; ALTER TABLE sequence_steps DROP COLUMN IF EXISTS draft_mode; ALTER TABLE gmail_drafts DROP COLUMN IF EXISTS user_id;
 -- Phase 4: Research-powered AI message drafts (on-demand)
 
 CREATE TABLE IF NOT EXISTS message_drafts (

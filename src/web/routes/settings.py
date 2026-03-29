@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from src.web.dependencies import get_current_user, get_db
+from src.web.query_builder import QueryBuilder
 from src.models.database import get_cursor
 
 router = APIRouter(tags=["settings"])
@@ -46,7 +47,7 @@ def get_settings(
     try:
         from src.services.gmail_drafter import GmailDrafter
         gmail_authorized = GmailDrafter().is_authorized()
-    except Exception:
+    except (ImportError, OSError, ValueError):
         gmail_authorized = False
 
     return {
@@ -125,22 +126,16 @@ def update_api_keys(
     user=Depends(get_current_user),
 ):
     """Save API keys for the current user."""
-    updates = []
-    params = []
-    if body.anthropic_api_key is not None:
-        updates.append("anthropic_api_key = %s")
-        params.append(body.anthropic_api_key or None)
-    if body.perplexity_api_key is not None:
-        updates.append("perplexity_api_key = %s")
-        params.append(body.perplexity_api_key or None)
-
-    if not updates:
+    # Empty string → None: treat blank API keys as "remove"
+    fields = {k: (v or None) for k, v in body.model_dump().items() if v is not None}
+    set_clause, params = QueryBuilder.build_update(fields, exclude_none=False)
+    if not set_clause:
         return {"success": True, "updated": []}
 
     params.append(user["id"])
     with get_cursor(conn) as cur:
         cur.execute(
-            f"UPDATE users SET {', '.join(updates)} WHERE id = %s",
+            f"UPDATE users SET {set_clause} WHERE id = %s",
             params,
         )
         conn.commit()

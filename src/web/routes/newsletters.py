@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import logging
 import os
+import smtplib
 import threading
 from pathlib import Path
 from typing import Optional
+
+import psycopg2
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
@@ -341,7 +344,7 @@ def send_newsletter_route(
                 bg_conn, newsletter_id, newsletter_data,
                 recipients_data, config_copy, attachments,
             )
-        except Exception:
+        except (smtplib.SMTPException, psycopg2.Error, OSError) as exc:
             logger.exception("Background newsletter send failed for newsletter %s", newsletter_id)
             # Mark newsletter as failed
             if bg_conn:
@@ -352,7 +355,7 @@ def send_newsletter_route(
                             (newsletter_id, bg_user_id),
                         )
                         bg_conn.commit()
-                except Exception:
+                except psycopg2.Error:
                     logger.exception("Failed to mark newsletter %s as failed", newsletter_id)
         finally:
             if bg_conn:

@@ -12,6 +12,8 @@ import logging
 import os
 
 import httpx as _httpx
+import psycopg2
+import psycopg2.errors
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from slowapi import Limiter
@@ -61,8 +63,8 @@ def _trigger_deep_research(deep_research_id: int, api_keys: dict) -> None:
                 },
                 timeout=5,
             )
-        except Exception:
-            _logger.exception("Failed to trigger deep-research Edge Function")
+        except (_httpx.HTTPError, OSError) as exc:
+            _logger.exception("Failed to trigger deep-research Edge Function: %s", exc)
     else:
         from src.services.deep_research_service import start_deep_research_background
 
@@ -145,12 +147,11 @@ def trigger_deep_research(
             )
             deep_research_id = cur.fetchone()["id"]
             conn.commit()
-        except Exception as e:
+        except psycopg2.errors.UniqueViolation:
             conn.rollback()
-            # Catch unique partial index violation (concurrent request)
-            import psycopg2.errors
-            if isinstance(e, psycopg2.errors.UniqueViolation):
-                raise HTTPException(409, "Deep research already in progress for this company")
+            raise HTTPException(409, "Deep research already in progress for this company")
+        except psycopg2.Error:
+            conn.rollback()
             raise
 
     # Trigger background processing
@@ -258,7 +259,7 @@ def cancel_deep_research(
             conn.commit()
         except HTTPException:
             raise
-        except Exception:
+        except psycopg2.Error:
             conn.rollback()
             raise
 

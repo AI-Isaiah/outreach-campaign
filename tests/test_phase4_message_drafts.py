@@ -7,6 +7,7 @@ gmail + campaign integration (3), frontend placeholder (2).
 import json
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 
 from src.models.database import get_connection, get_cursor, run_migrations
@@ -181,7 +182,7 @@ def test_generate_draft_api_failure(mock_post, tmp_db):
     run_migrations(conn)
     _, contact_id, campaign_id, _, _ = _setup(conn, with_research=True)
 
-    mock_post.side_effect = Exception("Haiku timeout")
+    mock_post.side_effect = httpx.TimeoutException("Haiku timeout")
 
     from src.services.message_drafter import generate_draft
     with pytest.raises(Exception, match="Haiku timeout"):

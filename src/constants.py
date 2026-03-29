@@ -18,9 +18,20 @@ MAX_EVENTS_PER_QUERY = 500
 MAX_QUEUE_ITEMS = 50
 MAX_TAGS_PER_QUERY = 500
 
-# SMTP retry
+# SMTP
 SMTP_RETRY_COUNT = 3
 SMTP_RETRY_DELAY = 1  # seconds
+SMTP_TIMEOUT = 30  # seconds
+
+# Timeouts (seconds) for external API calls
+LLM_API_TIMEOUT = 60  # Anthropic, Perplexity
+LLM_API_TIMEOUT_SHORT = 8  # fast single-message generation
+LLM_SEQUENCE_TIMEOUT = 30  # multi-step sequence generation
+
+# Search / CRM
+CRM_SEARCH_LIMIT = 10
+RESPONSE_NOTES_LIMIT = 100
+NEWSLETTER_SUBSCRIBER_LIMIT = 5000
 
 # LLM model identifiers — single source of truth for all AI calls
 LLM_MODELS = {

@@ -12,6 +12,7 @@ import os
 from datetime import datetime, timezone
 
 import httpx
+from googleapiclient.errors import HttpError as GoogleHttpError
 
 from src.constants import LLM_MODELS
 from src.enums import ContactStatus
@@ -73,9 +74,9 @@ def scan_gmail_for_replies(
             _scan_contact_replies(
                 conn, service, contact, stats
             )
-        except Exception:
+        except (GoogleHttpError, httpx.HTTPError, KeyError, ValueError) as exc:
             logger.exception(
-                "Error scanning replies for contact %s", contact["id"]
+                "Error scanning replies for contact %s: %s", contact["id"], exc
             )
             stats["errors"] += 1
 
@@ -96,8 +97,8 @@ def _scan_contact_replies(conn, service, contact: dict, stats: dict) -> None:
             .list(userId="me", q=query, maxResults=10)
             .execute()
         )
-    except Exception:
-        logger.exception("Gmail API error for %s", contact["email"])
+    except (GoogleHttpError, OSError, KeyError) as exc:
+        logger.exception("Gmail API error for %s: %s", contact["email"], exc)
         stats["errors"] += 1
         return
 
@@ -125,7 +126,7 @@ def _scan_contact_replies(conn, service, contact: dict, stats: dict) -> None:
                     .get(userId="me", id=msg_id, format="metadata")
                     .execute()
                 )
-            except Exception:
+            except (GoogleHttpError, OSError):
                 continue
 
             # Check if message is after enrollment

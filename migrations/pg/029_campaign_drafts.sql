@@ -1,3 +1,4 @@
+-- ROLLBACK: DROP TABLE IF EXISTS campaign_drafts;
 -- Campaign wizard draft persistence
 -- Stores in-progress campaign wizard state so users can resume later.
 -- Drafts auto-expire after 30 days via expires_at.

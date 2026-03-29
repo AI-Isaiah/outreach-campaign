@@ -7,11 +7,12 @@ from pydantic import BaseModel, Field
 
 from src.constants import MAX_TAGS_PER_QUERY
 from src.web.dependencies import get_current_user, get_db
-from src.models.database import get_cursor
+from src.models.database import get_cursor, verify_ownership
 
 router = APIRouter(prefix="/tags", tags=["tags"])
 
 VALID_ENTITY_TYPES = ("contact", "company")
+_ENTITY_TABLE_MAP = {"contact": "contacts", "company": "companies"}
 
 
 class TagCreate(BaseModel):
@@ -93,9 +94,8 @@ def attach_tag(tag_id: int, body: TagAttach, conn=Depends(get_db), user=Depends(
             raise HTTPException(404, f"Tag {tag_id} not found")
 
         # Verify entity exists and belongs to this user
-        table = "contacts" if body.entity_type == "contact" else "companies"
-        cur.execute(f"SELECT id FROM {table} WHERE id = %s AND user_id = %s", (body.entity_id, user["id"]))
-        if not cur.fetchone():
+        table = _ENTITY_TABLE_MAP[body.entity_type]
+        if not verify_ownership(conn, table, body.entity_id, user["id"]):
             raise HTTPException(404, f"{body.entity_type.title()} {body.entity_id} not found")
 
         # Check if already attached
@@ -131,9 +131,8 @@ def detach_tag(tag_id: int, body: TagAttach, conn=Depends(get_db), user=Depends(
             raise HTTPException(404, f"Tag {tag_id} not found")
 
         # Verify entity exists and belongs to this user
-        table = "contacts" if body.entity_type == "contact" else "companies"
-        cur.execute(f"SELECT id FROM {table} WHERE id = %s AND user_id = %s", (body.entity_id, user["id"]))
-        if not cur.fetchone():
+        table = _ENTITY_TABLE_MAP[body.entity_type]
+        if not verify_ownership(conn, table, body.entity_id, user["id"]):
             raise HTTPException(404, f"{body.entity_type.title()} {body.entity_id} not found")
 
         cur.execute(

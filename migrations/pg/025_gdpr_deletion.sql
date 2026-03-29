@@ -1,3 +1,4 @@
+-- ROLLBACK: DROP TABLE IF EXISTS gdpr_deletion_log;
 -- GDPR deletion audit log
 -- Stores a SHA-256 hash of deleted contact emails (no PII retained)
 CREATE TABLE IF NOT EXISTS gdpr_deletion_log (

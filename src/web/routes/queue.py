@@ -566,7 +566,7 @@ def generate_ai_draft(
         raise HTTPException(404, str(exc))
     except HTTPException:
         raise
-    except Exception as exc:
+    except (psycopg2.Error, RuntimeError, KeyError) as exc:
         logger.error("Unexpected draft generation error: %s", exc, exc_info=True)
         raise HTTPException(500, "Draft generation failed unexpectedly")
 

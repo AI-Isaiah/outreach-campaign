@@ -1,3 +1,4 @@
+-- ROLLBACK: No schema changes to reverse (documentation only).
 -- 028: Document FK ON DELETE behavior (no schema changes)
 --
 -- events.campaign_id            → ON DELETE SET NULL  (audit logs survive campaign deletion)

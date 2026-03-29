@@ -15,15 +15,15 @@ from datetime import datetime, timezone
 
 import httpx
 
-from src.constants import LLM_MODELS
+from src.constants import LLM_MODELS, LLM_API_TIMEOUT_SHORT, LLM_SEQUENCE_TIMEOUT
 from src.enums import Channel
 from src.models.database import get_cursor
 
 logger = logging.getLogger(__name__)
 
 HAIKU_MODEL = LLM_MODELS["message_drafter"]
-HAIKU_TIMEOUT = 8  # seconds
-SEQUENCE_TIMEOUT = 30  # seconds — longer for multi-step generation
+HAIKU_TIMEOUT = LLM_API_TIMEOUT_SHORT
+SEQUENCE_TIMEOUT = LLM_SEQUENCE_TIMEOUT
 
 # Channel → prompt type mapping (niche LinkedIn types fall back to message)
 CHANNEL_PROMPT_MAP = {

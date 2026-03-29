@@ -25,6 +25,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import httpx
+import psycopg2
 
 from src.models.database import get_cursor
 from src.constants import LLM_MODELS
@@ -271,7 +272,7 @@ def _perplexity_query(query: str, api_key: str) -> dict:
             raise
         logger.warning("Perplexity API error: %s", e.response.status_code)
         return {"error": f"API error: {e.response.status_code}", "cost_usd": 0, "duration_ms": duration_ms}
-    except Exception as exc:
+    except (httpx.HTTPError, json.JSONDecodeError, KeyError, OSError) as exc:
         duration_ms = int((time.monotonic() - start) * 1000)
         logger.warning("Perplexity query failed: %s", exc)
         return {"error": str(exc), "cost_usd": 0, "duration_ms": duration_ms}
@@ -372,7 +373,7 @@ def _synthesize_with_sonnet(
                 continue
             logger.warning("Sonnet synthesis failed twice for %s, using fallback", company_name)
             return {"company_overview": raw_text, "confidence": "low"}
-        except Exception as exc:
+        except (httpx.HTTPError, httpx.TimeoutException, OSError) as exc:
             logger.exception("Sonnet synthesis error for %s", company_name)
             raise RuntimeError(f"Synthesis failed: {exc}") from exc
 
@@ -581,11 +582,11 @@ def run_deep_research(
             keys["anthropic"] = os.getenv("ANTHROPIC_API_KEY", "")
 
         _execute_deep_research(conn, deep_research_id, keys)
-    except Exception as e:
+    except (httpx.HTTPError, psycopg2.Error, json.JSONDecodeError, KeyError, RuntimeError) as e:
         logger.exception("Deep research %d failed", deep_research_id)
         try:
             _update_status(conn, deep_research_id, "failed", error_message=str(e))
-        except Exception:
+        except psycopg2.Error:
             logger.exception("Failed to update deep research %d status", deep_research_id)
     finally:
         conn.close()

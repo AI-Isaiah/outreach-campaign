@@ -22,6 +22,9 @@ import logging
 import re
 from typing import Optional
 
+import httpx
+import psycopg2
+
 from src.models.database import get_cursor
 from src.services.llm_client import call_llm, strip_markdown_fences
 from src.services.normalization_utils import (
@@ -414,7 +417,7 @@ def analyze_csv(
         # Cache successful mapping for future reuse
         try:
             _save_mapping_cache(conn, user_id, fingerprint, result)
-        except Exception:
+        except psycopg2.Error:
             logger.warning("Failed to cache mapping (non-fatal)")
 
         return result
@@ -425,7 +428,7 @@ def analyze_csv(
     except json.JSONDecodeError as exc:
         logger.warning("Failed to parse LLM JSON response: %s", exc)
         return fallback
-    except Exception as exc:
+    except (httpx.HTTPError, KeyError, TypeError) as exc:
         logger.exception("Unexpected error during analyze_csv: %s", exc)
         return fallback
 
@@ -1022,14 +1025,14 @@ def execute_import(
                 conn, campaign_id, all_contact_ids, user_id=user_id,
             )
             contacts_enrolled += enrolled
-        except Exception as exc:
+        except (psycopg2.Error, ValueError) as exc:
             logger.warning("Campaign enrollment after smart import failed: %s", exc)
 
     # Run dedup pipeline
     try:
         from src.services.deduplication import run_dedup
         run_dedup(conn, user_id=user_id)
-    except Exception as exc:
+    except (psycopg2.Error, ValueError) as exc:
         logger.warning("Deduplication after smart import failed: %s", exc)
 
     return {

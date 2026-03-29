@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Literal, Optional
 
+import psycopg2
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from src.models.events import log_event
 from src.web.dependencies import get_current_user, get_db
+from src.web.query_builder import QueryBuilder
 from src.models.database import get_cursor
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["conversations"])
 
@@ -110,8 +115,8 @@ def create_conversation(
                 on_meeting_booked(conn, contact_id, user_id=user["id"])
             else:
                 on_materials_sent(conn, contact_id, user_id=user["id"])
-        except Exception:
-            pass  # lifecycle is non-blocking
+        except (psycopg2.Error, ValueError) as exc:
+            logger.error("Lifecycle auto-advance failed for contact %d: %s", contact_id, exc)
         return {"id": conv_id, "success": True}
 
 
@@ -138,20 +143,13 @@ def update_conversation(
         if not cur.fetchone():
             raise HTTPException(404, f"Conversation {conversation_id} not found")
 
-        updates = []
-        params = []
-        for field in ("channel", "title", "notes", "outcome", "occurred_at"):
-            value = getattr(body, field)
-            if value is not None:
-                updates.append(f"{field} = %s")
-                params.append(value)
-
-        if not updates:
+        set_clause, params = QueryBuilder.build_update(body.model_dump())
+        if not set_clause:
             return {"success": True}
 
         params.append(conversation_id)
         cur.execute(
-            f"UPDATE conversations SET {', '.join(updates)} WHERE id = %s",
+            f"UPDATE conversations SET {set_clause} WHERE id = %s",
             params,
         )
         conn.commit()

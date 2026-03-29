@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 
+from src.constants import LLM_API_TIMEOUT
 from src.models.database import get_cursor
 from src.services.llm_client import call_llm_safe
 from src.services.retry import retry_on_failure
@@ -199,7 +200,7 @@ def _call_llm(prompt: str) -> str:
         "template_suggestions": [],
         "strategy_notes": "Retry or check API key configuration.",
     })
-    text, provider = call_llm_safe(prompt, max_tokens=1000, timeout=60.0, fallback=api_error_fallback)
+    text, provider = call_llm_safe(prompt, max_tokens=1000, timeout=LLM_API_TIMEOUT, fallback=api_error_fallback)
     if provider is None:
         return api_error_fallback
     return text

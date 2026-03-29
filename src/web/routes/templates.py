@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Literal, Optional
+
+import httpx
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -11,6 +14,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from src.web.dependencies import get_current_user, get_db, handle_llm_errors
+from src.web.query_builder import QueryBuilder
 from src.models.database import get_cursor
 
 logger = logging.getLogger(__name__)
@@ -127,21 +131,14 @@ def update_template(
     if not existing:
         raise HTTPException(404, f"Template {template_id} not found")
 
-    fields = []
-    params = []
-    for field_name in ("name", "channel", "body_template", "subject", "variant_group", "variant_label"):
-        value = getattr(body, field_name)
-        if value is not None:
-            fields.append(f"{field_name} = %s")
-            params.append(value)
-
-    if not fields:
+    set_clause, params = QueryBuilder.build_update(body.model_dump())
+    if not set_clause:
         raise HTTPException(400, "No fields to update")
 
     params.extend([template_id, user["id"]])
     with get_cursor(conn) as cur:
         cur.execute(
-            f"UPDATE templates SET {', '.join(fields)} WHERE id = %s AND user_id = %s",
+            f"UPDATE templates SET {set_clause} WHERE id = %s AND user_id = %s",
             params,
         )
         conn.commit()
@@ -212,7 +209,7 @@ def generate_sequence_messages_route(
             return {"messages": messages}
     except HTTPException:
         raise
-    except Exception as exc:
+    except (httpx.HTTPError, httpx.TimeoutException, json.JSONDecodeError, ValueError) as exc:
         logger.error("Sequence generation error: %s", exc, exc_info=True)
         raise HTTPException(500, "Sequence generation failed")
 
@@ -239,6 +236,6 @@ def improve_message_route(
             return result
     except HTTPException:
         raise
-    except Exception as exc:
+    except (httpx.HTTPError, httpx.TimeoutException, json.JSONDecodeError, ValueError) as exc:
         logger.error("Message improvement error: %s", exc, exc_info=True)
         raise HTTPException(500, "Message improvement failed")

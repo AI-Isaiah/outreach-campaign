@@ -19,6 +19,8 @@ import re
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
+from googleapiclient.errors import HttpError as GoogleHttpError
+
 from src.enums import ContactStatus
 from src.services.gmail_drafter import GmailDrafter
 from src.services.normalization_utils import normalize_linkedin_url
@@ -203,7 +205,7 @@ def scan_linkedin_acceptances(
 
     try:
         service = drafter._get_service()
-    except Exception as e:
+    except (GoogleHttpError, OSError, ValueError, RuntimeError) as e:
         logger.error("Failed to get Gmail service: %s", e)
         stats["errors"] += 1
         return stats
@@ -219,8 +221,8 @@ def scan_linkedin_acceptances(
             .list(userId="me", q=query, maxResults=50)
             .execute()
         )
-    except Exception as e:
-        logger.exception("Gmail API search failed")
+    except (GoogleHttpError, OSError) as e:
+        logger.exception("Gmail API search failed: %s", e)
         stats["errors"] += 1
         return stats
 
@@ -252,8 +254,8 @@ def scan_linkedin_acceptances(
                     .get(userId="me", id=msg_id, format="full")
                     .execute()
                 )
-            except Exception:
-                logger.exception("Failed to fetch message %s", msg_id)
+            except (GoogleHttpError, OSError) as exc:
+                logger.exception("Failed to fetch message %s: %s", msg_id, exc)
                 stats["errors"] += 1
                 continue
 

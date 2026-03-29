@@ -16,6 +16,7 @@ import threading
 import uuid
 from typing import Any
 
+import httpx
 import psycopg2
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from pydantic import BaseModel
@@ -112,8 +113,8 @@ def _run_analysis_background(job_id: str, user_id: int, headers: list, rows: lis
             )
         conn.commit()
         logger.info("Background analysis complete for job %s", job_id)
-    except Exception:
-        logger.exception("Background analysis failed for job %s", job_id)
+    except (psycopg2.Error, json.JSONDecodeError, ValueError, KeyError, httpx.HTTPError, OSError) as exc:
+        logger.exception("Background analysis failed for job %s: %s", job_id, exc)
         if conn:
             try:
                 conn.rollback()
@@ -125,7 +126,7 @@ def _run_analysis_background(job_id: str, user_id: int, headers: list, rows: lis
                         (job_id,),
                     )
                 conn.commit()
-            except Exception:
+            except psycopg2.Error:
                 logger.exception("Failed to mark job %s as failed", job_id)
     finally:
         if conn:

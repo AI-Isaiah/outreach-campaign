@@ -834,7 +834,7 @@ class TestSendEmailBatch:
         assert result["failed"] == 2
         assert len(result["errors"]) == 2
 
-    @patch("src.application.queue_service.send_campaign_email", side_effect=Exception("SMTP down"))
+    @patch("src.application.queue_service.send_campaign_email", side_effect=RuntimeError("SMTP down"))
     def test_exception_in_send_increments_failed(self, mock_send, conn):
         """Exceptions during send should increment failed, not crash the batch."""
         from src.application.queue_service import send_email_batch
@@ -865,7 +865,7 @@ class TestSendEmailBatch:
         """Batch with mixed results: some succeed, some fail."""
         from src.application.queue_service import send_email_batch
 
-        mock_send.side_effect = [True, False, True, Exception("timeout")]
+        mock_send.side_effect = [True, False, True, RuntimeError("timeout")]
         rows = [
             {"contact_id": i, "campaign_id": 1, "template_id": 1}
             for i in range(4)

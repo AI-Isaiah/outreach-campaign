@@ -1,6 +1,7 @@
-"""Campaign draft API routes — CRUD for wizard draft persistence.
+"""Campaign wizard draft API routes — CRUD for wizard form state persistence.
 
-NOTE: Draft creation also available in gmail.py. Consider consolidating.
+Saves/restores in-progress campaign wizard form data (campaign_drafts table).
+Separate from gmail.py which creates actual email drafts in Gmail.
 """
 
 from __future__ import annotations

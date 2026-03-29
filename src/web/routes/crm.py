@@ -6,6 +6,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from src.constants import CRM_SEARCH_LIMIT
 from src.web.dependencies import get_current_user, get_db
 from src.web.query_builder import QueryBuilder
 from src.models.database import get_cursor
@@ -313,8 +314,8 @@ def global_search(
                FROM contacts c
                JOIN companies co ON co.id = c.company_id
                WHERE co.user_id = %s AND (c.full_name ILIKE %s OR c.email ILIKE %s)
-               LIMIT 10""",
-            (user["id"], like, like),
+               LIMIT %s""",
+            (user["id"], like, like, CRM_SEARCH_LIMIT),
         )
         contacts = [dict(r) for r in cur.fetchall()]
 
@@ -323,8 +324,8 @@ def global_search(
             """SELECT id, name, firm_type, aum_millions, 'company' AS result_type
                FROM companies
                WHERE user_id = %s AND name ILIKE %s
-               LIMIT 10""",
-            (user["id"], like),
+               LIMIT %s""",
+            (user["id"], like, CRM_SEARCH_LIMIT),
         )
         companies = [dict(r) for r in cur.fetchall()]
 

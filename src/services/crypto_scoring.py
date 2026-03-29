@@ -105,8 +105,8 @@ def classify_crypto_interest(
             "evidence": [],
             "reasoning": "Could not parse LLM response",
         }
-    except Exception:
-        logger.exception("Classification failed for %s", company_name)
+    except (httpx.HTTPError, httpx.TimeoutException) as exc:
+        logger.exception("Classification failed for %s: %s", company_name, exc)
         return {
             "crypto_score": 0,
             "category": "no_signal",

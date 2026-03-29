@@ -9,6 +9,7 @@ from email.mime.text import MIMEText
 
 import httpx
 
+from src.constants import SMTP_TIMEOUT
 from src.services.retry import retry_on_failure
 
 logger = logging.getLogger(__name__)
@@ -117,7 +118,7 @@ class GmailSender:
             self.SEND_URL,
             json={"raw": raw},
             headers={"Authorization": f"Bearer {self.access_token}"},
-            timeout=30,
+            timeout=SMTP_TIMEOUT,
         )
 
         if response.status_code == 401:

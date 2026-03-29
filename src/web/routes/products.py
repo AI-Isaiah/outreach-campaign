@@ -11,6 +11,7 @@ from slowapi.util import get_remote_address
 
 from src.enums import ProductStage
 from src.web.dependencies import get_current_user, get_db
+from src.web.query_builder import QueryBuilder
 from src.models.database import get_cursor
 
 _limiter = Limiter(key_func=get_remote_address)
@@ -69,19 +70,11 @@ def update_product(product_id: int, body: ProductUpdate, conn=Depends(get_db), u
         if not cur.fetchone():
             raise HTTPException(404, f"Product {product_id} not found")
 
-        updates = []
-        params = []
-        if body.name is not None:
-            updates.append("name = %s")
-            params.append(body.name)
-        if body.description is not None:
-            updates.append("description = %s")
-            params.append(body.description)
-
-        if updates:
+        set_clause, params = QueryBuilder.build_update(body.model_dump())
+        if set_clause:
             params.append(product_id)
             cur.execute(
-                f"UPDATE products SET {', '.join(updates)} WHERE id = %s",
+                f"UPDATE products SET {set_clause} WHERE id = %s",
                 params,
             )
             conn.commit()

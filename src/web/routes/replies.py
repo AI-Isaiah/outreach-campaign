@@ -6,8 +6,12 @@ import logging
 import os
 from typing import Optional
 
+import psycopg2
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+
+import httpx
+from googleapiclient.errors import HttpError
 
 from src.services.gmail_drafter import GmailDrafter
 from src.services.linkedin_acceptance_scanner import scan_linkedin_acceptances
@@ -188,8 +192,8 @@ def confirm_reply(
                 on_positive_reply(conn, reply["contact_id"], user_id=user["id"])
             else:
                 on_email_sent(conn, reply["contact_id"], user_id=user["id"])
-        except Exception:
-            pass  # lifecycle is non-blocking
+        except (psycopg2.Error, ValueError) as exc:
+            logger.error("Lifecycle auto-advance failed for contact %d: %s", reply["contact_id"], exc)
 
         return {"success": True, "reply_id": reply_id, "outcome": body.outcome}
 
@@ -273,7 +277,7 @@ def cron_scan_replies(conn=Depends(get_db), _=Depends(verify_cron_secret)):
                 )
                 conn.commit()
             processed += 1
-        except Exception as exc:
+        except (psycopg2.Error, HttpError, httpx.HTTPError, InvalidToken, OSError) as exc:
             logger.exception("Cron scan failed for user %d", user_id)
             errors.append(f"user {user_id}: {exc}")
 

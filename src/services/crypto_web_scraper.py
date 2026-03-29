@@ -61,8 +61,8 @@ def research_company_web_search(company_name: str, website: str | None) -> str:
             raise  # Let caller handle rate limiting
         logger.exception("Perplexity API error for %s", company_name)
         return json.dumps({"error": f"API error: {e.response.status_code}"})
-    except Exception:
-        logger.exception("Perplexity research failed for %s", company_name)
+    except (httpx.HTTPError, json.JSONDecodeError, KeyError) as exc:
+        logger.exception("Perplexity research failed for %s: %s", company_name, exc)
         return json.dumps({"error": "Research request failed"})
 
 
@@ -94,7 +94,7 @@ def crawl_company_website(website: str, max_pages: int = 5) -> str:
                 text = re.sub(r"\s+", " ", text).strip()
                 if text:
                     texts.append(f"[{path or '/'}] {text[:2000]}")
-        except Exception:
+        except (httpx.HTTPError, httpx.TimeoutException):
             continue
 
     return "\n\n".join(texts)[:10000]
@@ -143,6 +143,6 @@ def discover_contacts_at_company(
             raise
         logger.exception("Contact discovery API error for %s", company_name)
         return []
-    except Exception:
-        logger.exception("Contact discovery failed for %s", company_name)
+    except (httpx.HTTPError, json.JSONDecodeError, KeyError) as exc:
+        logger.exception("Contact discovery failed for %s: %s", company_name, exc)
         return []

@@ -2000,7 +2000,7 @@ class TestCallLlmApiFailure:
     """Tests for _call_llm when API call fails."""
 
     @patch("src.services.llm_client.detect_provider", return_value=("anthropic", "test-key"))
-    @patch("src.services.llm_client._call_anthropic", side_effect=Exception("Connection failed"))
+    @patch("src.services.llm_client._call_anthropic", side_effect=ConnectionError("Connection failed"))
     def test_api_error_returns_fallback(self, mock_call, mock_detect):
         from src.services.llm_advisor import _call_llm
         result = _call_llm("test prompt")
@@ -2100,7 +2100,7 @@ class TestPerplexityQuery:
     def test_network_error_returns_error(self, mock_post):
         from src.services.deep_research_service import _perplexity_query
 
-        mock_post.side_effect = Exception("Connection refused")
+        mock_post.side_effect = ConnectionError("Connection refused")
 
         result = _perplexity_query("test query", "api_key")
         assert "error" in result
@@ -2176,7 +2176,7 @@ class TestSynthesizeWithSonnet:
     def test_api_error_raises_runtime_error(self, mock_post):
         from src.services.deep_research_service import _synthesize_with_sonnet
 
-        mock_post.side_effect = Exception("Network error")
+        mock_post.side_effect = ConnectionError("Network error")
 
         with pytest.raises(RuntimeError, match="Synthesis failed"):
             _synthesize_with_sonnet(

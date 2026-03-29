@@ -6,8 +6,11 @@ Extracted from routes/queue.py to keep the route layer thin.
 from __future__ import annotations
 
 import logging
+import smtplib
 from collections import Counter
 from typing import Optional
+
+import psycopg2
 
 from src.config import load_config_safe
 from src.models.campaigns import get_campaign_by_name
@@ -61,7 +64,7 @@ def send_email_batch(
                 errors.append(
                     f"contact {row['contact_id']}/campaign {row['campaign_id']}: send returned false"
                 )
-        except Exception as exc:
+        except (psycopg2.Error, smtplib.SMTPException, OSError, ValueError, KeyError, RuntimeError) as exc:
             logger.error(
                 "send_email_batch failed for contact %s campaign %s: %s",
                 row["contact_id"], row["campaign_id"], exc, exc_info=True,

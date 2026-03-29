@@ -22,6 +22,7 @@ import io
 import json
 from typing import Optional
 
+import psycopg2
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -79,8 +80,8 @@ def _trigger_research(endpoint: str, payload: dict) -> None:
                 json=payload,
                 timeout=5,
             )
-        except Exception:
-            _logger.exception("Failed to trigger Edge Function %s", endpoint)
+        except (_httpx.HTTPError, OSError) as exc:
+            _logger.exception("Failed to trigger Edge Function %s: %s", endpoint, exc)
     else:
         # Local dev: use background threads
         job_id = payload["job_id"]
@@ -248,7 +249,7 @@ def create_research_job(
             conn.commit()
         except HTTPException:
             raise
-        except Exception:
+        except psycopg2.Error:
             conn.rollback()
             raise
 
@@ -551,8 +552,9 @@ def import_discovered_contacts(
             conn.commit()
         except HTTPException:
             raise
-        except Exception:
+        except (psycopg2.Error, json.JSONDecodeError) as exc:
             conn.rollback()
+            _logger.error("Contact import failed for result %d: %s", result_id, exc)
             raise
 
     return {"success": True, "imported": imported, "company_id": company_id}
@@ -682,7 +684,7 @@ def delete_research_job(job_id: int, conn=Depends(get_db), user=Depends(get_curr
             conn.commit()
         except HTTPException:
             raise
-        except Exception:
+        except psycopg2.Error:
             conn.rollback()
             raise
 

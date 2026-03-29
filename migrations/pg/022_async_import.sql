@@ -1,3 +1,4 @@
+-- ROLLBACK: ALTER TABLE import_jobs DROP COLUMN IF EXISTS analysis_result; ALTER TABLE import_jobs DROP COLUMN IF EXISTS filename; ALTER TABLE import_jobs DROP CONSTRAINT IF EXISTS import_jobs_status_check;
 -- Async import: add analyzing status, analysis result storage, and filename
 -- Allows import analysis to run in background while user navigates away
 

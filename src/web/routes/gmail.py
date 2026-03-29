@@ -1,11 +1,13 @@
-"""Gmail OAuth and draft API routes.
+"""Gmail OAuth and email draft API routes.
 
-NOTE: Draft creation also available in drafts.py. Consider consolidating.
+Creates actual email drafts in the user's Gmail account via OAuth.
+Separate from drafts.py which handles campaign wizard form persistence.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import os
 from typing import Optional
 
@@ -19,6 +21,8 @@ _FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
 _limiter = Limiter(key_func=get_remote_address)
 
+from googleapiclient.errors import HttpError
+
 from src.config import DEFAULT_CAMPAIGN, load_config_safe
 from src.enums import EventType
 from src.models.campaigns import get_campaign_by_name
@@ -29,6 +33,8 @@ from src.services.email_sender import render_campaign_email
 from src.services.gmail_drafter import GmailDrafter
 from src.web.dependencies import get_current_user, get_db
 from src.models.database import get_cursor
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/gmail", tags=["gmail"])
 
@@ -72,7 +78,8 @@ def gmail_callback(code: str = Query(...)):
     try:
         _drafter.handle_callback(code)
         return RedirectResponse(url=f"{_FRONTEND_URL}/settings?gmail=connected")
-    except Exception as e:
+    except (HttpError, ValueError, OSError) as e:
+        logger.error("Gmail OAuth callback failed: %s", e)
         raise HTTPException(400, f"OAuth failed: {e}")
 
 
@@ -137,7 +144,8 @@ def create_draft(
             body_text=body_text,
             body_html=body_html,
         )
-    except Exception as e:
+    except (HttpError, RuntimeError, OSError) as e:
+        logger.error("Failed to create Gmail draft: %s", e)
         raise HTTPException(500, f"Failed to create Gmail draft: {e}")
 
     # Store in DB
@@ -236,7 +244,8 @@ def create_batch_drafts(
                 "success": True,
                 "draft_id": draft_id,
             })
-        except Exception as e:
+        except (HttpError, RuntimeError, OSError) as e:
+            logger.error("Batch draft creation failed for contact %d: %s", item["contact_id"], e)
             results.append({
                 "contact_id": item["contact_id"],
                 "success": False,
@@ -324,8 +333,8 @@ def check_draft_status(
 
                     conn.commit()
                     return {"status": "sent", "draft_id": draft_row["gmail_draft_id"]}
-            except Exception:
-                pass  # Can't reach Gmail API — return DB status
+            except (HttpError, RuntimeError, OSError) as exc:
+                logger.error("Gmail API check failed for draft %s: %s", draft_row["gmail_draft_id"], exc)
 
         return {
             "status": draft_row["status"],

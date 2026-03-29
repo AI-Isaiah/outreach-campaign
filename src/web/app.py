@@ -35,6 +35,8 @@ if _sentry_dsn:
         environment=os.getenv("ENVIRONMENT", "development"),
     )
 
+import psycopg2  # noqa: E402
+
 from src.config import SUPABASE_DB_URL  # noqa: E402
 from src.models.database import close_pool, get_connection, get_cursor, init_pool, run_migrations  # noqa: E402
 from src.web.dependencies import require_auth  # noqa: E402
@@ -100,7 +102,7 @@ async def lifespan(app: FastAPI):
                 conn.close()
             init_pool(SUPABASE_DB_URL)
             logger.info("Connection pool initialized")
-        except Exception as e:
+        except (psycopg2.Error, OSError) as e:
             logger.warning("Could not connect to database at startup: %s", e)
     yield
     close_pool()
@@ -170,7 +172,7 @@ def health_check():
                 db_ok = True
         finally:
             put_pool_connection(conn)
-    except Exception:
+    except (psycopg2.Error, OSError):
         pass
     return {"status": "ok" if db_ok else "degraded", "database": db_ok}
 

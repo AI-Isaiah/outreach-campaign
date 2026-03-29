@@ -12,7 +12,7 @@ _fernet = None
 if _KEY:
     try:
         _fernet = Fernet(_KEY.encode())
-    except Exception as exc:
+    except (ValueError, InvalidToken) as exc:
         logger.error("TOKEN_ENCRYPTION_KEY is invalid (not valid Fernet key): %s", exc)
         _fernet = None
 

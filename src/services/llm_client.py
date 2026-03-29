@@ -151,7 +151,7 @@ def call_llm_safe(prompt: str, *, max_tokens: int = 2000, timeout: float = 30.0,
     except httpx.TimeoutException:
         logger.warning("LLM API call timed out (%.0fs)", timeout)
         return fallback, None
-    except Exception as exc:
+    except (httpx.HTTPError, json.JSONDecodeError, KeyError, IndexError, OSError) as exc:
         logger.exception("Unexpected error during LLM call: %s", exc)
         return fallback, None
 

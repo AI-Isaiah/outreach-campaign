@@ -29,6 +29,7 @@ import time
 import threading
 
 import httpx
+import psycopg2
 
 from src.models.database import get_cursor
 from src.services.normalization_utils import normalize_company_name, split_name
@@ -425,11 +426,11 @@ def batch_import_and_enroll(
                                 user_id=user_id,
                             )
                             enrolled += 1
-                        except Exception:
-                            pass
+                        except psycopg2.Error:
+                            logger.warning("Failed to enroll contact %d in campaign %d", contact_id, campaign_id)
 
             conn.commit()
-        except Exception:
+        except (psycopg2.Error, json.JSONDecodeError, ValueError):
             conn.rollback()
             raise
 
@@ -544,15 +545,15 @@ def retry_failed_results(job_id: int, db_url: str, api_keys: dict | None = None)
             try:
                 _research_single_company(conn, result, method)
                 actual_cost += COST_WEB_SEARCH
-            except Exception as exc:
+            except (httpx.HTTPError, psycopg2.Error, json.JSONDecodeError, KeyError) as exc:
                 _mark_result_error(conn, result["id"], str(exc))
                 continue
 
             try:
                 _classify_single_company(conn, result)
                 actual_cost += COST_LLM
-            except Exception:
-                pass
+            except (httpx.HTTPError, json.JSONDecodeError, KeyError) as exc:
+                logger.warning("Classification error during retry for result %d: %s", result["id"], exc)
 
             try:
                 discovered = discover_contacts_at_company(
@@ -576,8 +577,8 @@ def retry_failed_results(job_id: int, db_url: str, api_keys: dict | None = None)
                         ),
                     )
                     conn.commit()
-            except Exception:
-                pass
+            except (httpx.HTTPError, psycopg2.Error, json.JSONDecodeError) as exc:
+                logger.warning("Contact discovery/save error during retry for result %d: %s", result["id"], exc)
 
             _update_job_status(
                 conn, job_id, "researching",
@@ -605,12 +606,12 @@ def retry_failed_results(job_id: int, db_url: str, api_keys: dict | None = None)
             actual_cost_usd=round(actual_cost, 4),
         )
 
-    except Exception as e:
+    except (httpx.HTTPError, psycopg2.Error, json.JSONDecodeError, KeyError) as e:
         logger.exception("Retry job %d failed", job_id)
         try:
             _update_job_status(conn, job_id, "failed", error_message=f"Retry failed: {e}")
-        except Exception:
-            pass
+        except psycopg2.Error:
+            logger.exception("Failed to update job %d status after retry failure", job_id)
     finally:
         conn.close()
 
@@ -638,11 +639,11 @@ def run_research_job(job_id: int, db_url: str, api_keys: dict | None = None) -> 
     try:
         run_migrations(conn)
         _execute_research_job(conn, job_id)
-    except Exception as e:
+    except (httpx.HTTPError, psycopg2.Error, json.JSONDecodeError, KeyError, RuntimeError) as e:
         logger.exception("Research job %d failed", job_id)
         try:
             _update_job_status(conn, job_id, "failed", error_message=str(e))
-        except Exception:
+        except psycopg2.Error:
             logger.exception("Failed to update job %d status", job_id)
     finally:
         conn.close()
@@ -699,7 +700,7 @@ def _execute_research_job(conn, job_id: int) -> None:
                 else:
                     _mark_result_error(conn, result["id"], "Rate limited")
                     result["_errored"] = True
-        except Exception as exc:
+        except (httpx.HTTPError, psycopg2.Error, json.JSONDecodeError, KeyError) as exc:
             logger.warning("Research error for %s: %s", result["company_name"], exc)
             _mark_result_error(conn, result["id"], str(exc))
             result["_errored"] = True
@@ -725,7 +726,7 @@ def _execute_research_job(conn, job_id: int) -> None:
         try:
             _classify_single_company(conn, result)
             actual_cost += COST_LLM
-        except Exception as exc:
+        except (httpx.HTTPError, json.JSONDecodeError, KeyError) as exc:
             logger.warning("Classification error for %s: %s", result["company_name"], exc)
 
         _update_job_status(
@@ -776,7 +777,7 @@ def _execute_research_job(conn, job_id: int) -> None:
             time.sleep(0.5)
         except httpx.HTTPStatusError:
             time.sleep(5)
-        except Exception as exc:
+        except (httpx.HTTPError, psycopg2.Error, json.JSONDecodeError) as exc:
             logger.warning("Contact discovery error for %s: %s", result["company_name"], exc)
 
     _update_job_status(
@@ -859,7 +860,8 @@ def _mark_result_error(conn, result_id: int, error: str) -> None:
                 (f"Error: {error}", result_id),
             )
             conn.commit()
-        except Exception:
+        except psycopg2.Error:
+            logger.error("Failed to mark result %d as error", result_id)
             conn.rollback()
 
 

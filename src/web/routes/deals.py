@@ -249,22 +249,14 @@ def update_deal(
             if not cur.fetchone():
                 raise HTTPException(404, f"Campaign {body.campaign_id} not found")
 
-        updates = []
-        params: list = []
-        for field in ("title", "contact_id", "campaign_id", "amount_millions", "expected_close_date", "notes"):
-            val = getattr(body, field)
-            if val is not None:
-                updates.append(f"{field} = %s")
-                params.append(val)
-
-        if not updates:
+        set_clause, params = QueryBuilder.build_update(body.model_dump())
+        if not set_clause:
             raise HTTPException(400, "No fields to update")
 
-        updates.append("updated_at = NOW()")
+        set_clause += ", updated_at = NOW()"
         params.append(deal_id)
-
         cur.execute(
-            f"UPDATE deals SET {', '.join(updates)} WHERE id = %s",
+            f"UPDATE deals SET {set_clause} WHERE id = %s",
             params,
         )
         conn.commit()

@@ -21,7 +21,7 @@ from src.enums import LifecycleStage
 from src.services.normalization_utils import normalize_email as _normalize_email, normalize_linkedin_url as _normalize_linkedin
 from src.services.phone_utils import normalize_phone
 from src.services.state_machine import InvalidTransition
-from src.constants import MAX_CONTACTS_PER_PAGE
+from src.constants import MAX_CONTACTS_PER_PAGE, RESPONSE_NOTES_LIMIT
 from src.web.dependencies import get_current_user, get_db
 from src.web.query_builder import QueryBuilder
 from src.models.database import get_cursor
@@ -328,8 +328,8 @@ def get_contact(
 
         # Get response notes (bounded, user-scoped for defense-in-depth)
         cur.execute(
-            "SELECT * FROM response_notes WHERE contact_id = %s AND user_id = %s ORDER BY created_at DESC LIMIT 100",
-            (contact_id, user["id"]),
+            "SELECT * FROM response_notes WHERE contact_id = %s AND user_id = %s ORDER BY created_at DESC LIMIT %s",
+            (contact_id, user["id"], RESPONSE_NOTES_LIMIT),
         )
         notes = cur.fetchall()
 

@@ -33,7 +33,7 @@ from src.services.compliance import (
 )
 from jinja2.sandbox import SandboxedEnvironment
 
-from src.constants import SMTP_RETRY_COUNT, SMTP_RETRY_DELAY
+from src.constants import SMTP_RETRY_COUNT, SMTP_RETRY_DELAY, SMTP_TIMEOUT
 from src.models.database import get_cursor
 from src.services.template_engine import get_template_context, render_template
 
@@ -133,7 +133,7 @@ def send_email(
         last_error = None
         for attempt in range(_RETRY_MAX_ATTEMPTS):
             try:
-                with smtplib.SMTP(smtp_host, smtp_port, timeout=30) as server:
+                with smtplib.SMTP(smtp_host, smtp_port, timeout=SMTP_TIMEOUT) as server:
                     server.starttls()
                     server.login(smtp_username, smtp_password)
                     server.sendmail(from_email, to_email, msg.as_string())
@@ -232,7 +232,7 @@ def send_emails_batch(
         return results
 
     try:
-        with smtplib.SMTP(smtp_host, smtp_port, timeout=30) as server:
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=SMTP_TIMEOUT) as server:
             server.starttls()
             server.login(smtp_username, smtp_password)
 
