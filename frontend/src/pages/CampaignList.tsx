@@ -168,7 +168,7 @@ function CampaignCard({ campaign: c, viewMode }: { campaign: CampaignWithMetrics
             <Metric label="Contacts" value={c.contacts_count ?? 0} />
             <Metric label="Reply Rate" value={`${c.reply_rate ?? 0}%`} />
             <Metric label="Sent" value={c.emails_sent ?? 0} />
-            <HealthScoreBadge score={c.health_score} />
+            <HealthScoreBadge score={c.health_score} totalSent={c.emails_sent} />
           </div>
 
           <div className="w-28 shrink-0 mt-1">

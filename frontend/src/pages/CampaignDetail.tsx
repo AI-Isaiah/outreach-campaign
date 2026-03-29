@@ -140,7 +140,7 @@ export default function CampaignDetail() {
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold text-gray-900">{campaign.name}</h1>
             <StatusBadge status={campaign.status} />
-            <HealthScoreBadge score={campaign.health_score} />
+            <HealthScoreBadge score={campaign.health_score} totalSent={metrics.emails_sent} />
           </div>
           {campaign.description && (
             <p className="text-sm text-gray-500 mt-1">{campaign.description}</p>
@@ -252,11 +252,11 @@ export default function CampaignDetail() {
             accent="yellow"
           />
         </button>
-        <button className="text-left" onClick={() => { switchTab("contacts"); setSearchParams({}, { replace: true }); }}>
+        <button className="text-left" onClick={() => { switchTab("contacts"); setSearchParams({ filter: "completed" }, { replace: true }); }}>
           <MetricCard
-            label="Emails Sent"
-            value={metrics.emails_sent ?? 0}
-            accent="green"
+            label="Completed"
+            value={metrics.by_status?.completed || 0}
+            sub={`of ${metrics.total_enrolled} enrolled`}
           />
         </button>
       </div>

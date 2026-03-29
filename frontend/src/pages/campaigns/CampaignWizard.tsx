@@ -83,9 +83,9 @@ function CampaignWizardInner() {
     mutationFn: async (data: { status: "active" | "draft" }) => {
       const values = form.getValues();
 
-      // Resolve contact IDs based on source
+      // Resolve contact IDs based on source (deduplicate — draft persistence can introduce dupes)
       const contactIds = values.contactSource === "crm"
-        ? values.crmSelectedIds
+        ? [...new Set(values.crmSelectedIds)]
         : values.csvContacts.filter(c => c.selected).map(c => c.id!).filter(Boolean);
 
       // Build step data — create templates on-the-fly for manual mode
@@ -180,7 +180,7 @@ function CampaignWizardInner() {
     switch (step) {
       case 0: return watchedName.trim().length > 0;
       case 1:
-        if (watchedContactSource === "crm") return watchedCrmIds.length > 0;
+        if (watchedContactSource === "crm") return new Set(watchedCrmIds).size > 0;
         return watchedCsvContacts.filter(c => c.selected).length > 0;
       case 2: return watchedSteps.length > 0;
       default: return true;

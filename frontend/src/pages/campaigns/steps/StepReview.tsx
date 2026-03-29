@@ -5,8 +5,9 @@ export default function StepReview() {
   const { getValues } = useFormContext<WizardFormData>();
   const { name, description, crmSelectedIds, csvContacts, contactSource, steps, channels } = getValues();
 
+  // Deduplicate CRM IDs — draft persistence can introduce duplicates
   const contactCount = contactSource === "crm"
-    ? crmSelectedIds.length
+    ? new Set(crmSelectedIds).size
     : csvContacts.filter(c => c.selected).length;
   const totalDays = steps.length > 0 ? steps[steps.length - 1].delay_days : 0;
 

@@ -101,35 +101,27 @@
 **Priority:** P2 | **Status:** Complete
 **What:** Fixed with Tailwind min-w/max-w/truncate + title tooltips. No custom hook needed. Templates: min-w-[280px] on Subject. Contacts: max-w-[200px] truncate on Company/Email.
 
-### Templates back-link from edit page
-**Priority:** P2
-**Files:** `frontend/src/pages/TemplateEdit.tsx` or equivalent
-**What:** Template edit page should have a back link to the templates overview. Currently no navigation back.
-**Why:** Basic navigation flow. "Back is always from where the user came."
+### ~~Templates back-link from edit page~~
+**Priority:** P2 | **Status:** Complete
+**What:** Added ArrowLeft back link to templates overview in the template edit form. Fixed by /qa on 2026-03-29.
 
-## P1 — QA Findings (2026-03-27)
+## ~~P1 — QA Findings (2026-03-27)~~
 
-### Contact detail: edit core fields
-**Priority:** P1
-**Files:** `frontend/src/pages/ContactDetail.tsx`, `src/web/routes/contacts.py`
-**What:** Add inline editing for email, LinkedIn URL, name, and title on the contact detail page. Currently only phone and lifecycle are editable.
-**Why:** If a contact's email is wrong or LinkedIn URL changed, there's no way to fix it.
+### ~~Contact detail: edit core fields~~
+**Priority:** P1 | **Status:** Complete
+**What:** Unified PATCH /contacts/{id} endpoint with 6 editable fields (name, email, LinkedIn, title, phone). Inline edit form with pencil icon, save/cancel, escape-to-close. Fixed by tech debt sweep on 2026-03-28.
 
-### Messages tab: rename "Calls Booked" metric
-**Priority:** P2
-**What:** The "Calls Booked" metric card appears on every campaign but is always 0 (no feature to track calls). Either implement call tracking or replace with a useful metric (e.g., "Open Rate" or "Sequence Progress").
-**Why:** Dead weight taking 25% of the metric row.
+### ~~Messages tab: rename "Calls Booked" metric~~
+**Priority:** P2 | **Status:** Complete
+**What:** Replaced redundant "Emails Sent" card with "Completed" metric showing contacts that finished all sequence steps. Fixed on 2026-03-29.
 
-### Health score badge: show N/A for new campaigns
-**Priority:** P2
-**What:** Health score shows red "0" next to Active badge on campaigns with no sends. Should show gray "N/A" until there's enough data (at least 1 send).
-**Why:** Red 0 looks like an error indicator, confusing for new campaigns.
+### ~~Health score badge: show N/A for new campaigns~~
+**Priority:** P2 | **Status:** Complete
+**What:** HealthScoreBadge now shows gray "N/A" when score is 0 and totalSent is 0. Red 0 only shows for campaigns with sends but zero performance. Fixed on 2026-03-29.
 
-### Wizard: contact count off-by-one
-**Priority:** P2
-**Files:** `frontend/src/pages/CampaignWizard.tsx`
-**What:** Review step shows 11 contacts when 10 were selected. Draft persistence may be adding an extra contact.
-**Why:** User enrolls more contacts than intended.
+### ~~Wizard: contact count off-by-one~~
+**Priority:** P2 | **Status:** Complete
+**What:** Root cause: draft persistence (localStorage) introduced duplicate IDs in crmSelectedIds array. Fixed by deduplicating via `new Set()` in StepReview count display and launch mutation. Fixed on 2026-03-29.
 
 ---
 

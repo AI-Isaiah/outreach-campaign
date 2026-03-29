@@ -56,8 +56,8 @@ describe("HealthScoreBadge", () => {
     expect(badge.className).toContain("text-red-800");
   });
 
-  it("renders red badge for score of 0", () => {
-    render(<HealthScoreBadge score={0} />);
+  it("renders red badge for score of 0 when totalSent > 0", () => {
+    render(<HealthScoreBadge score={0} totalSent={5} />);
     expect(screen.getByText("0").className).toContain("bg-red-100");
   });
 
@@ -117,9 +117,22 @@ describe("HealthScoreBadge", () => {
     expect(screen.queryByText("N/A")).not.toBeInTheDocument();
   });
 
-  it("does not render N/A when score is 0 (falsy but defined)", () => {
+  it("renders N/A when score is 0 and totalSent is 0 (no data)", () => {
+    render(<HealthScoreBadge score={0} totalSent={0} />);
+    expect(screen.getByText("N/A")).toBeInTheDocument();
+    expect(screen.queryByText("0")).not.toBeInTheDocument();
+  });
+
+  it("renders N/A when score is 0 and totalSent is not provided", () => {
     render(<HealthScoreBadge score={0} />);
+    expect(screen.getByText("N/A")).toBeInTheDocument();
+    expect(screen.queryByText("0")).not.toBeInTheDocument();
+  });
+
+  it("renders red 0 when score is 0 but totalSent > 0 (real low score)", () => {
+    render(<HealthScoreBadge score={0} totalSent={10} />);
     expect(screen.getByText("0")).toBeInTheDocument();
+    expect(screen.getByText("0").className).toContain("bg-red-100");
     expect(screen.queryByText("N/A")).not.toBeInTheDocument();
   });
 });

@@ -1,6 +1,7 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { FileText, Plus, Sparkles } from "lucide-react";
+import { ArrowLeft, FileText, Plus, Sparkles } from "lucide-react";
 import { api } from "../api/client";
 import type { Template } from "../types";
 import { SkeletonTable } from "../components/Skeleton";
@@ -125,6 +126,9 @@ export default function Templates() {
       {/* Create/Edit form */}
       {showForm && (
         <Card>
+          <Link to="/templates" onClick={resetForm} className="text-sm text-gray-400 hover:text-gray-600 inline-flex items-center gap-1 mb-3">
+            <ArrowLeft size={14} /> Templates
+          </Link>
           <h2 className="font-semibold text-gray-900 mb-4">
             {editingId ? "Edit Template" : "New Template"}
           </h2>

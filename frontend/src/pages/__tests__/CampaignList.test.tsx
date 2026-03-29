@@ -19,8 +19,8 @@ vi.mock("../../components/StatusBadge", () => ({
 }));
 
 vi.mock("../../components/HealthScoreBadge", () => ({
-  default: ({ score }: { score?: number | null }) => (
-    <span data-testid="health-score">{score ?? "N/A"}</span>
+  default: ({ score, totalSent }: { score?: number | null; totalSent?: number }) => (
+    <span data-testid="health-score">{(score == null || (score === 0 && (totalSent === 0 || totalSent == null))) ? "N/A" : score}</span>
   ),
 }));
 
