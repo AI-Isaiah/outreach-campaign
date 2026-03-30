@@ -1,5 +1,7 @@
 """Edge case tests for src/services/compliance.py."""
 
+from unittest.mock import patch
+
 import pytest
 
 from src.models.database import get_connection, run_migrations
@@ -7,10 +9,12 @@ from src.models.campaigns import create_campaign, enroll_contact, log_event
 from src.services.compliance import (
     add_compliance_footer,
     add_compliance_footer_html,
+    build_unsubscribe_link,
     build_unsubscribe_url,
     check_gdpr_email_limit,
     is_contact_gdpr,
     process_unsubscribe,
+    verify_unsubscribe_token,
 )
 from tests.conftest import TEST_USER_ID
 
@@ -309,3 +313,51 @@ class TestProcessUnsubscribe:
         result = process_unsubscribe(conn, "CASE@EXAMPLE.COM", user_id=TEST_USER_ID)
         assert result is True
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Bug regression: verify_unsubscribe_token timing attack (TD-001)
+# ---------------------------------------------------------------------------
+
+class TestVerifyUnsubscribeToken:
+    """Regression tests for the timing-attack fix: == replaced with hmac.compare_digest."""
+
+    @patch.dict("os.environ", {"JWT_SECRET": "test-secret-key"}, clear=False)
+    def test_valid_token_returns_true(self):
+        """A correctly generated token must verify as valid."""
+        # Generate token the same way as build_unsubscribe_link
+        import hashlib
+        secret = "test-secret-key"
+        contact_id = 42
+        expected = hashlib.sha256(f"{contact_id}:{secret}".encode()).hexdigest()[:32]
+
+        assert verify_unsubscribe_token(contact_id, expected) is True
+
+    @patch.dict("os.environ", {"JWT_SECRET": "test-secret-key"}, clear=False)
+    def test_invalid_token_returns_false(self):
+        """A wrong token must return False."""
+        assert verify_unsubscribe_token(42, "00000000000000000000000000000000") is False
+
+    @patch.dict("os.environ", {"JWT_SECRET": "test-secret-key"}, clear=False)
+    def test_wrong_contact_id_returns_false(self):
+        """Token valid for contact 42 must not verify for contact 43."""
+        import hashlib
+        secret = "test-secret-key"
+        token_for_42 = hashlib.sha256(f"42:{secret}".encode()).hexdigest()[:32]
+
+        assert verify_unsubscribe_token(42, token_for_42) is True
+        assert verify_unsubscribe_token(43, token_for_42) is False
+
+    @patch.dict("os.environ", {"JWT_SECRET": "test-secret-key"}, clear=False)
+    @patch("src.services.compliance.hmac.compare_digest")
+    def test_uses_constant_time_comparison(self, mock_compare_digest):
+        """Regression: verify_unsubscribe_token must use hmac.compare_digest,
+        not == operator, to prevent timing attacks on the token.
+        """
+        mock_compare_digest.return_value = True
+
+        result = verify_unsubscribe_token(42, "some-token")
+
+        # hmac.compare_digest MUST have been called (not == )
+        assert mock_compare_digest.called
+        assert result is True

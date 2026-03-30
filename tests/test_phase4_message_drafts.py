@@ -480,3 +480,56 @@ def test_empty_draft_raises_value_error(mock_post, tmp_db):
     with pytest.raises(ValueError, match="empty or too-short"):
         generate_draft(conn, contact_id, campaign_id, 1, user_id=TEST_USER_ID)
     conn.close()
+
+
+# ===========================================================================
+# BUG REGRESSION: generate_sequence_messages uses passed api_key, not env
+# ===========================================================================
+
+@patch.dict("os.environ", {"ANTHROPIC_API_KEY": ""}, clear=False)
+@patch("src.services.message_drafter.httpx.post")
+def test_generate_sequence_uses_passed_api_key_not_env(mock_post):
+    """Regression: generate_sequence_messages must use the api_key parameter,
+    not fall back to ANTHROPIC_API_KEY from the environment.
+
+    The bug was that the function read os.getenv('ANTHROPIC_API_KEY') ignoring
+    the api_key parameter passed by the route (which resolves from user's DB record).
+    """
+    from src.services.message_drafter import generate_sequence_messages
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "content": [{"text": '[{"step_order": 1, "channel": "email", "subject": "Hi", "body": "Test body message."}]'}]
+    }
+    mock_resp.raise_for_status = MagicMock()
+    mock_post.return_value = mock_resp
+
+    steps = [{"step_order": 1, "channel": "email", "delay_days": 0}]
+    generate_sequence_messages(
+        steps=steps,
+        product_description="Test product",
+        user_id=TEST_USER_ID,
+        api_key="test-key-from-db",
+    )
+
+    # Verify the x-api-key header uses the passed key, not env
+    assert mock_post.called
+    call_kwargs = mock_post.call_args
+    headers = call_kwargs.kwargs.get("headers") or call_kwargs[1].get("headers")
+    assert headers["x-api-key"] == "test-key-from-db"
+
+
+@patch.dict("os.environ", {"ANTHROPIC_API_KEY": ""}, clear=False)
+def test_generate_sequence_raises_without_any_api_key():
+    """When neither api_key param nor env var is set, should raise RuntimeError."""
+    from src.services.message_drafter import generate_sequence_messages
+
+    steps = [{"step_order": 1, "channel": "email", "delay_days": 0}]
+    with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY not configured"):
+        generate_sequence_messages(
+            steps=steps,
+            product_description="Test product",
+            user_id=TEST_USER_ID,
+            api_key="",
+        )

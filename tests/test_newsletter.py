@@ -880,3 +880,36 @@ class TestNewsletterIntegration:
 
         assert "sub0@example.com" in sent_to_emails
         assert "sub1@example.com" in sent_to_emails
+
+
+# ---------------------------------------------------------------------------
+# Bug regression: send_newsletter_to_recipients requires user_id (TD-010)
+# ---------------------------------------------------------------------------
+
+class TestSendNewsletterUserIdRequired:
+    """Regression tests for the bug where _send_in_background didn't pass user_id."""
+
+    def test_send_newsletter_to_recipients_requires_user_id_kwarg(self):
+        """user_id is a keyword-only parameter — calling without it must raise TypeError."""
+        from src.services.newsletter import send_newsletter_to_recipients
+        import inspect
+
+        sig = inspect.signature(send_newsletter_to_recipients)
+        param = sig.parameters["user_id"]
+        # user_id must be keyword-only (after *)
+        assert param.kind == inspect.Parameter.KEYWORD_ONLY
+
+    def test_send_newsletter_to_recipients_raises_without_user_id(self):
+        """Calling send_newsletter_to_recipients without user_id raises TypeError."""
+        from src.services.newsletter import send_newsletter_to_recipients
+
+        with pytest.raises(TypeError, match="user_id"):
+            send_newsletter_to_recipients(
+                None,  # conn
+                1,     # newsletter_id
+                {},    # newsletter
+                [],    # recipients
+                {},    # config
+                [],    # attachments
+                # user_id intentionally omitted
+            )
