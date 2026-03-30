@@ -1,9 +1,10 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useDebouncedValue } from "../../../hooks/useDebouncedValue";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
-import { Search, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Loader2, ChevronLeft, ChevronRight, ChevronDown, X } from "lucide-react";
 import Input from "../../../components/ui/Input";
 import { contactsApi } from "../../../api/contacts";
+import { campaignsApi } from "../../../api/campaigns";
 
 type SortCol = "name" | "company" | "aum";
 type SortDir = "asc" | "desc";
@@ -24,12 +25,33 @@ export default function CrmContactPicker({
   const [hasLinkedin, setHasLinkedin] = useState(false);
   const [hasEmail, setHasEmail] = useState(false);
   const [onePerCompany, setOnePerCompany] = useState(false);
+  const [excludeCampaigns, setExcludeCampaigns] = useState<number[]>([]);
+  const [neverContacted, setNeverContacted] = useState(false);
+  const [campaignDropdownOpen, setCampaignDropdownOpen] = useState(false);
+  const campaignDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close campaign dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (campaignDropdownRef.current && !campaignDropdownRef.current.contains(e.target as Node)) {
+        setCampaignDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  // Fetch campaigns for the exclusion dropdown
+  const { data: campaignsList } = useQuery({
+    queryKey: ["campaigns-list-for-filter"],
+    queryFn: () => campaignsApi.listCampaigns(),
+  });
 
   // Reset page when search changes
   useEffect(() => { setPage(1); }, [debouncedSearch]);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["contacts", "picker", debouncedSearch, page, perPage, sortBy, sortDir, hasLinkedin, hasEmail],
+    queryKey: ["contacts", "picker", debouncedSearch, page, perPage, sortBy, sortDir, hasLinkedin, hasEmail, excludeCampaigns, neverContacted],
     queryFn: () =>
       contactsApi.listContacts(page, debouncedSearch || undefined, {
         per_page: perPage,
@@ -37,6 +59,8 @@ export default function CrmContactPicker({
         sort_dir: sortDir,
         has_linkedin: hasLinkedin || undefined,
         has_email: hasEmail || undefined,
+        exclude_campaigns: excludeCampaigns.length > 0 ? excludeCampaigns.join(",") : undefined,
+        never_contacted: neverContacted || undefined,
       }),
     placeholderData: keepPreviousData,
   });
@@ -131,6 +155,7 @@ export default function CrmContactPicker({
         {[
           { label: "Has LinkedIn", active: hasLinkedin, toggle: () => { setHasLinkedin(!hasLinkedin); setPage(1); } },
           { label: "Has Email", active: hasEmail, toggle: () => { setHasEmail(!hasEmail); setPage(1); } },
+          { label: "Never contacted", active: neverContacted, toggle: () => { setNeverContacted(!neverContacted); setPage(1); } },
           { label: "One per company", active: onePerCompany, toggle: () => {
             const next = !onePerCompany;
             setOnePerCompany(next);
@@ -174,6 +199,69 @@ export default function CrmContactPicker({
             </button>
           ))}
         </span>
+      </div>
+
+      {/* Exclude campaigns dropdown */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative" ref={campaignDropdownRef}>
+          <button
+            onClick={() => setCampaignDropdownOpen((o) => !o)}
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+              excludeCampaigns.length > 0
+                ? "bg-gray-900 text-white border-gray-900"
+                : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
+            }`}
+          >
+            Exclude campaigns{excludeCampaigns.length > 0 && ` (${excludeCampaigns.length})`}
+            <ChevronDown size={12} />
+          </button>
+          {campaignDropdownOpen && (
+            <div className="absolute z-20 mt-1 left-0 bg-white border border-gray-200 rounded-lg shadow-lg py-1 w-64 max-h-48 overflow-y-auto">
+              {(campaignsList ?? []).length === 0 ? (
+                <div className="px-3 py-2 text-xs text-gray-400">No campaigns</div>
+              ) : (
+                (campaignsList ?? []).map((camp) => (
+                  <label
+                    key={camp.id}
+                    className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={excludeCampaigns.includes(camp.id)}
+                      onChange={() => {
+                        setExcludeCampaigns((prev) =>
+                          prev.includes(camp.id) ? prev.filter((id) => id !== camp.id) : [...prev, camp.id],
+                        );
+                        setPage(1);
+                      }}
+                      className="rounded border-gray-300"
+                    />
+                    <span className="text-xs text-gray-700 truncate">{camp.name}</span>
+                  </label>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+        {excludeCampaigns.length > 0 &&
+          excludeCampaigns.map((cid) => {
+            const camp = (campaignsList ?? []).find((c) => c.id === cid);
+            return (
+              <span
+                key={cid}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 text-xs text-gray-600"
+              >
+                {camp?.name ?? `#${cid}`}
+                <button
+                  onClick={() => { setExcludeCampaigns((prev) => prev.filter((id) => id !== cid)); setPage(1); }}
+                  className="text-gray-400 hover:text-gray-600"
+                  aria-label={`Remove ${camp?.name ?? cid}`}
+                >
+                  <X size={10} />
+                </button>
+              </span>
+            );
+          })}
       </div>
 
       {isLoading && crmContacts.length === 0 ? (

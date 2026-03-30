@@ -589,6 +589,72 @@ class TestContactList:
         assert data["total"] == 2  # one from each company
 
 
+class TestContactExclusionFilters:
+    """Tests for exclude_campaigns and never_contacted query params on GET /contacts."""
+
+    def _enroll(self, conn, contact_id, campaign_id):
+        from src.models.enrollment import enroll_contact
+        enroll_contact(conn, contact_id, campaign_id, user_id=TEST_USER_ID)
+
+    def test_exclude_campaigns_filters_enrolled_contacts(self, client, db_conn):
+        co = _seed_company(db_conn)
+        ct_a = _seed_contact(db_conn, co, first="Alice", email="alice_excl@test.com")
+        ct_b = _seed_contact(db_conn, co, first="Bob", email="bob_excl@test.com")
+        camp = _seed_campaign(db_conn, name="camp_excl_1")
+        self._enroll(db_conn, ct_a, camp)
+
+        resp = client.get(f"/api/contacts?exclude_campaigns={camp}")
+        assert resp.status_code == 200
+        data = resp.json()
+        returned_ids = [c["id"] for c in data["contacts"]]
+        assert ct_a not in returned_ids
+        assert ct_b in returned_ids
+
+    def test_never_contacted_filters_enrolled_contacts(self, client, db_conn):
+        co = _seed_company(db_conn)
+        ct_a = _seed_contact(db_conn, co, first="Carol", email="carol_nc@test.com")
+        ct_b = _seed_contact(db_conn, co, first="Dave", email="dave_nc@test.com")
+        camp = _seed_campaign(db_conn, name="camp_nc")
+        self._enroll(db_conn, ct_a, camp)
+
+        resp = client.get("/api/contacts?never_contacted=true")
+        assert resp.status_code == 200
+        data = resp.json()
+        returned_ids = [c["id"] for c in data["contacts"]]
+        assert ct_a not in returned_ids
+        assert ct_b in returned_ids
+
+    def test_exclude_campaigns_comma_separated(self, client, db_conn):
+        co = _seed_company(db_conn)
+        ct_a = _seed_contact(db_conn, co, first="Eve", email="eve_cs@test.com")
+        ct_b = _seed_contact(db_conn, co, first="Frank", email="frank_cs@test.com")
+        ct_c = _seed_contact(db_conn, co, first="Grace", email="grace_cs@test.com")
+        camp1 = _seed_campaign(db_conn, name="camp_cs_1")
+        camp2 = _seed_campaign(db_conn, name="camp_cs_2")
+        self._enroll(db_conn, ct_a, camp1)
+        self._enroll(db_conn, ct_b, camp2)
+
+        resp = client.get(f"/api/contacts?exclude_campaigns={camp1},{camp2}")
+        assert resp.status_code == 200
+        data = resp.json()
+        returned_ids = [c["id"] for c in data["contacts"]]
+        assert ct_a not in returned_ids
+        assert ct_b not in returned_ids
+        assert ct_c in returned_ids
+
+    def test_exclude_campaigns_empty_string_ignored(self, client, db_conn):
+        co = _seed_company(db_conn)
+        ct_a = _seed_contact(db_conn, co, first="Hank", email="hank_es@test.com")
+        ct_b = _seed_contact(db_conn, co, first="Ivy", email="ivy_es@test.com")
+
+        resp = client.get("/api/contacts?exclude_campaigns=")
+        assert resp.status_code == 200
+        data = resp.json()
+        returned_ids = [c["id"] for c in data["contacts"]]
+        assert ct_a in returned_ids
+        assert ct_b in returned_ids
+
+
 class TestContactCreate:
     def test_create_success(self, client, db_conn):
         coid = _seed_company(db_conn)

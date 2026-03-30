@@ -12,6 +12,8 @@ export const contactsApi = {
       has_linkedin?: boolean;
       has_email?: boolean;
       one_per_company?: boolean;
+      exclude_campaigns?: string;
+      never_contacted?: boolean;
     },
   ) => {
     const params = new URLSearchParams({
@@ -24,6 +26,8 @@ export const contactsApi = {
     if (options?.has_linkedin) params.set("has_linkedin", "true");
     if (options?.has_email) params.set("has_email", "true");
     if (options?.one_per_company) params.set("one_per_company", "true");
+    if (options?.exclude_campaigns) params.set("exclude_campaigns", options.exclude_campaigns);
+    if (options?.never_contacted) params.set("never_contacted", "true");
     return request<ContactListResponse>(`/contacts?${params}`);
   },
   getContact: (id: number) => request<ContactDetailResponse>(`/contacts/${id}`),

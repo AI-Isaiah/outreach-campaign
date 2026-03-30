@@ -198,6 +198,8 @@ def list_contacts(
     has_linkedin: Optional[bool] = None,
     has_email: Optional[bool] = None,
     one_per_company: bool = Query(default=False),
+    exclude_campaigns: Optional[str] = None,
+    never_contacted: bool = Query(default=False),
     conn=Depends(get_db),
     user=Depends(get_current_user),
 ):
@@ -229,6 +231,20 @@ def list_contacts(
         qb.add_condition("c.linkedin_url IS NOT NULL AND c.linkedin_url != ''")
     if has_email:
         qb.add_condition("c.email IS NOT NULL AND c.email != ''")
+
+    if exclude_campaigns:
+        campaign_ids = [int(x.strip()) for x in exclude_campaigns.split(",") if x.strip().isdigit()]
+        if campaign_ids:
+            placeholders = ",".join(["%s"] * len(campaign_ids))
+            qb.add_condition(
+                f"c.id NOT IN (SELECT contact_id FROM contact_campaign_status WHERE campaign_id IN ({placeholders}))",
+                *campaign_ids,
+            )
+
+    if never_contacted:
+        qb.add_condition(
+            "c.id NOT IN (SELECT DISTINCT contact_id FROM contact_campaign_status)"
+        )
 
     where_sql = qb.where_clause
     params = qb.params
