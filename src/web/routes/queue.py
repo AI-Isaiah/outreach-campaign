@@ -22,7 +22,7 @@ from src.services.linkedin_actions import complete_linkedin_action
 from src.services.priority_queue import defer_contact, get_defer_stats
 from src.services.sequence_utils import find_previous_step
 from src.web.dependencies import get_current_user, get_db, handle_llm_errors
-from src.models.database import get_cursor
+from src.models.database import get_cursor, verify_ownership
 
 logger = logging.getLogger(__name__)
 _limiter = Limiter(key_func=get_remote_address)
@@ -670,7 +670,7 @@ def defer_queue_contact(
     conn=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    """Defer/skip a contact in the queue, or delete from DB if reason is 'Delete from Database'."""
+    """Defer/skip a contact in the queue, or soft-delete if reason is 'Remove from Contacts'."""
     with get_cursor(conn) as cur:
         cur.execute(
             "SELECT id FROM campaigns WHERE name = %s AND user_id = %s",
@@ -682,13 +682,9 @@ def defer_queue_contact(
 
     # "Remove from Contacts" soft-deletes: hides from lists but preserves for re-upload detection
     if body.reason == "Remove from Contacts":
+        if not verify_ownership(conn, "contacts", contact_id, user["id"]):
+            raise HTTPException(404, "Contact not found")
         with get_cursor(conn) as cur:
-            cur.execute(
-                "SELECT id FROM contacts WHERE id = %s AND user_id = %s",
-                (contact_id, user["id"]),
-            )
-            if not cur.fetchone():
-                raise HTTPException(404, "Contact not found")
             cur.execute(
                 "UPDATE contacts SET removed_at = NOW(), removal_reason = %s WHERE id = %s AND user_id = %s",
                 (body.reason, contact_id, user["id"]),

@@ -1,8 +1,11 @@
+import logging
 import threading
 from contextlib import contextmanager
 
 import psycopg2
 import psycopg2.extras
+
+logger = logging.getLogger(__name__)
 import psycopg2.pool
 from pathlib import Path
 
@@ -111,8 +114,6 @@ def run_migrations(conn) -> None:
         cursor.execute("SELECT filename FROM schema_migrations")
         applied = {row["filename"] for row in cursor.fetchall()}
 
-        import logging
-        _mig_logger = logging.getLogger(__name__)
         for migration_file in migration_files:
             if migration_file.name in applied:
                 continue
@@ -125,9 +126,9 @@ def run_migrations(conn) -> None:
                     (migration_file.name,),
                 )
                 conn.commit()
-            except Exception as exc:
+            except psycopg2.Error as exc:
                 conn.rollback()
-                _mig_logger.warning("Migration %s failed: %s", migration_file.name, exc)
+                logger.warning("Migration %s failed: %s", migration_file.name, exc)
 
 
 def get_table_names(conn) -> list[str]:
