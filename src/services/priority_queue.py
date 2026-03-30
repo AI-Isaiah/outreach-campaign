@@ -93,7 +93,6 @@ def get_daily_queue(
           AND ccs.status IN (%s, %s)
           {date_filter}
           AND c.unsubscribed = false
-          AND c.removed_at IS NULL
     ),
     ranked AS (
         SELECT *,

@@ -249,7 +249,13 @@ def list_contacts(
 
     qb = QueryBuilder()
     qb.add_condition("c.user_id = %s", user_id)
-    qb.add_condition("c.removed_at IS NULL")
+    # Soft-delete filter (safe if column doesn't exist yet — migration 039)
+    try:
+        with get_cursor(conn) as _check:
+            _check.execute("SELECT removed_at FROM contacts LIMIT 0")
+        qb.add_condition("c.removed_at IS NULL")
+    except Exception:
+        conn.rollback()  # Reset transaction after failed check
 
     if search:
         like = f"%{search}%"
