@@ -97,17 +97,19 @@ def reorder_campaign_sequence(
         )
         affected_count = cursor.fetchone()["cnt"]
 
-        # Update contacts who haven't been contacted yet to point to the new step 1
+        # Remap ALL contacts to the step that now occupies their position number.
+        # Contact stays at their current_step NUMBER, but gets the new step's
+        # stable_id (which may be different content after reorder).
+        # Example: contact at step 2 → gets stable_id of whatever step is now #2.
         cursor.execute(
             """UPDATE contact_campaign_status ccs
                SET current_step_id = (
-                   SELECT stable_id FROM sequence_steps
-                   WHERE campaign_id = %s AND step_order = 1
-               ),
-               current_step = 1
+                   SELECT ss.stable_id FROM sequence_steps ss
+                   WHERE ss.campaign_id = %s AND ss.step_order = ccs.current_step
+               )
                WHERE ccs.campaign_id = %s
-                 AND ccs.status = 'queued'
-                 AND ccs.current_step = 1""",
+                 AND ccs.status IN ('queued', 'in_progress')
+                 AND ccs.current_step IS NOT NULL""",
             (campaign_id, campaign_id),
         )
 

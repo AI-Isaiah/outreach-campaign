@@ -34,18 +34,30 @@ export default function SkipMenu({
       </button>
       {open && (
         <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
-          {SKIP_REASONS.map((reason) => (
+          {SKIP_REASONS.filter(r => r !== "Delete from Database").map((reason) => (
             <button
               key={reason}
               onClick={() => {
                 setOpen(false);
                 onSkip(reason);
               }}
-              className="block w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg"
+              className="block w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 first:rounded-t-lg"
             >
               {reason}
             </button>
           ))}
+          <div className="border-t border-gray-100" />
+          <button
+            onClick={() => {
+              if (window.confirm("Permanently delete this contact from the database? This cannot be undone.")) {
+                setOpen(false);
+                onSkip("Delete from Database");
+              }
+            }}
+            className="block w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-b-lg"
+          >
+            Delete from Database
+          </button>
         </div>
       )}
     </div>

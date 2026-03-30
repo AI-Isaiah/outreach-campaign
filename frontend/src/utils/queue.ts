@@ -4,6 +4,7 @@ export const SKIP_REASONS = [
   "Need more research",
   "Too junior",
   "Other",
+  "Delete from Database",
 ];
 
 export function splitName(fullName: string): [string, string] {
