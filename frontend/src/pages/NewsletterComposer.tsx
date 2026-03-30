@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
@@ -7,6 +7,7 @@ import RichTextEditor from "../components/RichTextEditor";
 import StatusBadge from "../components/StatusBadge";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { useToast } from "../components/Toast";
+import DOMPurify from 'dompurify';
 import { LIFECYCLE_STAGES } from "../constants";
 
 const LIFECYCLE_OPTIONS = LIFECYCLE_STAGES.map((s) => ({
@@ -39,12 +40,12 @@ export default function NewsletterComposer() {
   });
 
   // Populate form from loaded data
-  useState(() => {
+  useEffect(() => {
     if (existing?.newsletter) {
       setSubject(existing.newsletter.subject);
-      setBodyHtml(existing.newsletter.body_html);
+      setBodyHtml(existing.newsletter.body_html || '');
     }
-  });
+  }, [existing]);
 
   // Products for filter
   const { data: products } = useQuery<Product[]>({
@@ -225,7 +226,7 @@ export default function NewsletterComposer() {
 
           {showPreview && (
             <div className="bg-white border border-gray-200 rounded-lg p-6">
-              <div dangerouslySetInnerHTML={{ __html: bodyHtml }} />
+              <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(bodyHtml) }} />
             </div>
           )}
         </div>

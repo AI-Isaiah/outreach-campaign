@@ -643,9 +643,9 @@ def gdpr_delete_contact(
         )
         # 4. Audit log entry
         cur.execute(
-            """INSERT INTO gdpr_deletion_log (user_id, contact_email_hash, contact_name)
-               VALUES (%s, %s, %s)""",
-            (user["id"], email_hash, contact["full_name"]),
+            """INSERT INTO gdpr_deletion_log (user_id, contact_email_hash)
+               VALUES (%s, %s)""",
+            (user["id"], email_hash),
         )
         # 5. Delete the contact (response_notes, entity_tags cascade via FK)
         cur.execute(

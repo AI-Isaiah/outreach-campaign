@@ -151,12 +151,15 @@ def update_contact_email_status(
     conn,
     email: str,
     status: str,
+    *,
+    user_id: int,
 ) -> None:
     """Update the ``email_status`` and ``updated_at`` for a contact by email."""
     with get_cursor(conn) as cursor:
         cursor.execute(
-            "UPDATE contacts SET email_status = %s, updated_at = %s WHERE email_normalized = %s",
-            (status, datetime.now(timezone.utc).isoformat(), email),
+            "UPDATE contacts SET email_status = %s, updated_at = %s "
+            "WHERE email_normalized = %s AND user_id = %s",
+            (status, datetime.now(timezone.utc).isoformat(), email, user_id),
         )
         conn.commit()
 

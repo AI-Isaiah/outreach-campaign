@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from contextlib import contextmanager
 from typing import Generator
@@ -10,6 +11,8 @@ import httpx
 import jwt
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+logger = logging.getLogger(__name__)
 
 from src.config import SUPABASE_DB_URL, load_validated_config
 from src.models.database import get_connection, get_pool_connection, is_pool_initialized, put_pool_connection
@@ -38,6 +41,7 @@ def get_current_user(
     """
     if not _JWT_SECRET:
         # Dev mode — no JWT validation, return default user
+        logger.warning("AUTH BYPASS: JWT_SECRET not set — returning dev user (id=1). Set JWT_SECRET in production.")
         return CurrentUser(id=1, email="dev@localhost", name="Dev User")
 
     if not credentials:

@@ -106,7 +106,7 @@ def verify():
         results = verify_email_batch(emails, api_key, provider=provider)
         counts = {"valid": 0, "invalid": 0, "risky": 0, "catch-all": 0, "unknown": 0}
         for email, status in results.items():
-            update_contact_email_status(conn, email, status)
+            update_contact_email_status(conn, email, status, user_id=CLI_USER_ID)
             counts[status] = counts.get(status, 0) + 1
 
         console.print(f"  Valid: [green]{counts['valid']}[/green]")

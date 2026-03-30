@@ -98,8 +98,10 @@ def get_api_keys(
         )
         row = cur.fetchone()
 
-    db_anthropic = (row or {}).get("anthropic_api_key") or ""
-    db_perplexity = (row or {}).get("perplexity_api_key") or ""
+    from src.services.token_encryption import try_decrypt
+
+    db_anthropic = try_decrypt((row or {}).get("anthropic_api_key") or "")
+    db_perplexity = try_decrypt((row or {}).get("perplexity_api_key") or "")
 
     # Founder falls back to env vars (check DB email, not auth token email)
     db_email = (row or {}).get("email", "")
@@ -125,9 +127,15 @@ def update_api_keys(
     conn=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    """Save API keys for the current user."""
+    """Save API keys for the current user (encrypted at rest)."""
+    from src.services.token_encryption import encrypt_token
+
     # Empty string → None: treat blank API keys as "remove"
-    fields = {k: (v or None) for k, v in body.model_dump().items() if v is not None}
+    raw_fields = {k: (v or None) for k, v in body.model_dump().items() if v is not None}
+    # Encrypt non-None values before storing
+    fields = {}
+    for k, v in raw_fields.items():
+        fields[k] = encrypt_token(v) if v else v
     set_clause, params = QueryBuilder.build_update(fields, exclude_none=False)
     if not set_clause:
         return {"success": True, "updated": []}
@@ -218,7 +226,9 @@ def save_compliance_config(body: dict, conn=Depends(get_db), user=Depends(get_cu
 
 
 def get_user_api_keys(conn, user_id: int) -> dict[str, str]:
-    """Resolve API keys for a user: DB first, then env-var fallback for founder."""
+    """Resolve API keys for a user: DB first (decrypt), then env-var fallback for founder."""
+    from src.services.token_encryption import try_decrypt
+
     with get_cursor(conn) as cur:
         cur.execute(
             "SELECT email, anthropic_api_key, perplexity_api_key FROM users WHERE id = %s",
@@ -229,8 +239,12 @@ def get_user_api_keys(conn, user_id: int) -> dict[str, str]:
     if not row:
         return {"anthropic": "", "perplexity": ""}
 
+    # Decrypt DB values (try_decrypt handles plaintext gracefully for backwards compat)
+    db_anthropic = try_decrypt(row["anthropic_api_key"] or "")
+    db_perplexity = try_decrypt(row["perplexity_api_key"] or "")
+
     is_founder = row["email"] == _FOUNDER_EMAIL
     return {
-        "anthropic": row["anthropic_api_key"] or (os.getenv("ANTHROPIC_API_KEY", "") if is_founder else ""),
-        "perplexity": row["perplexity_api_key"] or (os.getenv("PERPLEXITY_API_KEY", "") if is_founder else ""),
+        "anthropic": db_anthropic or (os.getenv("ANTHROPIC_API_KEY", "") if is_founder else ""),
+        "perplexity": db_perplexity or (os.getenv("PERPLEXITY_API_KEY", "") if is_founder else ""),
     }

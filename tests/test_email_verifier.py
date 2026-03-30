@@ -45,7 +45,7 @@ def test_update_contact_status_valid(tmp_db):
     conn = _setup_db(tmp_db)
     _insert_contact_with_email(conn, "alice@example.com", status="unverified")
 
-    update_contact_email_status(conn, "alice@example.com", "valid")
+    update_contact_email_status(conn, "alice@example.com", "valid", user_id=TEST_USER_ID)
 
     cursor = conn.cursor()
     cursor.execute(
@@ -61,7 +61,7 @@ def test_update_contact_status_invalid(tmp_db):
     conn = _setup_db(tmp_db)
     _insert_contact_with_email(conn, "bad@example.com", status="unverified")
 
-    update_contact_email_status(conn, "bad@example.com", "invalid")
+    update_contact_email_status(conn, "bad@example.com", "invalid", user_id=TEST_USER_ID)
 
     cursor = conn.cursor()
     cursor.execute(

@@ -1337,7 +1337,7 @@ class TestUpdateContactEmailStatus:
         conn = _setup_db(tmp_db)
         cid = _create_company(conn)
         _create_contact(conn, cid, email="ca@test.com", email_status="unverified")
-        update_contact_email_status(conn, "ca@test.com", "catch-all")
+        update_contact_email_status(conn, "ca@test.com", "catch-all", user_id=TEST_USER_ID)
 
         cur = conn.cursor()
         cur.execute("SELECT email_status FROM contacts WHERE email_normalized = 'ca@test.com'")
@@ -1349,7 +1349,7 @@ class TestUpdateContactEmailStatus:
         from src.services.email_verifier import update_contact_email_status
         conn = _setup_db(tmp_db)
         # Should not crash
-        update_contact_email_status(conn, "nobody@test.com", "valid")
+        update_contact_email_status(conn, "nobody@test.com", "valid", user_id=TEST_USER_ID)
         conn.close()
 
 
