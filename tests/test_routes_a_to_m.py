@@ -655,6 +655,55 @@ class TestContactExclusionFilters:
         assert ct_b in returned_ids
 
 
+class TestContactSoftDelete:
+    """Tests for soft-delete (Remove from Contacts), list removed, and restore."""
+
+    def test_removed_contact_hidden_from_list(self, client, db_conn):
+        coid = _seed_company(db_conn)
+        cid = _seed_contact(db_conn, coid)
+        # Soft-delete
+        cur = db_conn.cursor()
+        cur.execute("UPDATE contacts SET removed_at = NOW(), removal_reason = 'test' WHERE id = %s", (cid,))
+        db_conn.commit()
+        # Should not appear in normal list
+        resp = client.get("/api/contacts")
+        assert resp.status_code == 200
+        ids = [c["id"] for c in resp.json()["contacts"]]
+        assert cid not in ids
+
+    def test_removed_contact_appears_in_removed_list(self, client, db_conn):
+        coid = _seed_company(db_conn)
+        cid = _seed_contact(db_conn, coid)
+        cur = db_conn.cursor()
+        cur.execute("UPDATE contacts SET removed_at = NOW(), removal_reason = 'test' WHERE id = %s", (cid,))
+        db_conn.commit()
+        resp = client.get("/api/contacts/removed")
+        assert resp.status_code == 200
+        ids = [c["id"] for c in resp.json()]
+        assert cid in ids
+
+    def test_restore_contact(self, client, db_conn):
+        coid = _seed_company(db_conn)
+        cid = _seed_contact(db_conn, coid)
+        cur = db_conn.cursor()
+        cur.execute("UPDATE contacts SET removed_at = NOW(), removal_reason = 'test' WHERE id = %s", (cid,))
+        db_conn.commit()
+        # Restore
+        resp = client.post(f"/api/contacts/{cid}/restore")
+        assert resp.status_code == 200
+        assert resp.json()["success"] is True
+        # Should reappear in normal list
+        resp = client.get("/api/contacts")
+        ids = [c["id"] for c in resp.json()["contacts"]]
+        assert cid in ids
+
+    def test_restore_non_removed_returns_404(self, client, db_conn):
+        coid = _seed_company(db_conn)
+        cid = _seed_contact(db_conn, coid)
+        resp = client.post(f"/api/contacts/{cid}/restore")
+        assert resp.status_code == 404
+
+
 class TestContactCreate:
     def test_create_success(self, client, db_conn):
         coid = _seed_company(db_conn)

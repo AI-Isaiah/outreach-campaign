@@ -34,7 +34,7 @@ export default function SkipMenu({
       </button>
       {open && (
         <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
-          {SKIP_REASONS.filter(r => r !== "Delete from Database").map((reason) => (
+          {SKIP_REASONS.filter(r => r !== "Remove from Contacts").map((reason) => (
             <button
               key={reason}
               onClick={() => {
@@ -49,14 +49,14 @@ export default function SkipMenu({
           <div className="border-t border-gray-100" />
           <button
             onClick={() => {
-              if (window.confirm("Permanently delete this contact from the database? This cannot be undone.")) {
+              if (window.confirm("Remove this contact? They'll be hidden from all lists and queues. You can restore them later if re-uploaded.")) {
                 setOpen(false);
-                onSkip("Delete from Database");
+                onSkip("Remove from Contacts");
               }
             }}
             className="block w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-b-lg"
           >
-            Delete from Database
+            Remove from Contacts
           </button>
         </div>
       )}

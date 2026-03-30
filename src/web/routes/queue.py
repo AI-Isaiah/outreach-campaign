@@ -680,8 +680,8 @@ def defer_queue_contact(
     if not camp:
         raise HTTPException(404, f"Campaign '{body.campaign}' not found")
 
-    # "Delete from Database" permanently removes the contact
-    if body.reason == "Delete from Database":
+    # "Remove from Contacts" soft-deletes: hides from lists but preserves for re-upload detection
+    if body.reason == "Remove from Contacts":
         with get_cursor(conn) as cur:
             cur.execute(
                 "SELECT id FROM contacts WHERE id = %s AND user_id = %s",
@@ -689,17 +689,16 @@ def defer_queue_contact(
             )
             if not cur.fetchone():
                 raise HTTPException(404, "Contact not found")
-            # Delete enrollment first (FK), then the contact (cascades events, tags, etc.)
+            cur.execute(
+                "UPDATE contacts SET removed_at = NOW(), removal_reason = %s WHERE id = %s AND user_id = %s",
+                (body.reason, contact_id, user["id"]),
+            )
             cur.execute(
                 "DELETE FROM contact_campaign_status WHERE contact_id = %s",
                 (contact_id,),
             )
-            cur.execute(
-                "DELETE FROM contacts WHERE id = %s AND user_id = %s",
-                (contact_id, user["id"]),
-            )
             conn.commit()
-        return {"success": True, "deleted": True}
+        return {"success": True, "removed": True}
 
     result = defer_contact(conn, contact_id, camp["id"], reason=body.reason, user_id=user["id"])
     if not result["success"]:

@@ -82,6 +82,37 @@ class BulkLifecycleRequest(BaseModel):
     lifecycle_stage: str = Field(max_length=50)
 
 
+@router.get("/contacts/removed")
+def list_removed_contacts(conn=Depends(get_db), user=Depends(get_current_user)):
+    """List soft-deleted contacts for re-upload review."""
+    with get_cursor(conn) as cur:
+        cur.execute(
+            """SELECT c.id, c.full_name, c.email, c.linkedin_url,
+                      co.name AS company_name, c.removed_at, c.removal_reason
+               FROM contacts c
+               LEFT JOIN companies co ON co.id = c.company_id
+               WHERE c.user_id = %s AND c.removed_at IS NOT NULL
+               ORDER BY c.removed_at DESC
+               LIMIT 200""",
+            (user["id"],),
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+
+@router.post("/contacts/{contact_id}/restore")
+def restore_contact(contact_id: int, conn=Depends(get_db), user=Depends(get_current_user)):
+    """Restore a soft-deleted contact."""
+    with get_cursor(conn) as cur:
+        cur.execute(
+            "UPDATE contacts SET removed_at = NULL, removal_reason = NULL WHERE id = %s AND user_id = %s AND removed_at IS NOT NULL RETURNING id",
+            (contact_id, user["id"]),
+        )
+        if not cur.fetchone():
+            raise HTTPException(404, "Contact not found or not removed")
+        conn.commit()
+    return {"success": True}
+
+
 @router.post("/contacts")
 @_limiter.limit("10/minute")
 def create_contact(
@@ -218,6 +249,7 @@ def list_contacts(
 
     qb = QueryBuilder()
     qb.add_condition("c.user_id = %s", user_id)
+    qb.add_condition("c.removed_at IS NULL")
 
     if search:
         like = f"%{search}%"
