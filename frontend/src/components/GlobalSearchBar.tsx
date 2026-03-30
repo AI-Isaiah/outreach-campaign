@@ -36,9 +36,10 @@ export default function GlobalSearchBar() {
     abortControllerRef.current?.abort();
     abortControllerRef.current = new AbortController();
 
+    const signal = abortControllerRef.current.signal;
     timerRef.current = setTimeout(async () => {
       try {
-        const data = await api.globalSearch(query);
+        const data = await api.globalSearch(query, { signal });
         setResults(data);
         setIsOpen(true);
       } catch {

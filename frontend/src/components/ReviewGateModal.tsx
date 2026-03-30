@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { CheckCircle, AlertTriangle, RefreshCw, ChevronDown, ChevronRight } from "lucide-react";
 import Modal from "./ui/Modal";
-import type { QueueItem, BatchBatchValidationErrors } from "../types";
+import type { QueueItem, BatchValidationErrors } from "../types";
 
 interface ReviewGateModalProps {
   open: boolean;

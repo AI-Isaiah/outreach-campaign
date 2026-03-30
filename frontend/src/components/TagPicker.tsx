@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import type { Tag } from "../types";
@@ -13,6 +13,29 @@ export default function TagPicker({ entityType, entityId }: Props) {
   const [showAdd, setShowAdd] = useState(false);
   const [newTagName, setNewTagName] = useState("");
   const [newTagColor, setNewTagColor] = useState("#6B7280");
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Outside-click to close dropdown
+  useEffect(() => {
+    if (!showAdd) return;
+    const handleClick = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShowAdd(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showAdd]);
+
+  // Escape key to close dropdown
+  useEffect(() => {
+    if (!showAdd) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowAdd(false);
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [showAdd]);
 
   const { data: entityTags = [] } = useQuery({
     queryKey: ["entityTags", entityType, entityId],
@@ -75,10 +98,12 @@ export default function TagPicker({ entityType, entityId }: Props) {
         ))}
 
         {/* Add tag dropdown */}
-        <div className="relative">
+        <div className="relative" ref={dropdownRef}>
           <button
             onClick={() => setShowAdd(!showAdd)}
             className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border border-dashed border-gray-300 text-gray-500 hover:border-gray-400 hover:text-gray-700"
+            aria-expanded={showAdd}
+            aria-haspopup="listbox"
           >
             + Tag
           </button>
@@ -86,10 +111,12 @@ export default function TagPicker({ entityType, entityId }: Props) {
           {showAdd && (
             <div className="absolute z-10 mt-1 w-52 bg-white border border-gray-200 rounded-lg shadow-lg p-2 space-y-1">
               {availableTags.length > 0 && (
-                <div className="max-h-32 overflow-y-auto space-y-0.5">
+                <div className="max-h-32 overflow-y-auto space-y-0.5" role="listbox" aria-label="Available tags">
                   {availableTags.map((tag: Tag) => (
                     <button
                       key={tag.id}
+                      role="option"
+                      aria-selected={false}
                       onClick={() => {
                         attachMutation.mutate(tag.id);
                         setShowAdd(false);

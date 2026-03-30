@@ -1,3 +1,12 @@
+export interface CampaignMessage {
+  id: number;
+  contact_name: string;
+  event_type: string;
+  template_subject: string | null;
+  sent_at: string;
+  reply_status: string;
+}
+
 export interface MessageDraft {
   draft_subject: string | null;
   draft_text: string;

@@ -1,12 +1,14 @@
 import { useState, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { Search, Upload, Trash2, Download, X, AlertTriangle, CheckCircle, XCircle, Globe } from "lucide-react";
+import { Search, Upload, Trash2, Download, AlertTriangle, CheckCircle, XCircle, Globe } from "lucide-react";
 import { api } from "../api/client";
 import type { ResearchJob, CsvPreview } from "../types";
 import { isTerminalStatus } from "../types";
 import ResearchProgressBar from "../components/ResearchProgressBar";
 import EmptyState from "../components/EmptyState";
+import ConfirmDialog from "../components/ConfirmDialog";
+import Modal from "../components/ui/Modal";
 
 const STATUS_CONFIG: Record<string, { bg: string; text: string; label: string }> = {
   pending: { bg: "bg-gray-100", text: "text-gray-600", label: "Queued" },
@@ -28,7 +30,7 @@ const METHOD_LABELS: Record<string, string> = {
 // New Job Modal with CSV Preview
 // ---------------------------------------------------------------------------
 
-function NewJobModal({ onClose }: { onClose: () => void }) {
+function NewJobModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [step, setStep] = useState<"upload" | "preview" | "confirm">("upload");
   const [name, setName] = useState("");
   const [method, setMethod] = useState("hybrid");
@@ -43,6 +45,11 @@ function NewJobModal({ onClose }: { onClose: () => void }) {
 
   const costPerCompany = method === "website_crawl" ? 0.006 : 0.011;
   const estimatedCost = preview ? (preview.total_rows * costPerCompany) : 0;
+
+  const stepDescription =
+    step === "upload" ? "Upload a company list to research" :
+    step === "preview" ? "Review your data before starting" :
+    "Confirm cost and begin";
 
   const createMutation = useMutation({
     mutationFn: () => api.createResearchJob(file!, name, method),
@@ -75,26 +82,17 @@ function NewJobModal({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">New Research Job</h2>
-            <p className="text-xs text-gray-500 mt-0.5">
-              {step === "upload" && "Upload a company list to research"}
-              {step === "preview" && "Review your data before starting"}
-              {step === "confirm" && "Confirm cost and begin"}
-            </p>
-          </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1">
-            <X size={20} />
-          </button>
-        </div>
-
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="New Research Job"
+      description={stepDescription}
+      size="2xl"
+    >
+      <Modal.Body className={step === "preview" ? "max-h-[60vh] overflow-y-auto" : ""}>
         {/* Step: Upload */}
         {step === "upload" && (
-          <div className="px-6 py-5 space-y-4">
+          <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">Job Name</label>
               <input
@@ -180,7 +178,7 @@ function NewJobModal({ onClose }: { onClose: () => void }) {
 
         {/* Step: Preview */}
         {step === "preview" && preview && (
-          <div className="px-6 py-5 space-y-4 max-h-[60vh] overflow-y-auto">
+          <div className="space-y-4">
             {/* Job name (editable on preview step too) */}
             {!name.trim() && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
@@ -269,7 +267,7 @@ function NewJobModal({ onClose }: { onClose: () => void }) {
 
         {/* Step: Confirm */}
         {step === "confirm" && preview && (
-          <div className="px-6 py-8 text-center space-y-4">
+          <div className="py-4 text-center space-y-4">
             <div className="w-16 h-16 rounded-full bg-blue-50 flex items-center justify-center mx-auto">
               <Globe size={28} className="text-blue-600" />
             </div>
@@ -325,9 +323,10 @@ function NewJobModal({ onClose }: { onClose: () => void }) {
             )}
           </div>
         )}
+      </Modal.Body>
 
-        {/* Footer */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-gray-50/50">
+      <Modal.Footer className="bg-gray-50/50">
+        <div className="flex items-center justify-between w-full">
           <div className="text-xs text-gray-400">
             {file && `${file.name}`}
           </div>
@@ -371,8 +370,8 @@ function NewJobModal({ onClose }: { onClose: () => void }) {
             )}
           </div>
         </div>
-      </div>
-    </div>
+      </Modal.Footer>
+    </Modal>
   );
 }
 
@@ -425,6 +424,7 @@ function ActiveJobBanner({ job }: { job: ResearchJob }) {
 // ---------------------------------------------------------------------------
 
 function JobRow({ job }: { job: ResearchJob }) {
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const queryClient = useQueryClient();
   const deleteMutation = useMutation({
     mutationFn: () => api.deleteResearchJob(job.id),
@@ -435,73 +435,87 @@ function JobRow({ job }: { job: ResearchJob }) {
   const isTerminal = isTerminalStatus(job.status);
 
   return (
-    <tr className="hover:bg-gray-50 transition-colors group">
-      <td className="px-5 py-4">
-        <Link to={`/research/${job.id}`} className="text-sm font-medium text-gray-900 hover:text-blue-600 group-hover:text-blue-600">
-          {job.name}
-        </Link>
-        <p className="text-xs text-gray-400 mt-0.5">{METHOD_LABELS[job.method]}</p>
-      </td>
-      <td className="px-5 py-4">
-        <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${status.bg} ${status.text}`}>
-          {status.label}
-        </span>
-      </td>
-      <td className="px-5 py-4">
-        <span className="text-sm tabular-nums text-gray-700">{job.total_companies}</span>
-      </td>
-      <td className="px-5 py-4">
-        {!isTerminal ? (
-          <div className="w-48"><ResearchProgressBar job={job} /></div>
-        ) : (
-          <div className="flex items-center gap-1.5">
-            {job.status === "completed" && <CheckCircle size={14} className="text-green-500" />}
-            {job.status === "failed" && <XCircle size={14} className="text-red-500" />}
-            <span className="text-sm text-gray-500">
-              {job.processed_companies}/{job.total_companies}
-            </span>
+    <>
+      <tr className="hover:bg-gray-50 transition-colors group">
+        <td className="px-5 py-4">
+          <Link to={`/research/${job.id}`} className="text-sm font-medium text-gray-900 hover:text-blue-600 group-hover:text-blue-600">
+            {job.name}
+          </Link>
+          <p className="text-xs text-gray-400 mt-0.5">{METHOD_LABELS[job.method]}</p>
+        </td>
+        <td className="px-5 py-4">
+          <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${status.bg} ${status.text}`}>
+            {status.label}
+          </span>
+        </td>
+        <td className="px-5 py-4">
+          <span className="text-sm tabular-nums text-gray-700">{job.total_companies}</span>
+        </td>
+        <td className="px-5 py-4">
+          {!isTerminal ? (
+            <div className="w-48"><ResearchProgressBar job={job} /></div>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              {job.status === "completed" && <CheckCircle size={14} className="text-green-500" />}
+              {job.status === "failed" && <XCircle size={14} className="text-red-500" />}
+              <span className="text-sm text-gray-500">
+                {job.processed_companies}/{job.total_companies}
+              </span>
+            </div>
+          )}
+        </td>
+        <td className="px-5 py-4 text-sm tabular-nums text-gray-600">
+          ${job.actual_cost_usd.toFixed(2)}
+        </td>
+        <td className="px-5 py-4 text-sm text-gray-400">
+          {new Date(job.created_at).toLocaleDateString()}
+        </td>
+        <td className="px-5 py-3">
+          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            {job.status === "completed" && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  try {
+                    api.exportResearchResults(job.id);
+                  } catch (err) {
+                    console.error("Export failed:", err);
+                  }
+                }}
+                className="p-1.5 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100"
+                title="Export CSV"
+              >
+                <Download size={15} />
+              </button>
+            )}
+            {isTerminal && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setConfirmDeleteOpen(true);
+                }}
+                className="p-1.5 text-gray-400 hover:text-red-600 rounded hover:bg-red-50"
+                title="Delete"
+              >
+                <Trash2 size={15} />
+              </button>
+            )}
           </div>
-        )}
-      </td>
-      <td className="px-5 py-4 text-sm tabular-nums text-gray-600">
-        ${job.actual_cost_usd.toFixed(2)}
-      </td>
-      <td className="px-5 py-4 text-sm text-gray-400">
-        {new Date(job.created_at).toLocaleDateString()}
-      </td>
-      <td className="px-5 py-3">
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          {job.status === "completed" && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                try {
-                  api.exportResearchResults(job.id);
-                } catch (err) {
-                  console.error("Export failed:", err);
-                }
-              }}
-              className="p-1.5 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100"
-              title="Export CSV"
-            >
-              <Download size={15} />
-            </button>
-          )}
-          {isTerminal && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                if (confirm("Delete this research job and all results?")) deleteMutation.mutate();
-              }}
-              className="p-1.5 text-gray-400 hover:text-red-600 rounded hover:bg-red-50"
-              title="Delete"
-            >
-              <Trash2 size={15} />
-            </button>
-          )}
-        </div>
-      </td>
-    </tr>
+        </td>
+      </tr>
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        title="Delete Research Job"
+        message="Delete this research job and all results?"
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={() => {
+          deleteMutation.mutate();
+          setConfirmDeleteOpen(false);
+        }}
+        onCancel={() => setConfirmDeleteOpen(false)}
+      />
+    </>
   );
 }
 
@@ -591,7 +605,7 @@ export default function Research() {
         </div>
       ) : null}
 
-      {showNewJob && <NewJobModal onClose={() => setShowNewJob(false)} />}
+      <NewJobModal open={showNewJob} onClose={() => setShowNewJob(false)} />
     </div>
   );
 }

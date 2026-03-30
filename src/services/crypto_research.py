@@ -50,8 +50,12 @@ from src.services.crypto_scoring import COST_LLM
 
 logger = logging.getLogger(__name__)
 
-PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY", "")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+def _default_api_keys() -> dict:
+    """Build api_keys dict from environment variables."""
+    return {
+        "perplexity": os.getenv("PERPLEXITY_API_KEY", ""),
+        "anthropic": os.getenv("ANTHROPIC_API_KEY", ""),
+    }
 
 # Cost estimates per operation
 COST_CONTACT_DISCOVERY = 0.005
@@ -500,7 +504,7 @@ def retry_failed_results(job_id: int, db_url: str, api_keys: dict | None = None)
     """Retry all errored results in a job. Runs in background thread."""
     from src.models.database import get_connection, run_migrations, get_cursor
 
-    _apply_api_keys(api_keys)
+    resolved_keys = _resolve_api_keys(api_keys)
     conn = get_connection(db_url)
     try:
         run_migrations(conn)
@@ -542,21 +546,21 @@ def retry_failed_results(job_id: int, db_url: str, api_keys: dict | None = None)
                 return
 
             try:
-                _research_single_company(conn, result, method)
+                _research_single_company(conn, result, method, api_keys=resolved_keys)
                 actual_cost += COST_WEB_SEARCH
             except (httpx.HTTPError, psycopg2.Error, json.JSONDecodeError, KeyError) as exc:
                 _mark_result_error(conn, result["id"], str(exc))
                 continue
 
             try:
-                _classify_single_company(conn, result)
+                _classify_single_company(conn, result, api_keys=resolved_keys)
                 actual_cost += COST_LLM
             except (httpx.HTTPError, json.JSONDecodeError, KeyError) as exc:
                 logger.warning("Classification error during retry for result %d: %s", result["id"], exc)
 
             try:
                 discovered = discover_contacts_at_company(
-                    result["company_name"], result.get("company_website")
+                    result["company_name"], result.get("company_website"), api_keys=resolved_keys,
                 )
                 actual_cost += COST_CONTACT_DISCOVERY
                 warm = find_warm_intros(conn, result["company_name"], result.get("company_id"), user_id=user_id)
@@ -619,25 +623,26 @@ def retry_failed_results(job_id: int, db_url: str, api_keys: dict | None = None)
 # Background Job Orchestrator
 # ---------------------------------------------------------------------------
 
-def _apply_api_keys(api_keys: dict | None) -> None:
-    """Override module-level API keys for the current thread's job."""
-    global PERPLEXITY_API_KEY, ANTHROPIC_API_KEY
+def _resolve_api_keys(api_keys: dict | None) -> dict:
+    """Merge caller-supplied keys with environment defaults. Thread-safe."""
+    defaults = _default_api_keys()
     if api_keys:
         if api_keys.get("perplexity"):
-            PERPLEXITY_API_KEY = api_keys["perplexity"]
+            defaults["perplexity"] = api_keys["perplexity"]
         if api_keys.get("anthropic"):
-            ANTHROPIC_API_KEY = api_keys["anthropic"]
+            defaults["anthropic"] = api_keys["anthropic"]
+    return defaults
 
 
 def run_research_job(job_id: int, db_url: str, api_keys: dict | None = None) -> None:
     """Background thread entry point for running a research job."""
     from src.models.database import get_connection, run_migrations
 
-    _apply_api_keys(api_keys)
+    resolved_keys = _resolve_api_keys(api_keys)
     conn = get_connection(db_url)
     try:
         run_migrations(conn)
-        _execute_research_job(conn, job_id)
+        _execute_research_job(conn, job_id, api_keys=resolved_keys)
     except (httpx.HTTPError, psycopg2.Error, json.JSONDecodeError, KeyError, RuntimeError) as e:
         logger.exception("Research job %d failed", job_id)
         try:
@@ -648,7 +653,7 @@ def run_research_job(job_id: int, db_url: str, api_keys: dict | None = None) -> 
         conn.close()
 
 
-def _execute_research_job(conn, job_id: int) -> None:
+def _execute_research_job(conn, job_id: int, *, api_keys: dict) -> None:
     """Run the full research pipeline for a job."""
     with get_cursor(conn) as cur:
         cur.execute("SELECT * FROM research_jobs WHERE id = %s", (job_id,))
@@ -681,7 +686,7 @@ def _execute_research_job(conn, job_id: int) -> None:
             return
 
         try:
-            _research_single_company(conn, result, method)
+            _research_single_company(conn, result, method, api_keys=api_keys)
             actual_cost += COST_WEB_SEARCH if method in ("web_search", "hybrid") else 0
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 429:
@@ -691,7 +696,7 @@ def _execute_research_job(conn, job_id: int) -> None:
                         _update_job_status(conn, job_id, "cancelled")
                         return
                     try:
-                        _research_single_company(conn, result, method)
+                        _research_single_company(conn, result, method, api_keys=api_keys)
                         actual_cost += COST_WEB_SEARCH
                         break
                     except httpx.HTTPStatusError:
@@ -723,7 +728,7 @@ def _execute_research_job(conn, job_id: int) -> None:
         if result.get("_errored"):
             continue
         try:
-            _classify_single_company(conn, result)
+            _classify_single_company(conn, result, api_keys=api_keys)
             actual_cost += COST_LLM
         except (httpx.HTTPError, json.JSONDecodeError, KeyError) as exc:
             logger.warning("Classification error for %s: %s", result["company_name"], exc)
@@ -746,7 +751,7 @@ def _execute_research_job(conn, job_id: int) -> None:
             continue
         try:
             discovered = discover_contacts_at_company(
-                result["company_name"], result.get("company_website")
+                result["company_name"], result.get("company_website"), api_keys=api_keys,
             )
             actual_cost += COST_CONTACT_DISCOVERY
 
@@ -786,7 +791,7 @@ def _execute_research_job(conn, job_id: int) -> None:
     )
 
 
-def _research_single_company(conn, result: dict, method: str) -> None:
+def _research_single_company(conn, result: dict, method: str, *, api_keys: dict | None = None) -> None:
     """Run web search and/or crawl for a single company."""
     web_raw = None
     crawl_raw = None
@@ -795,7 +800,7 @@ def _research_single_company(conn, result: dict, method: str) -> None:
 
     if method in ("web_search", "hybrid"):
         web_raw = research_company_web_search(
-            result["company_name"], result.get("company_website")
+            result["company_name"], result.get("company_website"), api_keys=api_keys,
         )
     if method in ("website_crawl", "hybrid") and has_website:
         crawl_raw = crawl_company_website(result["company_website"])
@@ -804,7 +809,7 @@ def _research_single_company(conn, result: dict, method: str) -> None:
     # do a web search instead so the classifier has something to work with
     if method == "website_crawl" and not has_website:
         logger.info("No website for %s, falling back to web search", result["company_name"])
-        web_raw = research_company_web_search(result["company_name"], None)
+        web_raw = research_company_web_search(result["company_name"], None, api_keys=api_keys)
 
     result["web_search_raw"] = web_raw
     result["website_crawl_raw"] = crawl_raw
@@ -820,12 +825,13 @@ def _research_single_company(conn, result: dict, method: str) -> None:
         conn.commit()
 
 
-def _classify_single_company(conn, result: dict) -> None:
+def _classify_single_company(conn, result: dict, *, api_keys: dict | None = None) -> None:
     """Classify a single company's crypto interest."""
     classification = classify_crypto_interest(
         result["company_name"],
         result.get("web_search_raw") or "",
         result.get("website_crawl_raw") or "",
+        api_keys=api_keys,
     )
 
     with get_cursor(conn) as cur:

@@ -633,9 +633,9 @@ class TestRenderActualNewsletter:
 # ===========================================================================
 
 class TestSendNewsletter:
-    @patch("src.services.newsletter.send_email")
+    @patch("src.services.newsletter.send_emails_batch")
     def test_dry_run_returns_correct_counts(
-        self, mock_send, conn, sample_company, newsletter_md, sample_config
+        self, mock_batch, conn, sample_company, newsletter_md, sample_config
     ):
         ids = _make_subscribed_contacts(conn, sample_company, count=3)
 
@@ -644,13 +644,13 @@ class TestSendNewsletter:
         assert result["subscribers"] == 3
         assert result["sent"] == 0
         assert result["failed"] == 0
-        mock_send.assert_not_called()
+        mock_batch.assert_not_called()
 
-    @patch("src.services.newsletter.send_email")
+    @patch("src.services.newsletter.send_emails_batch")
     def test_sends_to_all_subscribers(
-        self, mock_send, conn, sample_company, newsletter_md, sample_config
+        self, mock_batch, conn, sample_company, newsletter_md, sample_config
     ):
-        mock_send.return_value = True
+        mock_batch.return_value = [True, True, True]
         ids = _make_subscribed_contacts(conn, sample_company, count=3)
 
         result = send_newsletter(conn, newsletter_md, sample_config)
@@ -658,13 +658,14 @@ class TestSendNewsletter:
         assert result["sent"] == 3
         assert result["failed"] == 0
         assert result["subscribers"] == 3
-        assert mock_send.call_count == 3
+        mock_batch.assert_called_once()
+        assert len(mock_batch.call_args[1]["messages"]) == 3
 
-    @patch("src.services.newsletter.send_email")
+    @patch("src.services.newsletter.send_emails_batch")
     def test_logs_events(
-        self, mock_send, conn, sample_company, newsletter_md, sample_config
+        self, mock_batch, conn, sample_company, newsletter_md, sample_config
     ):
-        mock_send.return_value = True
+        mock_batch.return_value = [True, True]
         ids = _make_subscribed_contacts(conn, sample_company, count=2)
 
         send_newsletter(conn, newsletter_md, sample_config)
@@ -684,12 +685,12 @@ class TestSendNewsletter:
             assert "newsletter_file" in meta
             assert "to_email" in meta
 
-    @patch("src.services.newsletter.send_email")
+    @patch("src.services.newsletter.send_emails_batch")
     def test_handles_send_failures(
-        self, mock_send, conn, sample_company, newsletter_md, sample_config
+        self, mock_batch, conn, sample_company, newsletter_md, sample_config
     ):
-        # First call succeeds, second fails
-        mock_send.side_effect = [True, False, True]
+        # First succeeds, second fails, third succeeds
+        mock_batch.return_value = [True, False, True]
         ids = _make_subscribed_contacts(conn, sample_company, count=3)
 
         result = send_newsletter(conn, newsletter_md, sample_config)
@@ -697,11 +698,11 @@ class TestSendNewsletter:
         assert result["sent"] == 2
         assert result["failed"] == 1
 
-    @patch("src.services.newsletter.send_email")
+    @patch("src.services.newsletter.send_emails_batch")
     def test_no_events_for_failed_sends(
-        self, mock_send, conn, sample_company, newsletter_md, sample_config
+        self, mock_batch, conn, sample_company, newsletter_md, sample_config
     ):
-        mock_send.return_value = False
+        mock_batch.return_value = [False, False]
         ids = _make_subscribed_contacts(conn, sample_company, count=2)
 
         send_newsletter(conn, newsletter_md, sample_config)
@@ -713,48 +714,45 @@ class TestSendNewsletter:
         events = cursor.fetchall()
         assert len(events) == 0
 
-    @patch("src.services.newsletter.send_email")
+    @patch("src.services.newsletter.send_emails_batch")
     def test_no_subscribers_sends_nothing(
-        self, mock_send, conn, newsletter_md, sample_config
+        self, mock_batch, conn, newsletter_md, sample_config
     ):
+        mock_batch.return_value = []
         result = send_newsletter(conn, newsletter_md, sample_config)
 
         assert result["subscribers"] == 0
         assert result["sent"] == 0
         assert result["failed"] == 0
-        mock_send.assert_not_called()
+        # Batch is still called with an empty messages list
+        assert mock_batch.call_args[1]["messages"] == []
 
-    @patch("src.services.newsletter.send_email")
+    @patch("src.services.newsletter.send_emails_batch")
     def test_sends_correct_subject(
-        self, mock_send, conn, sample_company, newsletter_md, sample_config
+        self, mock_batch, conn, sample_company, newsletter_md, sample_config
     ):
-        mock_send.return_value = True
+        mock_batch.return_value = [True]
         ids = _make_subscribed_contacts(conn, sample_company, count=1)
 
         send_newsletter(conn, newsletter_md, sample_config)
 
-        call_kwargs = mock_send.call_args
-        # Subject should be extracted from H1 heading
-        assert call_kwargs[1]["subject"] == "Monthly Market Update" or \
-               call_kwargs[0][6] == "Monthly Market Update"
+        # Verify subject in the batch messages
+        messages = mock_batch.call_args[1]["messages"]
+        assert messages[0]["subject"] == "Monthly Market Update"
 
-    @patch("src.services.newsletter.send_email")
+    @patch("src.services.newsletter.send_emails_batch")
     def test_sends_html_and_text(
-        self, mock_send, conn, sample_company, newsletter_md, sample_config
+        self, mock_batch, conn, sample_company, newsletter_md, sample_config
     ):
-        mock_send.return_value = True
+        mock_batch.return_value = [True]
         ids = _make_subscribed_contacts(conn, sample_company, count=1)
 
         send_newsletter(conn, newsletter_md, sample_config)
 
-        call_kwargs = mock_send.call_args
-        # Verify both body_text and body_html are provided
-        if call_kwargs[1]:
-            assert "body_text" in call_kwargs[1]
-            assert "body_html" in call_kwargs[1]
-        else:
-            # Positional args: body_text is arg 7, body_html is arg 8
-            assert len(call_kwargs[0]) >= 8
+        # Verify both body_text and body_html are in the batch messages
+        messages = mock_batch.call_args[1]["messages"]
+        assert "body_text" in messages[0]
+        assert "body_html" in messages[0]
 
 
 # ===========================================================================
@@ -847,12 +845,12 @@ class TestNewsletterIntegration:
         assert result["subscribed"] == 0
         assert result["already_subscribed"] == 1
 
-    @patch("src.services.newsletter.send_email")
+    @patch("src.services.newsletter.send_emails_batch")
     def test_full_send_workflow(
-        self, mock_send, conn, sample_company, newsletter_md, sample_config
+        self, mock_batch, conn, sample_company, newsletter_md, sample_config
     ):
         """Full workflow: subscribe contacts, render, send, verify events."""
-        mock_send.return_value = True
+        mock_batch.return_value = [True, True]
 
         # Create and subscribe contacts
         ids = _make_subscribed_contacts(conn, sample_company, count=2)

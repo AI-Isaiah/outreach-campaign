@@ -264,3 +264,33 @@
 - Migration 021: `channel_override` column on contact_campaign_status
 - COALESCE(channel_override, ss.channel) in get_daily_queue() SQL
 - 4 tests in test_priority_queue.py
+
+---
+
+## Tech Debt Backlog
+
+Remaining items from the tech debt audit. See `tech-debt-report-v7.html` for full details.
+
+### Multi-tenancy defense-in-depth
+- PostgreSQL RLS policies as second layer behind application-level `user_id` filtering
+- DB-level `SET app.current_user_id` context for RLS enforcement
+- Audit logging for cross-tenant access attempts
+
+### Frontend accessibility
+- Mobile responsive sidebar (collapsible at md: breakpoint)
+- `focus-visible:ring-2 ring-blue-500 ring-offset-2` globally
+- ARIA landmarks (`<nav>`, `<main>`, `<aside>` with labels)
+- Skeleton loaders for loading/empty/error states
+- Extract shared `<Button>` component with consistent sizing
+
+### Performance optimizations
+- Connection pooling (PgBouncer or psycopg2 pool) for high-concurrency paths
+- Redis/in-memory cache for hot config reads (GDPR country list, engine_config)
+- Batch INSERT for bulk import (currently row-by-row)
+- Frontend bundle splitting for large pages (SmartImport, CampaignWizard)
+
+### Test coverage expansion
+- Vitest/RTL coverage for Queue, CampaignDetail, SmartImport pages
+- Integration tests for batch send loop and scheduled send cron
+- E2E smoke test for critical path (import -> campaign -> queue -> send)
+- Auth edge cases (expired tokens, concurrent sessions, role escalation)

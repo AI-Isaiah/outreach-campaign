@@ -300,18 +300,6 @@ export default function Queue() {
           }
           break;
         }
-        case "Tab": {
-          if (emailItems.length > 0 && linkedinItems.length > 0) {
-            e.preventDefault();
-            const idx = Math.min(focusedIndex, maxIndex);
-            if (idx < emailItems.length) {
-              setFocusedIndex(emailItems.length);
-            } else {
-              setFocusedIndex(0);
-            }
-          }
-          break;
-        }
       }
     };
 
@@ -539,7 +527,7 @@ export default function Queue() {
 
       {/* Sticky Bottom Bar — 5-state display */}
       {showStickyBar && (
-        <div className="fixed bottom-0 left-56 right-0 bg-white border-t border-gray-200 px-6 py-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-40" aria-live="polite">
+        <div className="fixed bottom-0 left-0 md:left-56 right-0 bg-white border-t border-gray-200 px-6 py-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-40" aria-live="polite">
           <div className="max-w-7xl mx-auto flex items-center justify-between">
             {/* Left side — status */}
             <div className="flex items-center gap-3">

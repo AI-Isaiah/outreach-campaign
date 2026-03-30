@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import smtplib
 import time
@@ -27,6 +28,7 @@ from src.models.templates import get_template
 from src.services.compliance import (
     add_compliance_footer,
     add_compliance_footer_html,
+    build_unsubscribe_link,
     build_unsubscribe_url,
     check_gdpr_email_limit,
     is_contact_gdpr,
@@ -97,6 +99,7 @@ def send_email(
     body_text: str,
     body_html: Optional[str] = None,
     attachments: Optional[list[dict]] = None,
+    unsubscribe_url: Optional[str] = None,
 ) -> bool:
     """Send an email via SMTP with TLS.
 
@@ -106,6 +109,9 @@ def send_email(
 
     When ``attachments`` is provided, wraps in multipart/mixed with the
     text/html alternative as the first part and file attachments after.
+
+    When ``unsubscribe_url`` is provided, adds RFC 8058 List-Unsubscribe
+    and List-Unsubscribe-Post headers for one-click unsubscribe.
 
     NO tracking pixels. Clean HTML only.
 
@@ -120,6 +126,7 @@ def send_email(
         body_text: plain-text email body
         body_html: optional HTML email body (clean, no tracking)
         attachments: optional list of dicts with ``file_path`` and ``filename`` keys
+        unsubscribe_url: optional HTTPS unsubscribe URL for List-Unsubscribe header
 
     Returns:
         True if the email was sent successfully, False otherwise.
@@ -127,6 +134,7 @@ def send_email(
     try:
         msg = _build_mime_message(
             from_email, to_email, subject, body_text, body_html, attachments,
+            unsubscribe_url=unsubscribe_url,
         )
 
         # Retry loop for transient SMTP errors
@@ -170,6 +178,7 @@ def _build_mime_message(
     body_text: str,
     body_html: Optional[str] = None,
     attachments: Optional[list[dict]] = None,
+    unsubscribe_url: Optional[str] = None,
 ) -> MIMEMultipart:
     """Build a MIME message from the given parts."""
     alt_part = MIMEMultipart("alternative")
@@ -193,6 +202,12 @@ def _build_mime_message(
     msg["From"] = from_email
     msg["To"] = to_email
     msg["Subject"] = subject
+
+    # RFC 8058 one-click unsubscribe headers
+    if unsubscribe_url:
+        msg["List-Unsubscribe"] = f"<{unsubscribe_url}>"
+        msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
+
     return msg
 
 
@@ -215,6 +230,7 @@ def send_emails_batch(
     - body_text: str
     - body_html: str (optional)
     - attachments: list[dict] (optional)
+    - unsubscribe_url: str (optional, for List-Unsubscribe header)
 
     Args:
         smtp_host: SMTP server hostname
@@ -245,6 +261,7 @@ def send_emails_batch(
                         body_text=msg_data["body_text"],
                         body_html=msg_data.get("body_html"),
                         attachments=msg_data.get("attachments"),
+                        unsubscribe_url=msg_data.get("unsubscribe_url"),
                     )
                     server.sendmail(from_email, msg_data["to_email"], mime_msg.as_string())
                     logger.info("Batch email sent to %s: %s", msg_data["to_email"], msg_data["subject"])
@@ -450,6 +467,13 @@ def send_campaign_email(
     # --- Send -----------------------------------------------------------------
 
     smtp_config = config.get("smtp", {})
+
+    # Generate HTTPS unsubscribe URL if FRONTEND_URL is configured
+    unsub_url = None
+    base_url = os.getenv("FRONTEND_URL")
+    if base_url:
+        unsub_url = build_unsubscribe_link(contact_id, base_url)
+
     success = send_email(
         smtp_host=smtp_config.get("host", "smtp.gmail.com"),
         smtp_port=smtp_config.get("port", 587),
@@ -460,6 +484,7 @@ def send_campaign_email(
         subject=subject,
         body_text=body_text,
         body_html=body_html,
+        unsubscribe_url=unsub_url,
     )
 
     if not success:

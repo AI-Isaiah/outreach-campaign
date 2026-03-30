@@ -1,7 +1,7 @@
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
-import { useEffect } from "react";
+import { useState, useEffect } from "react";
 
 interface Props {
   content: string;
@@ -26,6 +26,9 @@ export default function RichTextEditor({ content, onChange }: Props) {
     }
   }, [content]);
 
+  const [linkInputOpen, setLinkInputOpen] = useState(false);
+  const [linkUrl, setLinkUrl] = useState("");
+
   if (!editor) return null;
 
   const btn = (active: boolean) =>
@@ -33,16 +36,18 @@ export default function RichTextEditor({ content, onChange }: Props) {
       active ? "bg-gray-900 text-white" : "bg-white text-gray-600 hover:bg-gray-100"
     }`;
 
-  const addLink = () => {
-    const url = window.prompt("URL");
-    if (url) {
-      editor.chain().focus().setLink({ href: url }).run();
+  const applyLink = () => {
+    const trimmed = linkUrl.trim();
+    if (trimmed) {
+      editor.chain().focus().setLink({ href: trimmed }).run();
     }
+    setLinkUrl("");
+    setLinkInputOpen(false);
   };
 
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden">
-      <div className="flex flex-wrap gap-1 px-3 py-2 border-b border-gray-200 bg-gray-50">
+      <div className="flex flex-wrap items-center gap-1 px-3 py-2 border-b border-gray-200 bg-gray-50">
         <button type="button" onClick={() => editor.chain().focus().toggleBold().run()} className={btn(editor.isActive("bold"))}>
           B
         </button>
@@ -64,13 +69,33 @@ export default function RichTextEditor({ content, onChange }: Props) {
           1.
         </button>
         <span className="w-px bg-gray-200 mx-1" />
-        <button type="button" onClick={addLink} className={btn(editor.isActive("link"))}>
+        <button type="button" onClick={() => setLinkInputOpen((prev) => !prev)} className={btn(editor.isActive("link") || linkInputOpen)}>
           Link
         </button>
         {editor.isActive("link") && (
           <button type="button" onClick={() => editor.chain().focus().unsetLink().run()} className={btn(false)}>
             Unlink
           </button>
+        )}
+        {linkInputOpen && (
+          <div className="flex items-center gap-1 ml-1">
+            <input
+              type="url"
+              value={linkUrl}
+              onChange={(e) => setLinkUrl(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); applyLink(); } if (e.key === "Escape") { setLinkInputOpen(false); setLinkUrl(""); } }}
+              placeholder="https://..."
+              className="w-48 px-2 py-0.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              autoFocus
+            />
+            <button
+              type="button"
+              onClick={applyLink}
+              className="px-2 py-0.5 text-xs font-medium text-white bg-blue-600 rounded hover:bg-blue-700"
+            >
+              Apply
+            </button>
+          </div>
         )}
         <span className="w-px bg-gray-200 mx-1" />
         <button type="button" onClick={() => editor.chain().focus().undo().run()} className={btn(false)}>

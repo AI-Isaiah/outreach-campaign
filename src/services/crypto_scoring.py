@@ -16,26 +16,25 @@ from src.constants import LLM_MODELS
 
 logger = logging.getLogger(__name__)
 
-# These are imported from the main module at call time; kept as module-level
-# for the same pattern used by crypto_research.py.
-ANTHROPIC_API_KEY = ""
 CLASSIFIER_MODEL = LLM_MODELS["classification"]
 
 # Cost estimates
 COST_LLM = 0.001
 
 
-def _get_anthropic_key() -> str:
-    """Return the current API key (may be overridden at runtime)."""
-    from src.services.crypto_research import ANTHROPIC_API_KEY as _key
-    return _key
+def _get_anthropic_key(api_keys: dict | None = None) -> str:
+    """Return the Anthropic API key from the provided dict or environment."""
+    if api_keys and api_keys.get("anthropic"):
+        return api_keys["anthropic"]
+    import os
+    return os.getenv("ANTHROPIC_API_KEY", "")
 
 
 def classify_crypto_interest(
-    company_name: str, web_data: str, crawl_data: str
+    company_name: str, web_data: str, crawl_data: str, api_keys: dict | None = None,
 ) -> dict:
     """Classify a company's crypto interest using Claude Haiku."""
-    api_key = _get_anthropic_key()
+    api_key = _get_anthropic_key(api_keys)
     if not api_key:
         return {
             "crypto_score": 0,

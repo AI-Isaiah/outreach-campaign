@@ -81,6 +81,12 @@ Normalized fields (`email_normalized`, `linkedin_url_normalized`, `name_normaliz
 - `.env` — SUPABASE_DB_URL, SMTP_PASSWORD, EMAIL_VERIFY_API_KEY, ANTHROPIC_API_KEY, PERPLEXITY_API_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, TOKEN_ENCRYPTION_KEY (see `.env.example`)
 - CLI loads config in `src/cli.py` and injects SMTP password from env. CLI uses `CLI_USER_ID = 1` (founder's tool, single-user).
 
+### Deployment
+
+- **Railway** is the primary backend deploy target. The `deploy.yml` workflow deploys to Railway on push to `main` after CI passes. Manual deploy via `make deploy` (runs `railway up --detach`).
+- **Vercel** handles frontend static hosting + serverless API routes + cron jobs (reply scanning every 30 min, scheduled sends every 15 min). Config in `vercel.json`.
+- Both coexist intentionally: Railway runs the full FastAPI backend, Vercel serves the frontend SPA and runs lightweight cron endpoints.
+
 ## Conventions
 
 - **Database access**: Use `psycopg2.extras.RealDictCursor` (rows are dicts). Use `%s` placeholders (not `?`). Call `run_migrations(conn)` before any DB operations. Use `cursor = conn.cursor(); cursor.execute(...)` pattern (not `conn.execute()`). Use `scoped_query()`/`scoped_query_one()`/`verify_ownership()` helpers from `models/database.py` for user-scoped queries.

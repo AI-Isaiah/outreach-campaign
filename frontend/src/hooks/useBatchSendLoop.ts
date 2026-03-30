@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { queueApi } from "../api/queue";
-import type { QueueItem, BatchBatchValidationErrors } from "../types";
+import type { QueueItem, BatchValidationErrors } from "../types";
 
 /*
  * Send Phase State Machine:

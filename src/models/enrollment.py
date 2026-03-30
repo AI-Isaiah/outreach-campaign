@@ -340,6 +340,8 @@ def record_template_usage(
     Inserts into ``contact_template_history`` when an email is sent.
     The ``outcome`` column stays NULL until a reply is confirmed.
     Uses ON CONFLICT DO NOTHING for idempotency (same contact+campaign+template).
+
+    Does NOT commit — callers must manage the transaction boundary.
     """
     if not template_id:
         return  # Guard: old Gmail drafts may have NULL template_id
@@ -351,4 +353,3 @@ def record_template_usage(
                ON CONFLICT (contact_id, campaign_id, template_id) DO NOTHING""",
             (contact_id, campaign_id, template_id, channel, user_id),
         )
-        conn.commit()

@@ -6,6 +6,8 @@ and unsubscribe processing.
 
 from __future__ import annotations
 
+import hashlib
+import os
 from datetime import datetime, timezone
 from typing import Optional
 from urllib.parse import quote
@@ -22,6 +24,39 @@ def build_unsubscribe_url(from_email: str) -> str:
         ``mailto:outreach@domain.com?subject=Unsubscribe``
     """
     return f"mailto:{from_email}?subject=Unsubscribe"
+
+
+def build_unsubscribe_link(contact_id: int, base_url: str) -> str:
+    """Build an HTTPS one-click unsubscribe URL.
+
+    Generates a signed URL that can be used in List-Unsubscribe headers
+    for RFC 8058 one-click unsubscribe support.
+
+    Args:
+        contact_id: the contact to unsubscribe
+        base_url: the application base URL (e.g. ``https://app.example.com``)
+
+    Returns:
+        An HTTPS URL like ``{base_url}/api/unsubscribe/{contact_id}?token={token}``
+    """
+    secret = os.getenv("JWT_SECRET") or os.getenv("TOKEN_ENCRYPTION_KEY") or ""
+    token = hashlib.sha256(f"{contact_id}:{secret}".encode()).hexdigest()[:32]
+    return f"{base_url}/api/unsubscribe/{contact_id}?token={token}"
+
+
+def verify_unsubscribe_token(contact_id: int, token: str) -> bool:
+    """Verify that an unsubscribe token is valid for the given contact.
+
+    Args:
+        contact_id: the contact ID from the URL
+        token: the token query parameter
+
+    Returns:
+        True if the token matches, False otherwise.
+    """
+    secret = os.getenv("JWT_SECRET") or os.getenv("TOKEN_ENCRYPTION_KEY") or ""
+    expected = hashlib.sha256(f"{contact_id}:{secret}".encode()).hexdigest()[:32]
+    return token == expected
 
 
 def add_compliance_footer(

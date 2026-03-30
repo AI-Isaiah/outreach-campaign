@@ -19,15 +19,17 @@ COST_WEB_SEARCH = 0.005
 COST_CRAWL = 0.0
 
 
-def _get_perplexity_key() -> str:
-    """Return the current API key (may be overridden at runtime)."""
-    from src.services.crypto_research import PERPLEXITY_API_KEY as _key
-    return _key
+def _get_perplexity_key(api_keys: dict | None = None) -> str:
+    """Return the Perplexity API key from the provided dict or environment."""
+    if api_keys and api_keys.get("perplexity"):
+        return api_keys["perplexity"]
+    import os
+    return os.getenv("PERPLEXITY_API_KEY", "")
 
 
-def research_company_web_search(company_name: str, website: str | None) -> str:
+def research_company_web_search(company_name: str, website: str | None, api_keys: dict | None = None) -> str:
     """Research a company's crypto interest via Perplexity sonar."""
-    api_key = _get_perplexity_key()
+    api_key = _get_perplexity_key(api_keys)
     if not api_key:
         return json.dumps({"error": "PERPLEXITY_API_KEY not configured"})
 
@@ -101,10 +103,10 @@ def crawl_company_website(website: str, max_pages: int = 5) -> str:
 
 
 def discover_contacts_at_company(
-    company_name: str, website: str | None
+    company_name: str, website: str | None, api_keys: dict | None = None,
 ) -> list[dict]:
     """Find decision-makers at a company via Perplexity."""
-    api_key = _get_perplexity_key()
+    api_key = _get_perplexity_key(api_keys)
     if not api_key:
         return []
 

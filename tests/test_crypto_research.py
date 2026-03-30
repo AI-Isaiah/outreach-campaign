@@ -144,13 +144,13 @@ def test_check_duplicates_finds_existing(db_conn):
 # ---------- Web Search ----------
 
 def test_research_no_api_key():
-    with patch("src.services.crypto_research.PERPLEXITY_API_KEY", ""):
-        result = research_company_web_search("Test Fund", "test.com")
+    with patch.dict("os.environ", {"PERPLEXITY_API_KEY": ""}, clear=False):
+        result = research_company_web_search("Test Fund", "test.com", api_keys={})
     parsed = json.loads(result)
     assert "error" in parsed
 
 
-@patch("src.services.crypto_research.httpx.post")
+@patch("src.services.crypto_web_scraper.httpx.post")
 def test_research_web_search_success(mock_post):
     mock_resp = MagicMock()
     mock_resp.status_code = 200
@@ -160,8 +160,7 @@ def test_research_web_search_success(mock_post):
     mock_resp.raise_for_status = MagicMock()
     mock_post.return_value = mock_resp
 
-    with patch("src.services.crypto_research.PERPLEXITY_API_KEY", "test-key"):
-        result = research_company_web_search("Test Fund", "test.com")
+    result = research_company_web_search("Test Fund", "test.com", api_keys={"perplexity": "test-key"})
 
     assert "Bitcoin" in result
     mock_post.assert_called_once()
@@ -199,13 +198,13 @@ def test_crawl_no_http_prefix():
 # ---------- Classification ----------
 
 def test_classify_no_api_key():
-    with patch("src.services.crypto_research.ANTHROPIC_API_KEY", ""):
-        result = classify_crypto_interest("Test Fund", "some data", "")
+    with patch.dict("os.environ", {"ANTHROPIC_API_KEY": ""}, clear=False):
+        result = classify_crypto_interest("Test Fund", "some data", "", api_keys={})
     assert result["crypto_score"] == 0
     assert result["category"] == "no_signal"
 
 
-@patch("src.services.crypto_research.httpx.post")
+@patch("src.services.crypto_scoring.httpx.post")
 def test_classify_success(mock_post):
     classification = {
         "crypto_score": 85,
@@ -219,21 +218,19 @@ def test_classify_success(mock_post):
     mock_resp.raise_for_status = MagicMock()
     mock_post.return_value = mock_resp
 
-    with patch("src.services.crypto_research.ANTHROPIC_API_KEY", "test-key"):
-        result = classify_crypto_interest("Test Fund", "web data", "crawl data")
+    result = classify_crypto_interest("Test Fund", "web data", "crawl data", api_keys={"anthropic": "test-key"})
     assert result["crypto_score"] == 85
     assert result["category"] == "confirmed_investor"
 
 
-@patch("src.services.crypto_research.httpx.post")
+@patch("src.services.crypto_scoring.httpx.post")
 def test_classify_bad_json_returns_default(mock_post):
     mock_resp = MagicMock()
     mock_resp.json.return_value = {"content": [{"text": "not valid json"}]}
     mock_resp.raise_for_status = MagicMock()
     mock_post.return_value = mock_resp
 
-    with patch("src.services.crypto_research.ANTHROPIC_API_KEY", "test-key"):
-        result = classify_crypto_interest("Test Fund", "data", "")
+    result = classify_crypto_interest("Test Fund", "data", "", api_keys={"anthropic": "test-key"})
     assert result["crypto_score"] == 20
     assert result["category"] == "no_signal"
 
@@ -241,12 +238,12 @@ def test_classify_bad_json_returns_default(mock_post):
 # ---------- Contact Discovery ----------
 
 def test_discover_no_api_key():
-    with patch("src.services.crypto_research.PERPLEXITY_API_KEY", ""):
-        result = discover_contacts_at_company("Test Fund", None)
+    with patch.dict("os.environ", {"PERPLEXITY_API_KEY": ""}, clear=False):
+        result = discover_contacts_at_company("Test Fund", None, api_keys={})
     assert result == []
 
 
-@patch("src.services.crypto_research.httpx.post")
+@patch("src.services.crypto_web_scraper.httpx.post")
 def test_discover_contacts_success(mock_post):
     contacts = [
         {"name": "John Doe", "title": "CIO", "email": "john@test.com",
@@ -259,8 +256,7 @@ def test_discover_contacts_success(mock_post):
     mock_resp.raise_for_status = MagicMock()
     mock_post.return_value = mock_resp
 
-    with patch("src.services.crypto_research.PERPLEXITY_API_KEY", "test-key"):
-        result = discover_contacts_at_company("Test Fund", "test.com")
+    result = discover_contacts_at_company("Test Fund", "test.com", api_keys={"perplexity": "test-key"})
     assert len(result) == 1
     assert result[0]["name"] == "John Doe"
 

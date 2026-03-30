@@ -17,7 +17,7 @@ import type { CampaignContact } from "../api/campaigns";
 import { api } from "../api/client";
 import { request } from "../api/request";
 import { queryKeys } from "../api/queryKeys";
-import type { CampaignMetricsResponse, TemplatePerformanceItem } from "../types";
+import type { CampaignMetricsResponse, TemplatePerformanceItem, CampaignMessage } from "../types";
 import MetricCard from "../components/MetricCard";
 import StatusBadge from "../components/StatusBadge";
 import { SkeletonCard, SkeletonTable } from "../components/Skeleton";
@@ -354,7 +354,7 @@ function MessagesTab({ campaignId }: { campaignId: number }) {
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
-          {messages.map((msg: any) => (
+          {messages.map((msg: CampaignMessage) => (
             <tr key={msg.id} className="hover:bg-gray-50 transition-colors">
               <td className="px-5 py-4 text-sm font-medium text-gray-900">{msg.contact_name}</td>
               <td className="px-5 py-4 text-sm text-gray-500">

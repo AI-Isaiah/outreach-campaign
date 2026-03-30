@@ -65,6 +65,7 @@ from src.web.routes import (  # noqa: E402
     stats,
     tags,
     templates,
+    unsubscribe,
 )
 
 logger = logging.getLogger(__name__)
@@ -177,10 +178,11 @@ def health_check():
     return {"status": "ok" if db_ok else "degraded", "database": db_ok}
 
 
-# Auth routers — no global auth dependency (they handle auth internally)
+# Public routers — no auth required
 app.include_router(auth.router, prefix="/api")
 app.include_router(gmail_oauth.router, prefix="/api")
 app.include_router(replies.cron_router, prefix="/api")
+app.include_router(unsubscribe.router, prefix="/api")
 
 # All other routers — auth required
 _auth_deps = [Depends(require_auth)]
@@ -222,6 +224,9 @@ if _frontend_dist.is_dir():
         """Serve frontend SPA — catch-all after API routes."""
         # Serve actual static files if they exist
         file_path = _frontend_dist / full_path
+        # Path traversal guard: resolved path must stay within frontend dist
+        if full_path and not str(file_path.resolve()).startswith(str(_frontend_dist.resolve())):
+            return JSONResponse(status_code=404, content={"detail": "Not found"})
         if full_path and file_path.is_file():
             return FileResponse(str(file_path))
         return FileResponse(str(_index_html))

@@ -38,10 +38,6 @@ dev = [
     "ruff>=0.8,<1.0",
     "mypy>=1.11,<2.0",
 ]
-whatsapp = [
-    "playwright>=1.49",
-]
-
 [project.scripts]
 outreach = "src.cli:app"
 

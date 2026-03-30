@@ -53,7 +53,7 @@ export default function ConfirmDialog({
         onClick={onCancel}
       />
       {/* Dialog card */}
-      <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+      <div role="dialog" aria-modal="true" aria-label={title} className="relative bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
         <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
         <p className="mt-2 text-sm text-gray-600 whitespace-pre-line">{message}</p>
         <div className="mt-6 flex justify-end gap-3">

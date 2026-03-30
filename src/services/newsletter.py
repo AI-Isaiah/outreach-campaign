@@ -25,7 +25,7 @@ from src.services.compliance import (
     add_compliance_footer_html,
     build_unsubscribe_url,
 )
-from src.services.email_sender import send_email, send_emails_batch
+from src.services.email_sender import send_emails_batch
 
 logger = logging.getLogger(__name__)
 
@@ -222,7 +222,7 @@ def send_newsletter(
 
     1. Render the markdown
     2. Get all subscribers
-    3. Send to each (via send_email)
+    3. Send to all via single SMTP session (send_emails_batch)
     4. Log newsletter_sent events
 
     Returns: {"sent": int, "failed": int, "subscribers": int}
@@ -244,26 +244,34 @@ def send_newsletter(
     if dry_run:
         return result
 
-    # Send to each subscriber
+    # Build batch messages
     smtp_config = config.get("smtp", {})
     from_email = smtp_config.get("username", "")
 
-    for contact in subscribers:
-        success = send_email(
-            smtp_host=smtp_config.get("host", "smtp.gmail.com"),
-            smtp_port=smtp_config.get("port", 587),
-            smtp_username=smtp_config.get("username", ""),
-            smtp_password=config.get("smtp_password", ""),
-            from_email=from_email,
-            to_email=contact["email"],
-            subject=subject,
-            body_text=text_content,
-            body_html=html_content,
-        )
+    batch_messages = [
+        {
+            "to_email": contact["email"],
+            "subject": subject,
+            "body_text": text_content,
+            "body_html": html_content,
+        }
+        for contact in subscribers
+    ]
 
+    # Send all via single SMTP session
+    send_results = send_emails_batch(
+        smtp_host=smtp_config.get("host", "smtp.gmail.com"),
+        smtp_port=smtp_config.get("port", 587),
+        smtp_username=smtp_config.get("username", ""),
+        smtp_password=config.get("smtp_password", ""),
+        from_email=from_email,
+        messages=batch_messages,
+    )
+
+    # Track results and log events
+    for contact, success in zip(subscribers, send_results):
         if success:
             result["sent"] += 1
-            # Log event
             metadata = json.dumps({
                 "subject": subject,
                 "newsletter_file": str(md_path.name),

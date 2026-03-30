@@ -11,9 +11,11 @@ export function authHeaders(): Record<string, string> {
 export async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const token = localStorage.getItem("auth_token");
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
+  if (!(options?.body instanceof FormData)) {
+    headers["Content-Type"] = "application/json";
+  }
 
   const res = await fetch(`${BASE}${path}`, {
     headers: { ...headers, ...(options?.headers as Record<string, string>) },

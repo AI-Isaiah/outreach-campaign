@@ -10,6 +10,7 @@ import { SkeletonCard } from "../components/Skeleton";
 import ErrorCard from "../components/ui/ErrorCard";
 import Button from "../components/ui/Button";
 import HealthScoreBadge from "../components/HealthScoreBadge";
+import ConfirmDialog from "../components/ConfirmDialog";
 
 type ViewMode = "active" | "archived";
 
@@ -128,6 +129,7 @@ const STATUS_DOT_COLORS: Record<string, string> = {
 
 function CampaignCard({ campaign: c, viewMode }: { campaign: CampaignWithMetrics; viewMode: ViewMode }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const queryClient = useQueryClient();
 
   const archiveMutation = useMutation({
@@ -216,10 +218,8 @@ function CampaignCard({ campaign: c, viewMode }: { campaign: CampaignWithMetrics
                 )}
                 <button
                   onClick={() => {
-                    if (confirm(`Delete "${c.name}"? This removes all enrollments and sequence steps permanently.`)) {
-                      deleteMutation.mutate();
-                    }
                     setMenuOpen(false);
+                    setConfirmDeleteOpen(true);
                   }}
                   className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
                 >
@@ -230,6 +230,18 @@ function CampaignCard({ campaign: c, viewMode }: { campaign: CampaignWithMetrics
           )}
         </div>
       </div>
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        title="Delete Campaign"
+        message={`Delete "${c.name}"? This removes all enrollments and sequence steps permanently.`}
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={() => {
+          deleteMutation.mutate();
+          setConfirmDeleteOpen(false);
+        }}
+        onCancel={() => setConfirmDeleteOpen(false)}
+      />
     </div>
   );
 }

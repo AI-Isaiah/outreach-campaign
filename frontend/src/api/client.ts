@@ -152,7 +152,8 @@ export const api = {
   },
 
   getCompany: (id: number) => request<CompanyDetailResponse>(`/crm/companies/${id}`),
-  globalSearch: (q: string) => request<SearchResults>(`/crm/search?q=${encodeURIComponent(q)}`),
+  globalSearch: (q: string, options?: { signal?: AbortSignal }) =>
+    request<SearchResults>(`/crm/search?q=${encodeURIComponent(q)}`, options?.signal ? { signal: options.signal } : undefined),
 
   // Settings
   getSettings: () => request<EngineSettings>("/settings"),

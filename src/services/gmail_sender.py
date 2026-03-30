@@ -76,6 +76,7 @@ class GmailSender:
                 "refresh_token": self.refresh_token,
                 "grant_type": "refresh_token",
             },
+            timeout=SMTP_TIMEOUT,
         )
 
         if response.status_code != 200:

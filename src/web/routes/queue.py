@@ -193,12 +193,14 @@ def undo_send(conn=Depends(get_db), user=Depends(get_current_user)):
     user_id = user["id"]
     with get_cursor(conn) as cur:
         # Find recently-sent enrollments eligible for undo
+        # FOR UPDATE SKIP LOCKED prevents concurrent undo requests from processing the same rows
         cur.execute(
             """SELECT ccs.contact_id, ccs.campaign_id, ccs.current_step
                FROM contact_campaign_status ccs
                JOIN campaigns c ON c.id = ccs.campaign_id
                WHERE c.user_id = %s
-                 AND ccs.sent_at > NOW() - interval '30 seconds'""",
+                 AND ccs.sent_at > NOW() - interval '30 seconds'
+               FOR UPDATE OF ccs SKIP LOCKED""",
             (user_id,),
         )
         candidates = cur.fetchall()

@@ -59,7 +59,7 @@ export default function Layout() {
                 to={l.to}
                 end={l.end}
                 className={({ isActive }) => {
-                  const active = l.forceActive || isActive;
+                  const active = isActive;
                   return `flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                     active
                       ? "bg-gray-800 text-white"

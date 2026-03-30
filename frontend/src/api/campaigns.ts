@@ -1,4 +1,4 @@
-import type { Campaign, CampaignResponse, CampaignMetricsResponse, TemplatePerformanceItem, WeeklySummary } from "../types";
+import type { Campaign, CampaignMessage, CampaignResponse, CampaignMetricsResponse, TemplatePerformanceItem, WeeklySummary } from "../types";
 import { request } from "./request";
 
 export interface CampaignWithMetrics extends Campaign {
@@ -131,6 +131,6 @@ export const campaignsApi = {
     if (params.limit) query.set("limit", String(params.limit));
     if (params.offset) query.set("offset", String(params.offset));
     const qs = query.toString();
-    return request<{ messages: Record<string, unknown>[]; total: number }>(`/campaigns/${campaignId}/messages${qs ? `?${qs}` : ""}`);
+    return request<{ messages: CampaignMessage[]; total: number }>(`/campaigns/${campaignId}/messages${qs ? `?${qs}` : ""}`);
   },
 };
