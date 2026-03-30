@@ -398,29 +398,17 @@ export default function Queue() {
         {campaignNames.length > 0 && (
           <>
             <div className="w-px bg-gray-200 mx-1" />
-            {campaignNames.length > 1 && (
-              <button
-                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                  !campaignFilter ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                }`}
-                onClick={() => setCampaignFilter("")}
-              >
-                All campaigns
-              </button>
-            )}
-            {campaignNames.map((cn) => (
-              <button
-                key={cn}
-                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                  campaignFilter === cn
-                    ? "bg-gray-900 text-white"
-                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                }`}
-                onClick={() => setCampaignFilter(cn)}
-              >
-                {cn}
-              </button>
-            ))}
+            <select
+              value={campaignFilter}
+              onChange={(e) => setCampaignFilter(e.target.value)}
+              className="px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700 border-0 cursor-pointer hover:bg-gray-200 transition-colors appearance-none pr-6"
+              style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat: "no-repeat", backgroundPosition: "right 6px center" }}
+            >
+              <option value="">All campaigns ({campaignNames.length})</option>
+              {campaignNames.map((cn) => (
+                <option key={cn} value={cn}>{cn}</option>
+              ))}
+            </select>
           </>
         )}
       </div>

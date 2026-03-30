@@ -24,7 +24,7 @@ export default function QueueTabContent({ campaignName }: { campaignName: string
 
   const { data, isLoading, isError, error, refetch } = useQuery<QueueResponse>({
     queryKey: [...queryKeys.queue.campaign(campaignName), queueScope],
-    queryFn: () => queueApi.getQueue(campaignName, { limit: 50, scope: queueScope === "all" ? undefined : queueScope }),
+    queryFn: () => queueApi.getQueue(campaignName, { limit: 50, scope: queueScope }),
   });
 
   const allItems: QueueItem[] = data?.items || [];
