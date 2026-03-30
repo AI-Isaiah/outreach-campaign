@@ -29,6 +29,12 @@ _limiter = Limiter(key_func=get_remote_address)
 router = APIRouter(tags=["queue"])
 
 
+class SwapContactRequest(BaseModel):
+    current_contact_id: int
+    replacement_contact_id: int
+    campaign_id: int
+
+
 class LinkedInDoneRequest(BaseModel):
     action_type: str = Field(default="connect", max_length=50)
 
@@ -330,6 +336,90 @@ def schedule_send(
     conn.commit()
 
     return {"scheduled": scheduled}
+
+
+@router.get("/queue/swap-candidates/{contact_id}/{campaign_id}")
+def get_swap_candidates(
+    contact_id: int,
+    campaign_id: int,
+    conn=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Get other contacts at the same company who could replace this contact."""
+    with get_cursor(conn) as cur:
+        cur.execute(
+            "SELECT company_id FROM contacts WHERE id = %s AND user_id = %s",
+            (contact_id, user["id"]),
+        )
+        row = cur.fetchone()
+        if not row or not row["company_id"]:
+            return {"candidates": []}
+
+        company_id = row["company_id"]
+
+        cur.execute("""
+            SELECT c.id, c.full_name, c.first_name, c.last_name, c.email,
+                   c.linkedin_url, c.title, c.priority_rank
+            FROM contacts c
+            WHERE c.company_id = %s AND c.user_id = %s AND c.id != %s
+              AND c.unsubscribed = false
+              AND c.id NOT IN (
+                  SELECT contact_id FROM contact_campaign_status WHERE campaign_id = %s
+              )
+            ORDER BY c.priority_rank ASC NULLS LAST
+        """, (company_id, user["id"], contact_id, campaign_id))
+
+        candidates = [dict(r) for r in cur.fetchall()]
+    return {"candidates": candidates}
+
+
+@router.post("/queue/swap-contact")
+def swap_contact(
+    body: SwapContactRequest,
+    conn=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Swap a contact in the queue with another from the same company."""
+    from datetime import date as date_mod
+
+    with get_cursor(conn) as cur:
+        # Verify both contacts belong to user and are at same company
+        cur.execute(
+            "SELECT id, company_id FROM contacts WHERE id IN (%s, %s) AND user_id = %s",
+            (body.current_contact_id, body.replacement_contact_id, user["id"]),
+        )
+        rows = cur.fetchall()
+        if len(rows) != 2:
+            raise HTTPException(404, "Contact(s) not found")
+        companies = {r["id"]: r["company_id"] for r in rows}
+        if companies.get(body.current_contact_id) != companies.get(body.replacement_contact_id):
+            raise HTTPException(400, "Contacts must be at the same company")
+
+        # Verify current contact is at step 1 in this campaign
+        cur.execute(
+            """SELECT current_step FROM contact_campaign_status
+               WHERE contact_id = %s AND campaign_id = %s""",
+            (body.current_contact_id, body.campaign_id),
+        )
+        ccs = cur.fetchone()
+        if not ccs or ccs["current_step"] != 1:
+            raise HTTPException(400, "Can only swap contacts at step 1")
+
+        # Remove current contact from campaign
+        cur.execute(
+            "DELETE FROM contact_campaign_status WHERE contact_id = %s AND campaign_id = %s",
+            (body.current_contact_id, body.campaign_id),
+        )
+
+        # Enroll replacement at step 1
+        from src.models.enrollment import enroll_contact
+        enroll_contact(
+            conn, body.replacement_contact_id, body.campaign_id,
+            next_action_date=date_mod.today().isoformat(), user_id=user["id"],
+        )
+
+        conn.commit()
+    return {"success": True, "enrolled_contact_id": body.replacement_contact_id}
 
 
 # Static routes MUST come before parameterized /queue/{campaign} to avoid capture

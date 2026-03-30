@@ -5,6 +5,7 @@ import AumTierBadge from "./AumTierBadge";
 import SignalBadge from "./SignalBadge";
 import ContactEditPanel from "./ContactEditPanel";
 import SkipMenu from "./SkipMenu";
+import SwapMenu from "./SwapMenu";
 import type { ContactEditState } from "../hooks/useContactEdit";
 
 export interface QueueCardBaseProps {
@@ -103,6 +104,9 @@ function QueueCardBase({
           <span className={`text-sm ${stepColor} font-medium`}>
             Step {item.step_order}/{item.total_steps}
           </span>
+          {item.step_order === 1 && item.campaign_id && (
+            <SwapMenu contactId={item.contact_id} campaignId={item.campaign_id} />
+          )}
           <SkipMenu onSkip={(reason) => skipMutation.mutate(reason)} isPending={skipMutation.isPending} />
         </div>
       </div>

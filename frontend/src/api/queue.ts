@@ -88,4 +88,19 @@ export const queueApi = {
 
   undoSend: () =>
     request<{ undone: number }>("/queue/undo-send", { method: "POST" }),
+
+  getSwapCandidates: (contactId: number, campaignId: number) =>
+    request<{ candidates: Array<{ id: number; full_name: string; first_name: string | null; last_name: string | null; email: string | null; linkedin_url: string | null; title: string | null; priority_rank: number | null }> }>(
+      `/queue/swap-candidates/${contactId}/${campaignId}`,
+    ),
+
+  swapContact: (currentContactId: number, replacementContactId: number, campaignId: number) =>
+    request<{ success: boolean; enrolled_contact_id: number }>("/queue/swap-contact", {
+      method: "POST",
+      body: JSON.stringify({
+        current_contact_id: currentContactId,
+        replacement_contact_id: replacementContactId,
+        campaign_id: campaignId,
+      }),
+    }),
 };
