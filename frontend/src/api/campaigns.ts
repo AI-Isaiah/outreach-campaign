@@ -8,6 +8,7 @@ export interface CampaignWithMetrics extends Campaign {
   calls_booked: number;
   progress_pct: number;
   health_score: number | null;
+  emails_sent: number;
 }
 
 export interface SequenceStepInput {

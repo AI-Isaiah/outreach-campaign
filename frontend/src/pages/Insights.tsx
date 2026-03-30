@@ -19,9 +19,9 @@ export default function Insights() {
     queryFn: () => api.getCampaignMetrics(DEFAULT_CAMPAIGN),
   });
 
-  const campaigns = useQuery<Campaign[]>({
+  const campaigns = useQuery({
     queryKey: ["campaigns"],
-    queryFn: api.listCampaigns,
+    queryFn: () => api.listCampaigns(),
   });
 
   const history = useQuery<AnalysisResponse[]>({

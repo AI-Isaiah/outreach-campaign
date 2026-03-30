@@ -53,8 +53,8 @@ describe("useBatchSendLoop", () => {
   });
 
   it("transitions idle → approving → sending → done on success", async () => {
-    mockApprove.mockResolvedValue({ approved: 2 });
-    mockSend.mockResolvedValueOnce({ sent: 2, failed: 0, remaining: 0 });
+    mockApprove.mockResolvedValue({ approved: 2, validation_errors: null });
+    mockSend.mockResolvedValueOnce({ sent: 2, failed: 0, remaining: 0, errors: [] });
 
     const items = [makeItem(1), makeItem(2)];
     const ids = new Set([1, 2]);
@@ -77,7 +77,7 @@ describe("useBatchSendLoop", () => {
   it("returns to idle with validation errors on 400", async () => {
     mockApprove.mockResolvedValue({
       approved: 0,
-      validation_errors: { duplicate_emails: ["alice@test.com"] },
+      validation_errors: { error: "Validation failed", email_duplicates: [{ email: "alice@test.com", count: 2 }] },
     });
 
     const items = [makeItem(1)];
@@ -89,7 +89,7 @@ describe("useBatchSendLoop", () => {
     });
 
     expect(result.current.sendPhase).toBe("idle");
-    expect(result.current.validationErrors).toEqual({ duplicate_emails: ["alice@test.com"] });
+    expect(result.current.validationErrors).toEqual({ error: "Validation failed", email_duplicates: [{ email: "alice@test.com", count: 2 }] });
     expect(mockSend).not.toHaveBeenCalled();
   });
 
@@ -106,8 +106,8 @@ describe("useBatchSendLoop", () => {
   });
 
   it("breaks infinite loop when send returns 0 sent with remaining > 0", async () => {
-    mockApprove.mockResolvedValue({ approved: 1 });
-    mockSend.mockResolvedValue({ sent: 0, failed: 0, remaining: 5 });
+    mockApprove.mockResolvedValue({ approved: 1, validation_errors: null });
+    mockSend.mockResolvedValue({ sent: 0, failed: 0, remaining: 5, errors: [] });
 
     const { result } = renderHook(() => useBatchSendLoop(), { wrapper: createWrapper() });
 
@@ -121,8 +121,8 @@ describe("useBatchSendLoop", () => {
   });
 
   it("resetState clears everything back to idle", async () => {
-    mockApprove.mockResolvedValue({ approved: 1 });
-    mockSend.mockResolvedValue({ sent: 1, failed: 0, remaining: 0 });
+    mockApprove.mockResolvedValue({ approved: 1, validation_errors: null });
+    mockSend.mockResolvedValue({ sent: 1, failed: 0, remaining: 0, errors: [] });
 
     const { result } = renderHook(() => useBatchSendLoop(), { wrapper: createWrapper() });
 
@@ -142,8 +142,8 @@ describe("useBatchSendLoop", () => {
   });
 
   it("handleUndo calls API and resets to idle", async () => {
-    mockApprove.mockResolvedValue({ approved: 1 });
-    mockSend.mockResolvedValue({ sent: 1, failed: 0, remaining: 0 });
+    mockApprove.mockResolvedValue({ approved: 1, validation_errors: null });
+    mockSend.mockResolvedValue({ sent: 1, failed: 0, remaining: 0, errors: [] });
     mockUndo.mockResolvedValue({ undone: 1 });
 
     const { result } = renderHook(() => useBatchSendLoop(), { wrapper: createWrapper() });
@@ -164,8 +164,8 @@ describe("useBatchSendLoop", () => {
   });
 
   it("only sends items matching selectedIds", async () => {
-    mockApprove.mockResolvedValue({ approved: 1 });
-    mockSend.mockResolvedValue({ sent: 1, failed: 0, remaining: 0 });
+    mockApprove.mockResolvedValue({ approved: 1, validation_errors: null });
+    mockSend.mockResolvedValue({ sent: 1, failed: 0, remaining: 0, errors: [] });
 
     const items = [makeItem(1), makeItem(2), makeItem(3)];
     const ids = new Set([1, 3]); // Skip contact 2
@@ -184,10 +184,10 @@ describe("useBatchSendLoop", () => {
   });
 
   it("multi-batch send accumulates progress", async () => {
-    mockApprove.mockResolvedValue({ approved: 3 });
+    mockApprove.mockResolvedValue({ approved: 3, validation_errors: null });
     mockSend
-      .mockResolvedValueOnce({ sent: 2, failed: 0, remaining: 1 })
-      .mockResolvedValueOnce({ sent: 1, failed: 0, remaining: 0 });
+      .mockResolvedValueOnce({ sent: 2, failed: 0, remaining: 1, errors: [] })
+      .mockResolvedValueOnce({ sent: 1, failed: 0, remaining: 0, errors: [] });
 
     const items = [makeItem(1), makeItem(2), makeItem(3)];
     const ids = new Set([1, 2, 3]);

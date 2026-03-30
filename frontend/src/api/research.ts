@@ -2,7 +2,7 @@ import type {
   CsvPreview, CreateResearchJobResponse, ResearchJobsResponse,
   ResearchJobDetail, ResearchResultsResponse, ResearchResult, BatchImportResponse,
 } from "../types";
-import { request, requestUpload } from "./request";
+import { BASE, request, requestUpload } from "./request";
 
 export const researchApi = {
   previewResearchCsv: async (file: File) => {

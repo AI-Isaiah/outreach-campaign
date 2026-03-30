@@ -54,7 +54,7 @@ const STEP_VALIDATION: Record<number, readonly string[]> = {
 
 export default function CampaignWizard() {
   const form = useForm<WizardFormData>({
-    resolver: zodResolver(fullCampaignSchema),
+    resolver: zodResolver(fullCampaignSchema) as any,
     mode: "onTouched",
     defaultValues: EMPTY_DEFAULTS,
   });
@@ -141,7 +141,7 @@ function CampaignWizardInner() {
   const handleNext = useCallback(async () => {
     const fieldsToValidate = STEP_VALIDATION[step];
     if (fieldsToValidate) {
-      const valid = await form.trigger(fieldsToValidate as string[]);
+      const valid = await form.trigger(fieldsToValidate as any);
       if (!valid) return; // Block navigation, inline errors shown
     }
     saveToApi(step + 1);

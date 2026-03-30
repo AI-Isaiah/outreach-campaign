@@ -17,9 +17,9 @@ import StatusBadge from "../components/StatusBadge";
 export default function Dashboard() {
   const queryClient = useQueryClient();
   const stats = useQuery<StatsResponse>({ queryKey: ["stats"], queryFn: api.getStats });
-  const campaigns = useQuery<Campaign[]>({
+  const campaigns = useQuery({
     queryKey: ["campaigns"],
-    queryFn: api.listCampaigns,
+    queryFn: () => api.listCampaigns(),
   });
   const pendingReplies = useQuery<PendingRepliesResponse>({
     queryKey: ["pending-replies"],

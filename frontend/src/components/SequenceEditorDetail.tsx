@@ -435,7 +435,7 @@ export default function SequenceEditorDetail({ campaignId, steps, enrolledCount 
     const moved = arrayMove(steps, oldIndex, newIndex);
     // Recalculate delay_days + enforce linkedin_connect-first rule
     const recalced = recalcSteps(
-      moved.map((s) => ({ ...s, _id: String(s.id) }))
+      moved.map((s) => ({ _id: String(s.id), step_order: s.step_order, channel: s.channel, delay_days: s.delay_days, template_id: s.template_id }))
     );
     // Map back to SequenceStep shape with recalculated values
     const reordered = recalced.map((r, i) => ({

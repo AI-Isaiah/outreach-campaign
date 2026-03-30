@@ -21,7 +21,7 @@ import {
   type RowAction,
   type RowDecision,
 } from "../api/smartImport";
-import { campaignsApi } from "../api/campaigns";
+import { campaignsApi, type CampaignWithMetrics } from "../api/campaigns";
 import PreviewTableRow from "../components/PreviewTableRow";
 import Pagination from "../components/Pagination";
 import { useImportState } from "../hooks/useImportState";
@@ -213,9 +213,9 @@ function SmartImportInner() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps — mount-only
 
   // Campaigns for enrollment selector
-  const campaignsQuery = useQuery({
+  const campaignsQuery = useQuery<CampaignWithMetrics[]>({
     queryKey: ["campaigns"],
-    queryFn: campaignsApi.listCampaigns,
+    queryFn: () => campaignsApi.listCampaigns(),
     enabled: step === "preview",
   });
 

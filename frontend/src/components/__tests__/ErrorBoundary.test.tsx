@@ -81,7 +81,7 @@ describe("ErrorBoundary", () => {
   // --- Error message display ---
 
   it("displays custom error messages", () => {
-    function CustomError() {
+    function CustomError(): JSX.Element {
       throw new Error("Database connection failed");
     }
     render(
@@ -94,7 +94,7 @@ describe("ErrorBoundary", () => {
 
   it("displays long error messages", () => {
     const longMessage = "Error: " + "x".repeat(200);
-    function LongError() {
+    function LongError(): JSX.Element {
       throw new Error(longMessage);
     }
     render(
@@ -135,7 +135,7 @@ describe("ErrorBoundary", () => {
   it("shows error again if child still throws after retry", async () => {
     const user = userEvent.setup();
 
-    function AlwaysThrows() {
+    function AlwaysThrows(): JSX.Element {
       throw new Error("Persistent error");
     }
 

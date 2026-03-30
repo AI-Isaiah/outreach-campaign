@@ -1,6 +1,6 @@
 import { BASE, authHeaders, request } from "./request";
 
-export type ImportJobStatus = "analyzing" | "pending" | "previewed" | "completed" | "failed";
+export type ImportJobStatus = "analyzing" | "pending" | "previewed" | "completed" | "failed" | "imported";
 
 /** Response from POST /import/smart (async — job starts analyzing in background). */
 export interface AnalyzeStartResult {
