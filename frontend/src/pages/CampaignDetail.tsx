@@ -398,8 +398,6 @@ function SequenceTab({ campaignName, campaignId }: { campaignName: string; campa
   });
   const enrolledCount = contactsData?.length ?? 0;
 
-  if (isLoading) return <SkeletonTable rows={3} cols={4} />;
-
   const queryClient = useQueryClient();
   const addFirstStep = useMutation({
     mutationFn: () =>
@@ -408,8 +406,10 @@ function SequenceTab({ campaignName, campaignId }: { campaignName: string; campa
         delay_days: 0,
         step_order: 1,
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["sequence-steps", campaignId] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["campaign-sequence", campaignId] }),
   });
+
+  if (isLoading) return <SkeletonTable rows={3} cols={4} />;
 
   if (!steps || steps.length === 0) {
     return (
