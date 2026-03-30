@@ -81,12 +81,15 @@ function CampaignWizardInner() {
   const initialStep = Number(searchParams.get("step") || "0");
   const [step, setStep] = useState(initialStep);
 
-  // Load existing campaign data when editing
+  // Load existing campaign data + sequence steps when editing
   const { data: existingCampaign } = useQuery({
     queryKey: ["campaign-edit", editCampaignId],
     queryFn: async () => {
-      const res = await request<{ campaign: { id: number; name: string; description: string } }>(`/campaigns/${editCampaignId}`);
-      return res;
+      const [campaign, steps] = await Promise.all([
+        request<{ campaign: { id: number; name: string; description: string } }>(`/campaigns/${editCampaignId}`),
+        request<{ id: number; step_order: number; channel: string; delay_days: number; template_id: number | null }[]>(`/campaigns/${editCampaignId}/sequence`),
+      ]);
+      return { campaign: campaign.campaign, steps };
     },
     enabled: !!editCampaignId,
   });
@@ -96,6 +99,16 @@ function CampaignWizardInner() {
       const c = existingCampaign.campaign;
       form.setValue("name", c.name);
       if (c.description) form.setValue("description", c.description);
+    }
+    if (existingCampaign?.steps && existingCampaign.steps.length > 0) {
+      const wizardSteps = existingCampaign.steps.map((s) => ({
+        _id: `existing-${s.id}`,
+        step_order: s.step_order,
+        channel: s.channel,
+        delay_days: s.delay_days,
+        template_id: s.template_id,
+      }));
+      form.setValue("steps", wizardSteps);
     }
   }, [existingCampaign, form]);
 
@@ -136,10 +149,17 @@ function CampaignWizardInner() {
         })
       );
 
-      // Edit mode: add steps to existing campaign
+      // Edit mode: replace steps on existing campaign
       if (editCampaignId) {
+        const cid = Number(editCampaignId);
+        // Delete existing steps first
+        const existing = await request<{ id: number }[]>(`/campaigns/${cid}/sequence`);
+        for (const s of existing) {
+          await request(`/campaigns/${cid}/sequence/${s.id}`, { method: "DELETE" });
+        }
+        // Add the new steps
         for (const s of stepData) {
-          await campaignsApi.addSequenceStep(Number(editCampaignId), {
+          await campaignsApi.addSequenceStep(cid, {
             channel: s.channel,
             delay_days: s.delay_days,
             template_id: s.template_id ?? undefined,

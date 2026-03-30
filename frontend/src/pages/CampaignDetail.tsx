@@ -432,11 +432,22 @@ function SequenceTab({ campaignName, campaignId }: { campaignName: string; campa
   }
 
   return (
-    <SequenceEditorDetail
-      campaignId={campaignId}
-      steps={steps}
-      enrolledCount={enrolledCount}
-    />
+    <div>
+      <div className="flex justify-end mb-4">
+        <a
+          href={`/campaigns/wizard?editCampaign=${campaignId}&step=2`}
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.855z"/></svg>
+          Edit in Wizard
+        </a>
+      </div>
+      <SequenceEditorDetail
+        campaignId={campaignId}
+        steps={steps}
+        enrolledCount={enrolledCount}
+      />
+    </div>
   );
 }
 
