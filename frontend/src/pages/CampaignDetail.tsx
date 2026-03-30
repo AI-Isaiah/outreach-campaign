@@ -400,6 +400,17 @@ function SequenceTab({ campaignName, campaignId }: { campaignName: string; campa
 
   if (isLoading) return <SkeletonTable rows={3} cols={4} />;
 
+  const queryClient = useQueryClient();
+  const addFirstStep = useMutation({
+    mutationFn: () =>
+      campaignsApi.addSequenceStep(campaignId, {
+        channel: "linkedin_connect",
+        delay_days: 0,
+        step_order: 1,
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["sequence-steps", campaignId] }),
+  });
+
   if (!steps || steps.length === 0) {
     return (
       <div className="text-center py-12">
@@ -410,12 +421,13 @@ function SequenceTab({ campaignName, campaignId }: { campaignName: string; campa
         <p className="text-sm text-gray-500 mb-4">
           Add a message sequence to automate your outreach for this campaign.
         </p>
-        <a
-          href={`/campaigns/wizard?campaign=${encodeURIComponent(campaignName)}`}
-          className="inline-flex items-center gap-1.5 bg-gray-900 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-800"
+        <button
+          onClick={() => addFirstStep.mutate()}
+          disabled={addFirstStep.isPending}
+          className="inline-flex items-center gap-1.5 bg-gray-900 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-800 disabled:opacity-50"
         >
-          Set Up Sequence
-        </a>
+          {addFirstStep.isPending ? "Creating..." : "Set Up Sequence"}
+        </button>
       </div>
     );
   }
