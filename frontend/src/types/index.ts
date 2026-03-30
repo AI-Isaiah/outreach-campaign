@@ -576,7 +576,7 @@ export interface RecipientPreview {
 
 // --- Crypto Research Pipeline ---
 
-export const TERMINAL_STATUSES = ["completed", "failed", "cancelled"] as const;
+export const TERMINAL_STATUSES = ["completed", "failed", "cancelled", "cancelling"] as const;
 export function isTerminalStatus(s: string): boolean {
   return (TERMINAL_STATUSES as readonly string[]).includes(s);
 }

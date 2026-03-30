@@ -275,6 +275,17 @@ def list_research_jobs(
     user=Depends(get_current_user),
 ):
     """List research jobs with pagination and optional status filter."""
+    # Auto-heal stuck 'cancelling' jobs older than 5 minutes → 'cancelled'
+    with get_cursor(conn) as cur:
+        cur.execute(
+            """UPDATE research_jobs SET status = 'cancelled', updated_at = NOW()
+               WHERE user_id = %s AND status = 'cancelling'
+                 AND updated_at < NOW() - INTERVAL '5 minutes'""",
+            (user["id"],),
+        )
+        if cur.rowcount > 0:
+            conn.commit()
+
     conditions = ["user_id = %s"]
     params: list = [user["id"]]
     if status:

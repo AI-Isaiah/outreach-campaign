@@ -476,10 +476,12 @@ def _update_job_status(conn, job_id: int, status: str, **kwargs):
 
 
 def cancel_research_job(conn, job_id: int, *, user_id: int) -> dict:
-    """Request cancellation of a running job.
+    """Cancel a research job.
 
-    Sets status to 'cancelling'. The background thread will detect this
-    and stop after the current company finishes.
+    If the background thread is still running (status 'running'), sets
+    'cancelling' so the thread stops gracefully after the current company.
+    If the thread already finished processing (status 'pending' or stuck),
+    sets 'cancelled' directly since no thread will transition it.
     """
     with get_cursor(conn) as cur:
         cur.execute("SELECT status FROM research_jobs WHERE id = %s AND user_id = %s", (job_id, user_id))
@@ -490,14 +492,18 @@ def cancel_research_job(conn, job_id: int, *, user_id: int) -> dict:
         if row["status"] in ("completed", "failed", "cancelled"):
             return {"success": False, "error": f"Job already {row['status']}"}
 
+        # If actively running, use 'cancelling' so the thread exits gracefully.
+        # Otherwise set 'cancelled' directly (no thread will pick it up).
+        new_status = "cancelling" if row["status"] == "running" else "cancelled"
+
         cur.execute(
             """UPDATE research_jobs
-               SET status = 'cancelling', updated_at = NOW()
+               SET status = %s, updated_at = NOW()
                WHERE id = %s AND user_id = %s""",
-            (job_id, user_id),
+            (new_status, job_id, user_id),
         )
         conn.commit()
-        return {"success": True, "status": "cancelling"}
+        return {"success": True, "status": new_status}
 
 
 def retry_failed_results(job_id: int, db_url: str, api_keys: dict | None = None) -> None:
