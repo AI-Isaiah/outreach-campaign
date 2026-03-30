@@ -110,10 +110,10 @@ def _scan_contact_replies(conn, service, contact: dict, stats: dict) -> None:
         for msg_stub in messages:
             msg_id = msg_stub["id"]
 
-            # Check if we already have this message (scoped via contact FK)
+            # Check if we already have this message (scoped via contact FK + user_id)
             cur.execute(
-                "SELECT id FROM pending_replies WHERE gmail_message_id = %s",
-                (msg_id,),
+                "SELECT id FROM pending_replies WHERE gmail_message_id = %s AND user_id = %s",
+                (msg_id, contact["user_id"]),
             )
             if cur.fetchone():
                 continue
@@ -171,6 +171,7 @@ def _scan_contact_replies(conn, service, contact: dict, stats: dict) -> None:
                 snippet=snippet,
                 classification=classification,
                 confidence=confidence,
+                user_id=contact["user_id"],
             )
             stats["new_replies"] += 1
 
@@ -234,6 +235,7 @@ def _store_pending_reply(
     snippet: str,
     classification: str,
     confidence: float,
+    user_id: int,
 ) -> int:
     """Insert a pending reply into the database.
 
@@ -246,8 +248,8 @@ def _store_pending_reply(
                    (contact_id, campaign_id, gmail_thread_id, gmail_message_id,
                     subject, snippet, reply_snippet,
                     llm_classification, llm_confidence,
-                    classification, confidence)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    classification, confidence, user_id)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                ON CONFLICT (gmail_message_id) DO NOTHING
                RETURNING id""",
             (
@@ -262,6 +264,7 @@ def _store_pending_reply(
                 confidence,
                 classification,
                 confidence,
+                user_id,
             ),
         )
         row = cur.fetchone()

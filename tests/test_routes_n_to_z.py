@@ -786,10 +786,10 @@ class TestReplies:
         cur = db_conn.cursor()
         cur.execute(
             """INSERT INTO pending_replies
-               (contact_id, campaign_id, subject, snippet, classification, confidence, confirmed)
-               VALUES (%s, %s, 'Re: Hi', 'Sounds good', 'positive', 0.9, false)
+               (contact_id, campaign_id, subject, snippet, classification, confidence, confirmed, user_id)
+               VALUES (%s, %s, 'Re: Hi', 'Sounds good', 'positive', 0.9, false, %s)
                RETURNING id""",
-            (cid, camp_id),
+            (cid, camp_id, TEST_USER_ID),
         )
         reply_id = cur.fetchone()["id"]
         db_conn.commit()
@@ -815,10 +815,10 @@ class TestReplies:
         cur = db_conn.cursor()
         cur.execute(
             """INSERT INTO pending_replies
-               (contact_id, subject, snippet, classification, confidence, confirmed)
-               VALUES (%s, 'Re: Hi', 'ok', 'positive', 0.9, true)
+               (contact_id, subject, snippet, classification, confidence, confirmed, user_id)
+               VALUES (%s, 'Re: Hi', 'ok', 'positive', 0.9, true, %s)
                RETURNING id""",
-            (cid,),
+            (cid, TEST_USER_ID),
         )
         reply_id = cur.fetchone()["id"]
         db_conn.commit()

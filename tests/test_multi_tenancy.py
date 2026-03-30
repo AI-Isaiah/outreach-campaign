@@ -332,3 +332,257 @@ class TestWritePrevention:
         b_camp = create_campaign(conn, "B's Step Camp", user_id=USER_B_ID)
         with pytest.raises(PermissionError):
             add_sequence_step(conn, b_camp, 1, "email", user_id=USER_A)
+
+
+# ---------------------------------------------------------------------------
+# Child-table user_id isolation (migration 038)
+# ---------------------------------------------------------------------------
+
+
+class TestPendingRepliesIsolation:
+    def test_user_b_cannot_see_user_a_pending_replies(self, conn):
+        """pending_replies rows with user_id=A are invisible to user B."""
+        from src.models.campaigns import create_campaign
+
+        a_company = insert_company(conn, "PR Co")
+        a_contact = insert_contact(conn, a_company)
+        a_campaign = create_campaign(conn, "PR Camp", user_id=USER_A)
+
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT INTO pending_replies
+               (contact_id, campaign_id, subject, snippet, classification, user_id)
+               VALUES (%s, %s, 'Re: intro', 'Looks interesting', 'positive', %s)
+               RETURNING id""",
+            (a_contact, a_campaign, USER_A),
+        )
+        a_reply_id = cur.fetchone()["id"]
+        conn.commit()
+
+        # User B queries — should see nothing
+        cur.execute(
+            "SELECT id FROM pending_replies WHERE user_id = %s", (USER_B_ID,)
+        )
+        b_rows = cur.fetchall()
+        cur.close()
+
+        assert len(b_rows) == 0
+        # Sanity: User A can see their own reply
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id FROM pending_replies WHERE user_id = %s", (USER_A,)
+        )
+        a_rows = cur.fetchall()
+        cur.close()
+        assert a_reply_id in [r["id"] for r in a_rows]
+
+
+class TestContactTemplateHistoryIsolation:
+    def test_user_b_cannot_see_user_a_template_history(self, conn):
+        """contact_template_history rows scoped by user_id."""
+        from src.models.campaigns import create_campaign
+        from src.models.templates import create_template
+
+        a_company = insert_company(conn, "CTH Co")
+        a_contact = insert_contact(conn, a_company)
+        a_campaign = create_campaign(conn, "CTH Camp", user_id=USER_A)
+        a_template = create_template(
+            conn, "CTH Tmpl", "email", "Hello {{first_name}}", user_id=USER_A
+        )
+
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT INTO contact_template_history
+               (contact_id, campaign_id, template_id, channel, user_id)
+               VALUES (%s, %s, %s, 'email', %s)
+               RETURNING id""",
+            (a_contact, a_campaign, a_template, USER_A),
+        )
+        a_cth_id = cur.fetchone()["id"]
+        conn.commit()
+
+        # User B queries — should see nothing
+        cur.execute(
+            "SELECT id FROM contact_template_history WHERE user_id = %s",
+            (USER_B_ID,),
+        )
+        b_rows = cur.fetchall()
+        cur.close()
+
+        assert len(b_rows) == 0
+        # Sanity check
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id FROM contact_template_history WHERE user_id = %s",
+            (USER_A,),
+        )
+        a_rows = cur.fetchall()
+        cur.close()
+        assert a_cth_id in [r["id"] for r in a_rows]
+
+
+class TestConversationsIsolation:
+    def test_user_b_cannot_see_user_a_conversations(self, conn):
+        """conversations rows scoped by user_id."""
+        a_company = insert_company(conn, "Conv Co")
+        a_contact = insert_contact(conn, a_company)
+
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT INTO conversations
+               (contact_id, channel, title, notes, user_id)
+               VALUES (%s, 'email', 'Intro call', 'Discussed terms', %s)
+               RETURNING id""",
+            (a_contact, USER_A),
+        )
+        a_conv_id = cur.fetchone()["id"]
+        conn.commit()
+
+        # User B queries — should see nothing
+        cur.execute(
+            "SELECT id FROM conversations WHERE user_id = %s", (USER_B_ID,)
+        )
+        b_rows = cur.fetchall()
+        cur.close()
+
+        assert len(b_rows) == 0
+        # Sanity check
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id FROM conversations WHERE user_id = %s", (USER_A,)
+        )
+        a_rows = cur.fetchall()
+        cur.close()
+        assert a_conv_id in [r["id"] for r in a_rows]
+
+
+class TestContactProductsIsolation:
+    def test_user_b_cannot_see_user_a_contact_products(self, conn):
+        """contact_products rows scoped by user_id."""
+        a_company = insert_company(conn, "CP Co")
+        a_contact = insert_contact(conn, a_company)
+
+        # Get a product id (seeded by migration 009)
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM products LIMIT 1")
+        row = cur.fetchone()
+        if row is None:
+            # Seed a product if none exist
+            cur.execute(
+                "INSERT INTO products (name, user_id) VALUES ('Test Fund', %s) RETURNING id",
+                (USER_A,),
+            )
+            row = cur.fetchone()
+        product_id = row["id"]
+
+        cur.execute(
+            """INSERT INTO contact_products
+               (contact_id, product_id, stage, user_id)
+               VALUES (%s, %s, 'discussed', %s)
+               RETURNING id""",
+            (a_contact, product_id, USER_A),
+        )
+        a_cp_id = cur.fetchone()["id"]
+        conn.commit()
+
+        # User B queries — should see nothing
+        cur.execute(
+            "SELECT id FROM contact_products WHERE user_id = %s", (USER_B_ID,)
+        )
+        b_rows = cur.fetchall()
+        cur.close()
+
+        assert len(b_rows) == 0
+        # Sanity check
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id FROM contact_products WHERE user_id = %s", (USER_A,)
+        )
+        a_rows = cur.fetchall()
+        cur.close()
+        assert a_cp_id in [r["id"] for r in a_rows]
+
+
+class TestDealStageLogIsolation:
+    def test_user_b_cannot_see_user_a_deal_stage_log(self, conn):
+        """deal_stage_log rows scoped by user_id."""
+        a_company = insert_company(conn, "DSL Co")
+
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT INTO deals (company_id, title, stage, user_id)
+               VALUES (%s, 'Deal Alpha', 'cold', %s) RETURNING id""",
+            (a_company, USER_A),
+        )
+        a_deal = cur.fetchone()["id"]
+
+        cur.execute(
+            """INSERT INTO deal_stage_log
+               (deal_id, from_stage, to_stage, user_id)
+               VALUES (%s, 'cold', 'warm', %s)
+               RETURNING id""",
+            (a_deal, USER_A),
+        )
+        a_log_id = cur.fetchone()["id"]
+        conn.commit()
+
+        # User B queries — should see nothing
+        cur.execute(
+            "SELECT id FROM deal_stage_log WHERE user_id = %s", (USER_B_ID,)
+        )
+        b_rows = cur.fetchall()
+        cur.close()
+
+        assert len(b_rows) == 0
+        # Sanity check
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id FROM deal_stage_log WHERE user_id = %s", (USER_A,)
+        )
+        a_rows = cur.fetchall()
+        cur.close()
+        assert a_log_id in [r["id"] for r in a_rows]
+
+
+class TestNewsletterSendsIsolation:
+    def test_user_b_cannot_see_user_a_newsletter_sends(self, conn):
+        """newsletter_sends rows scoped by user_id."""
+        a_company = insert_company(conn, "NL Co")
+        a_contact = insert_contact(conn, a_company)
+
+        cur = conn.cursor()
+        # Create a newsletter owned by User A
+        cur.execute(
+            """INSERT INTO newsletters (subject, body_html, status, user_id)
+               VALUES ('Weekly Update', '<p>Hello</p>', 'draft', %s)
+               RETURNING id""",
+            (USER_A,),
+        )
+        a_newsletter = cur.fetchone()["id"]
+
+        cur.execute(
+            """INSERT INTO newsletter_sends
+               (newsletter_id, contact_id, status, user_id)
+               VALUES (%s, %s, 'pending', %s)
+               RETURNING id""",
+            (a_newsletter, a_contact, USER_A),
+        )
+        a_send_id = cur.fetchone()["id"]
+        conn.commit()
+
+        # User B queries — should see nothing
+        cur.execute(
+            "SELECT id FROM newsletter_sends WHERE user_id = %s", (USER_B_ID,)
+        )
+        b_rows = cur.fetchall()
+        cur.close()
+
+        assert len(b_rows) == 0
+        # Sanity check
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id FROM newsletter_sends WHERE user_id = %s", (USER_A,)
+        )
+        a_rows = cur.fetchall()
+        cur.close()
+        assert a_send_id in [r["id"] for r in a_rows]

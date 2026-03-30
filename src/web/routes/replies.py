@@ -128,8 +128,8 @@ def confirm_reply(
         cur.execute(
             """UPDATE pending_replies
                SET confirmed = true, confirmed_outcome = %s, confirmed_at = NOW()
-               WHERE id = %s""",
-            (body.outcome, reply_id),
+               WHERE id = %s AND user_id = %s""",
+            (body.outcome, reply_id, user["id"]),
         )
 
         # Trigger state machine transition
@@ -169,10 +169,10 @@ def confirm_reply(
                        SET outcome = %s, outcome_at = NOW()
                        WHERE id = (
                            SELECT id FROM contact_template_history
-                           WHERE contact_id = %s AND campaign_id = %s AND outcome IS NULL
+                           WHERE contact_id = %s AND campaign_id = %s AND outcome IS NULL AND user_id = %s
                            ORDER BY sent_at DESC LIMIT 1
                        )""",
-                    (outcome_value, reply["contact_id"], campaign_id),
+                    (outcome_value, reply["contact_id"], campaign_id, user["id"]),
                 )
 
         # Save note if provided

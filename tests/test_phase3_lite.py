@@ -53,9 +53,9 @@ def _create_pending_reply(conn, contact_id, campaign_id, classification="neutral
     """Create a pending reply for testing the confirm flow."""
     with get_cursor(conn) as cur:
         cur.execute(
-            """INSERT INTO pending_replies (contact_id, campaign_id, gmail_message_id, subject, snippet, classification)
-               VALUES (%s, %s, 'msg_123', 'Re: Hi', 'Thanks for reaching out', %s) RETURNING id""",
-            (contact_id, campaign_id, classification),
+            """INSERT INTO pending_replies (contact_id, campaign_id, gmail_message_id, subject, snippet, classification, user_id)
+               VALUES (%s, %s, 'msg_123', 'Re: Hi', 'Thanks for reaching out', %s, %s) RETURNING id""",
+            (contact_id, campaign_id, classification, TEST_USER_ID),
         )
         reply_id = cur.fetchone()["id"]
         conn.commit()
@@ -74,7 +74,7 @@ def test_neutral_confirm_transitions_to_replied_positive(tmp_db):
     _, contact_id, campaign_id, template_id = _setup(conn)
 
     # Record template usage so outcome UPDATE has a target
-    record_template_usage(conn, contact_id, campaign_id, template_id, "email")
+    record_template_usage(conn, contact_id, campaign_id, template_id, "email", user_id=1)
 
     reply_id = _create_pending_reply(conn, contact_id, campaign_id, "neutral")
 
@@ -158,7 +158,7 @@ def test_record_template_usage_inserts(tmp_db):
     run_migrations(conn)
     _, contact_id, campaign_id, template_id = _setup(conn)
 
-    record_template_usage(conn, contact_id, campaign_id, template_id, "email")
+    record_template_usage(conn, contact_id, campaign_id, template_id, "email", user_id=1)
 
     with get_cursor(conn) as cur:
         cur.execute(
@@ -180,8 +180,8 @@ def test_record_template_usage_duplicate_is_noop(tmp_db):
     run_migrations(conn)
     _, contact_id, campaign_id, template_id = _setup(conn)
 
-    record_template_usage(conn, contact_id, campaign_id, template_id, "email")
-    record_template_usage(conn, contact_id, campaign_id, template_id, "email")
+    record_template_usage(conn, contact_id, campaign_id, template_id, "email", user_id=1)
+    record_template_usage(conn, contact_id, campaign_id, template_id, "email", user_id=1)
 
     with get_cursor(conn) as cur:
         cur.execute(
@@ -200,7 +200,7 @@ def test_record_template_usage_null_template_id_skips(tmp_db):
     run_migrations(conn)
     _, contact_id, campaign_id, _ = _setup(conn)
 
-    record_template_usage(conn, contact_id, campaign_id, None, "email")
+    record_template_usage(conn, contact_id, campaign_id, None, "email", user_id=1)
 
     with get_cursor(conn) as cur:
         cur.execute(
@@ -219,7 +219,7 @@ def test_outcome_update_sets_value_and_timestamp(tmp_db):
     run_migrations(conn)
     _, contact_id, campaign_id, template_id = _setup(conn)
 
-    record_template_usage(conn, contact_id, campaign_id, template_id, "email")
+    record_template_usage(conn, contact_id, campaign_id, template_id, "email", user_id=1)
 
     with get_cursor(conn) as cur:
         cur.execute(
@@ -318,10 +318,10 @@ def _add_template_history(conn, contact_id, campaign_id, template_id, outcome, c
     """Helper to insert a contact_template_history row with outcome."""
     with get_cursor(conn) as cur:
         cur.execute(
-            """INSERT INTO contact_template_history (contact_id, campaign_id, template_id, channel, outcome)
-               VALUES (%s, %s, %s, %s, %s)
+            """INSERT INTO contact_template_history (contact_id, campaign_id, template_id, channel, outcome, user_id)
+               VALUES (%s, %s, %s, %s, %s, %s)
                ON CONFLICT (contact_id, campaign_id, template_id) DO UPDATE SET outcome = EXCLUDED.outcome""",
-            (contact_id, campaign_id, template_id, channel, outcome),
+            (contact_id, campaign_id, template_id, channel, outcome, TEST_USER_ID),
         )
         conn.commit()
 

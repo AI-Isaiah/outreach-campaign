@@ -328,10 +328,10 @@ def send_newsletter_to_recipients(
         # Create all send records upfront
         for contact in recipients:
             cursor.execute(
-                """INSERT INTO newsletter_sends (newsletter_id, contact_id, status)
-                   VALUES (%s, %s, 'pending')
+                """INSERT INTO newsletter_sends (newsletter_id, contact_id, status, user_id)
+                   VALUES (%s, %s, 'pending', %s)
                    ON CONFLICT (newsletter_id, contact_id) DO NOTHING""",
-                (newsletter_id, contact["id"]),
+                (newsletter_id, contact["id"], user_id),
             )
         conn.commit()
 
@@ -362,8 +362,8 @@ def send_newsletter_to_recipients(
             if success:
                 result["sent"] += 1
                 cursor.execute(
-                    "UPDATE newsletter_sends SET status = 'sent', sent_at = NOW() WHERE newsletter_id = %s AND contact_id = %s",
-                    (newsletter_id, contact["id"]),
+                    "UPDATE newsletter_sends SET status = 'sent', sent_at = NOW() WHERE newsletter_id = %s AND contact_id = %s AND user_id = %s",
+                    (newsletter_id, contact["id"], user_id),
                 )
                 log_event(
                     conn, contact["id"], "newsletter_sent",
@@ -373,8 +373,8 @@ def send_newsletter_to_recipients(
             else:
                 result["failed"] += 1
                 cursor.execute(
-                    "UPDATE newsletter_sends SET status = 'failed', error_message = 'SMTP send failed' WHERE newsletter_id = %s AND contact_id = %s",
-                    (newsletter_id, contact["id"]),
+                    "UPDATE newsletter_sends SET status = 'failed', error_message = 'SMTP send failed' WHERE newsletter_id = %s AND contact_id = %s AND user_id = %s",
+                    (newsletter_id, contact["id"], user_id),
                 )
 
         # Update newsletter status

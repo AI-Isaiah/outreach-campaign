@@ -315,6 +315,7 @@ def check_draft_status(
                         record_template_usage(
                             conn, contact_id, camp["id"],
                             draft_row["template_id"], channel="email",
+                            user_id=user["id"],
                         )
 
                     # Advance to next step (sets next_action_date, clears approval state)

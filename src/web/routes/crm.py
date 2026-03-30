@@ -169,16 +169,16 @@ def get_contact_timeline(
         offset = (page - 1) * per_page
         cur.execute(
             """SELECT * FROM interaction_timeline_view
-               WHERE contact_id = %s
+               WHERE contact_id = %s AND user_id = %s
                ORDER BY occurred_at DESC
                LIMIT %s OFFSET %s""",
-            (contact_id, per_page, offset),
+            (contact_id, user["id"], per_page, offset),
         )
         rows = cur.fetchall()
 
         cur.execute(
-            "SELECT COUNT(*) AS cnt FROM interaction_timeline_view WHERE contact_id = %s",
-            (contact_id,),
+            "SELECT COUNT(*) AS cnt FROM interaction_timeline_view WHERE contact_id = %s AND user_id = %s",
+            (contact_id, user["id"]),
         )
         total = cur.fetchone()["cnt"]
 

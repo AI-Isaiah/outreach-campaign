@@ -183,8 +183,8 @@ def create_deal(
 
         # Log initial stage
         cur.execute(
-            "INSERT INTO deal_stage_log (deal_id, from_stage, to_stage) VALUES (%s, NULL, %s)",
-            (deal_id, body.stage),
+            "INSERT INTO deal_stage_log (deal_id, from_stage, to_stage, user_id) VALUES (%s, NULL, %s, %s)",
+            (deal_id, body.stage, user["id"]),
         )
         conn.commit()
 
@@ -214,9 +214,9 @@ def get_deal(
 
         cur.execute(
             """SELECT * FROM deal_stage_log
-               WHERE deal_id = %s
+               WHERE deal_id = %s AND user_id = %s
                ORDER BY changed_at DESC""",
-            (deal_id,),
+            (deal_id, user["id"]),
         )
         history = cur.fetchall()
 
@@ -295,8 +295,8 @@ def update_deal_stage(
             (body.stage, deal_id),
         )
         cur.execute(
-            "INSERT INTO deal_stage_log (deal_id, from_stage, to_stage) VALUES (%s, %s, %s)",
-            (deal_id, old_stage, body.stage),
+            "INSERT INTO deal_stage_log (deal_id, from_stage, to_stage, user_id) VALUES (%s, %s, %s, %s)",
+            (deal_id, old_stage, body.stage, user["id"]),
         )
         conn.commit()
 

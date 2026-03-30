@@ -112,9 +112,9 @@ def list_contact_products(contact_id: int, conn=Depends(get_db), user=Depends(ge
             """SELECT cp.*, p.name AS product_name, p.description AS product_description
                FROM contact_products cp
                JOIN products p ON p.id = cp.product_id
-               WHERE cp.contact_id = %s
+               WHERE cp.contact_id = %s AND cp.user_id = %s
                ORDER BY cp.created_at DESC""",
-            (contact_id,),
+            (contact_id, user["id"]),
         )
         return [dict(r) for r in cur.fetchall()]
 
@@ -145,11 +145,11 @@ def link_contact_product(
             raise HTTPException(404, f"Product {body.product_id} not found")
 
         cur.execute(
-            """INSERT INTO contact_products (contact_id, product_id, stage, notes)
-               VALUES (%s, %s, %s, %s)
+            """INSERT INTO contact_products (contact_id, product_id, stage, notes, user_id)
+               VALUES (%s, %s, %s, %s, %s)
                ON CONFLICT (contact_id, product_id) DO UPDATE SET stage = %s, notes = %s, updated_at = NOW()
                RETURNING id""",
-            (contact_id, body.product_id, body.stage, body.notes, body.stage, body.notes),
+            (contact_id, body.product_id, body.stage, body.notes, user["id"], body.stage, body.notes),
         )
         cp_id = cur.fetchone()["id"]
         conn.commit()
@@ -174,15 +174,15 @@ def update_contact_product_stage(
             raise HTTPException(404, "Contact not found")
 
         cur.execute(
-            "SELECT id FROM contact_products WHERE contact_id = %s AND product_id = %s",
-            (contact_id, product_id),
+            "SELECT id FROM contact_products WHERE contact_id = %s AND product_id = %s AND user_id = %s",
+            (contact_id, product_id, user["id"]),
         )
         if not cur.fetchone():
             raise HTTPException(404, "Contact-product link not found")
 
         cur.execute(
-            "UPDATE contact_products SET stage = %s, updated_at = NOW() WHERE contact_id = %s AND product_id = %s",
-            (body.stage, contact_id, product_id),
+            "UPDATE contact_products SET stage = %s, updated_at = NOW() WHERE contact_id = %s AND product_id = %s AND user_id = %s",
+            (body.stage, contact_id, product_id, user["id"]),
         )
         conn.commit()
         return {"success": True}
@@ -204,8 +204,8 @@ def remove_contact_product(
             raise HTTPException(404, "Contact not found")
 
         cur.execute(
-            "DELETE FROM contact_products WHERE contact_id = %s AND product_id = %s",
-            (contact_id, product_id),
+            "DELETE FROM contact_products WHERE contact_id = %s AND product_id = %s AND user_id = %s",
+            (contact_id, product_id, user["id"]),
         )
         if cur.rowcount == 0:
             raise HTTPException(404, "Contact-product link not found")

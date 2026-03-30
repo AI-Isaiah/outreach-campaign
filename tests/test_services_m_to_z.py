@@ -1695,9 +1695,9 @@ class TestResponseAnalyzerDB:
         cur = conn.cursor()
         cur.execute(
             """INSERT INTO contact_template_history
-               (contact_id, campaign_id, template_id, channel, outcome)
-               VALUES (%s, %s, %s, %s, %s)""",
-            (contact_id, campaign_id, template_id, channel, outcome),
+               (contact_id, campaign_id, template_id, channel, outcome, user_id)
+               VALUES (%s, %s, %s, %s, %s, %s)""",
+            (contact_id, campaign_id, template_id, channel, outcome, TEST_USER_ID),
         )
         conn.commit()
         cur.close()

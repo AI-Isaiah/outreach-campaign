@@ -607,7 +607,7 @@ class TestUpdateContactCampaignStatusExtended:
 
 class TestRecordTemplateUsage:
     def test_basic_insert(self, conn, contact_id, campaign_id, template_id):
-        record_template_usage(conn, contact_id, campaign_id, template_id, "email")
+        record_template_usage(conn, contact_id, campaign_id, template_id, "email", user_id=TEST_USER_ID)
         with get_cursor(conn) as cur:
             cur.execute(
                 "SELECT * FROM contact_template_history "
@@ -620,8 +620,8 @@ class TestRecordTemplateUsage:
         assert row["sent_at"] is not None
 
     def test_idempotent_second_insert(self, conn, contact_id, campaign_id, template_id):
-        record_template_usage(conn, contact_id, campaign_id, template_id, "email")
-        record_template_usage(conn, contact_id, campaign_id, template_id, "email")
+        record_template_usage(conn, contact_id, campaign_id, template_id, "email", user_id=TEST_USER_ID)
+        record_template_usage(conn, contact_id, campaign_id, template_id, "email", user_id=TEST_USER_ID)
         with get_cursor(conn) as cur:
             cur.execute(
                 "SELECT COUNT(*) AS cnt FROM contact_template_history "
@@ -632,7 +632,7 @@ class TestRecordTemplateUsage:
 
     def test_null_template_id_noop(self, conn, contact_id, campaign_id):
         """Passing template_id=0 (falsy) should be a no-op guard."""
-        record_template_usage(conn, contact_id, campaign_id, 0, "email")
+        record_template_usage(conn, contact_id, campaign_id, 0, "email", user_id=TEST_USER_ID)
         with get_cursor(conn) as cur:
             cur.execute("SELECT COUNT(*) AS cnt FROM contact_template_history")
             assert cur.fetchone()["cnt"] == 0
@@ -640,8 +640,8 @@ class TestRecordTemplateUsage:
     def test_different_templates_same_contact(self, conn, contact_id, campaign_id):
         t1 = create_template(conn, "T1", "email", "body1", user_id=TEST_USER_ID)
         t2 = create_template(conn, "T2", "email", "body2", user_id=TEST_USER_ID)
-        record_template_usage(conn, contact_id, campaign_id, t1, "email")
-        record_template_usage(conn, contact_id, campaign_id, t2, "email")
+        record_template_usage(conn, contact_id, campaign_id, t1, "email", user_id=TEST_USER_ID)
+        record_template_usage(conn, contact_id, campaign_id, t2, "email", user_id=TEST_USER_ID)
         with get_cursor(conn) as cur:
             cur.execute(
                 "SELECT COUNT(*) AS cnt FROM contact_template_history WHERE contact_id = %s",
@@ -650,7 +650,7 @@ class TestRecordTemplateUsage:
             assert cur.fetchone()["cnt"] == 2
 
     def test_linkedin_channel(self, conn, contact_id, campaign_id, template_id):
-        record_template_usage(conn, contact_id, campaign_id, template_id, "linkedin_connect")
+        record_template_usage(conn, contact_id, campaign_id, template_id, "linkedin_connect", user_id=TEST_USER_ID)
         with get_cursor(conn) as cur:
             cur.execute(
                 "SELECT channel FROM contact_template_history "
@@ -1177,7 +1177,7 @@ class TestFullCampaignWorkflow:
         assert eid > 0
 
         # 7. Record template usage
-        record_template_usage(conn, contacts[0], cid, t_li, "linkedin_connect")
+        record_template_usage(conn, contacts[0], cid, t_li, "linkedin_connect", user_id=TEST_USER_ID)
 
         # 8. Advance to step 2
         update_contact_campaign_status(conn, contacts[0], cid, current_step=2, user_id=TEST_USER_ID)

@@ -485,6 +485,7 @@ def send_campaign_email(
     record_template_usage(
         conn, contact_id, campaign_id, template_id,
         channel=template_row["channel"],
+        user_id=user_id,
     )
 
     # Advance to next step (sets next_action_date, clears approval state)

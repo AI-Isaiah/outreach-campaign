@@ -79,9 +79,9 @@ def test_inbox_with_pending_reply(client, db_conn):
     cur = db_conn.cursor()
     cur.execute(
         """INSERT INTO pending_replies (contact_id, campaign_id, subject, snippet,
-                                        classification, confidence, confirmed)
-           VALUES (%s, %s, 'Re: Intro', 'Sounds great!', 'positive', 0.95, false)""",
-        (contact_id, campaign_id),
+                                        classification, confidence, confirmed, user_id)
+           VALUES (%s, %s, 'Re: Intro', 'Sounds great!', 'positive', 0.95, false, %s)""",
+        (contact_id, campaign_id, TEST_USER_ID),
     )
     db_conn.commit()
 
@@ -101,9 +101,9 @@ def test_inbox_channel_filter(client, db_conn):
     # Add email reply
     cur.execute(
         """INSERT INTO pending_replies (contact_id, campaign_id, subject, snippet,
-                                        classification, confidence, confirmed)
-           VALUES (%s, %s, 'Re: Intro', 'Sounds great!', 'positive', 0.95, false)""",
-        (contact_id, campaign_id),
+                                        classification, confidence, confirmed, user_id)
+           VALUES (%s, %s, 'Re: Intro', 'Sounds great!', 'positive', 0.95, false, %s)""",
+        (contact_id, campaign_id, TEST_USER_ID),
     )
     # Add note
     cur.execute(

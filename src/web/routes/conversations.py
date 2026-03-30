@@ -64,8 +64,8 @@ def list_conversations(
             raise HTTPException(404, f"Contact {contact_id} not found")
 
         cur.execute(
-            "SELECT * FROM conversations WHERE contact_id = %s ORDER BY occurred_at DESC",
-            (contact_id,),
+            "SELECT * FROM conversations WHERE contact_id = %s AND user_id = %s ORDER BY occurred_at DESC",
+            (contact_id, user["id"]),
         )
         return [dict(r) for r in cur.fetchall()]
 
@@ -94,15 +94,15 @@ def create_conversation(
 
         if body.occurred_at:
             cur.execute(
-                """INSERT INTO conversations (contact_id, channel, title, notes, outcome, occurred_at)
-                   VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
-                (contact_id, body.channel, body.title, body.notes, body.outcome, body.occurred_at),
+                """INSERT INTO conversations (contact_id, channel, title, notes, outcome, occurred_at, user_id)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                (contact_id, body.channel, body.title, body.notes, body.outcome, body.occurred_at, user["id"]),
             )
         else:
             cur.execute(
-                """INSERT INTO conversations (contact_id, channel, title, notes, outcome)
-                   VALUES (%s, %s, %s, %s, %s) RETURNING id""",
-                (contact_id, body.channel, body.title, body.notes, body.outcome),
+                """INSERT INTO conversations (contact_id, channel, title, notes, outcome, user_id)
+                   VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
+                (contact_id, body.channel, body.title, body.notes, body.outcome, user["id"]),
             )
         conv_id = cur.fetchone()["id"]
 
@@ -147,9 +147,9 @@ def update_conversation(
         if not set_clause:
             return {"success": True}
 
-        params.append(conversation_id)
+        params.extend([conversation_id, user["id"]])
         cur.execute(
-            f"UPDATE conversations SET {set_clause} WHERE id = %s",
+            f"UPDATE conversations SET {set_clause} WHERE id = %s AND user_id = %s",
             params,
         )
         conn.commit()
@@ -173,6 +173,6 @@ def delete_conversation(
         if not cur.fetchone():
             raise HTTPException(404, f"Conversation {conversation_id} not found")
 
-        cur.execute("DELETE FROM conversations WHERE id = %s", (conversation_id,))
+        cur.execute("DELETE FROM conversations WHERE id = %s AND user_id = %s", (conversation_id, user["id"]))
         conn.commit()
         return {"success": True}

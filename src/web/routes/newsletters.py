@@ -100,15 +100,15 @@ def get_newsletter(newsletter_id: int, conn=Depends(get_db), user=Depends(get_cu
             raise HTTPException(404, f"Newsletter {newsletter_id} not found")
 
         cur.execute(
-            "SELECT * FROM newsletter_attachments WHERE newsletter_id = %s ORDER BY created_at",
-            (newsletter_id,),
+            "SELECT * FROM newsletter_attachments WHERE newsletter_id = %s AND user_id = %s ORDER BY created_at",
+            (newsletter_id, user["id"]),
         )
         attachments = cur.fetchall()
 
         cur.execute(
             """SELECT status, COUNT(*) AS cnt
-               FROM newsletter_sends WHERE newsletter_id = %s GROUP BY status""",
-            (newsletter_id,),
+               FROM newsletter_sends WHERE newsletter_id = %s AND user_id = %s GROUP BY status""",
+            (newsletter_id, user["id"]),
         )
         send_stats = {row["status"]: row["cnt"] for row in cur.fetchall()}
 
@@ -195,9 +195,9 @@ async def upload_attachment(
         dest_path.write_bytes(content)
 
         cur.execute(
-            """INSERT INTO newsletter_attachments (newsletter_id, filename, content_type, file_path, file_size_bytes)
-               VALUES (%s, %s, %s, %s, %s) RETURNING id""",
-            (newsletter_id, safe_filename, "application/pdf", str(dest_path), len(content)),
+            """INSERT INTO newsletter_attachments (newsletter_id, filename, content_type, file_path, file_size_bytes, user_id)
+               VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
+            (newsletter_id, safe_filename, "application/pdf", str(dest_path), len(content), user["id"]),
         )
         attachment_id = cur.fetchone()["id"]
         conn.commit()
@@ -215,8 +215,8 @@ def delete_attachment(newsletter_id: int, attachment_id: int, conn=Depends(get_d
             raise HTTPException(404, "Newsletter not found")
 
         cur.execute(
-            "SELECT id, file_path FROM newsletter_attachments WHERE id = %s AND newsletter_id = %s",
-            (attachment_id, newsletter_id),
+            "SELECT id, file_path FROM newsletter_attachments WHERE id = %s AND newsletter_id = %s AND user_id = %s",
+            (attachment_id, newsletter_id, user["id"]),
         )
         att = cur.fetchone()
         if not att:
@@ -227,7 +227,7 @@ def delete_attachment(newsletter_id: int, attachment_id: int, conn=Depends(get_d
         if file_path.exists():
             file_path.unlink()
 
-        cur.execute("DELETE FROM newsletter_attachments WHERE id = %s", (attachment_id,))
+        cur.execute("DELETE FROM newsletter_attachments WHERE id = %s AND user_id = %s", (attachment_id, user["id"]))
         conn.commit()
         return {"success": True}
 
@@ -242,8 +242,8 @@ def download_attachment(newsletter_id: int, attachment_id: int, conn=Depends(get
             raise HTTPException(404, "Newsletter not found")
 
         cur.execute(
-            "SELECT filename, file_path, content_type FROM newsletter_attachments WHERE id = %s AND newsletter_id = %s",
-            (attachment_id, newsletter_id),
+            "SELECT filename, file_path, content_type FROM newsletter_attachments WHERE id = %s AND newsletter_id = %s AND user_id = %s",
+            (attachment_id, newsletter_id, user["id"]),
         )
         att = cur.fetchone()
         if not att:
@@ -318,8 +318,8 @@ def send_newsletter_route(
 
         # Get attachments
         cur.execute(
-            "SELECT * FROM newsletter_attachments WHERE newsletter_id = %s",
-            (newsletter_id,),
+            "SELECT * FROM newsletter_attachments WHERE newsletter_id = %s AND user_id = %s",
+            (newsletter_id, user["id"]),
         )
         attachments = [dict(a) for a in cur.fetchall()]
 

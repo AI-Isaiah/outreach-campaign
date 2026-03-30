@@ -332,6 +332,8 @@ def record_template_usage(
     campaign_id: int,
     template_id: int,
     channel: str,
+    *,
+    user_id: int,
 ) -> None:
     """Record that a template was sent to a contact.
 
@@ -344,9 +346,9 @@ def record_template_usage(
     with get_cursor(conn) as cursor:
         cursor.execute(
             """INSERT INTO contact_template_history
-                   (contact_id, campaign_id, template_id, channel, sent_at)
-               VALUES (%s, %s, %s, %s, NOW())
+                   (contact_id, campaign_id, template_id, channel, sent_at, user_id)
+               VALUES (%s, %s, %s, %s, NOW(), %s)
                ON CONFLICT (contact_id, campaign_id, template_id) DO NOTHING""",
-            (contact_id, campaign_id, template_id, channel),
+            (contact_id, campaign_id, template_id, channel, user_id),
         )
         conn.commit()

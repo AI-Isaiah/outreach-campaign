@@ -116,8 +116,8 @@ def _seed_deal(conn, company_id, title=None, stage="cold", user_id=TEST_USER_ID)
     did = cur.fetchone()["id"]
     # Log initial stage
     cur.execute(
-        "INSERT INTO deal_stage_log (deal_id, from_stage, to_stage) VALUES (%s, NULL, %s)",
-        (did, stage),
+        "INSERT INTO deal_stage_log (deal_id, from_stage, to_stage, user_id) VALUES (%s, NULL, %s, %s)",
+        (did, stage, user_id),
     )
     conn.commit()
     cur.close()

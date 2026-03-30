@@ -169,10 +169,10 @@ def test_confirm_reply(client, db_conn):
     cur = db_conn.cursor()
     cur.execute(
         """INSERT INTO pending_replies (contact_id, campaign_id, subject, snippet,
-                                        classification, confidence, confirmed)
-           VALUES (%s, %s, 'Re: Intro', 'Sounds great!', 'positive', 0.95, false)
+                                        classification, confidence, confirmed, user_id)
+           VALUES (%s, %s, 'Re: Intro', 'Sounds great!', 'positive', 0.95, false, %s)
            RETURNING id""",
-        (contact_id, campaign_id),
+        (contact_id, campaign_id, TEST_USER_ID),
     )
     reply_id = cur.fetchone()["id"]
     db_conn.commit()

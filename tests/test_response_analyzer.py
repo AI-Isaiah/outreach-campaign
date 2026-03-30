@@ -57,10 +57,10 @@ def test_template_performance_with_data(tmp_db):
     # Add template history entries
     for outcome in ["positive", "positive", "negative", None, None]:
         cur.execute(
-            """INSERT INTO contact_template_history (contact_id, campaign_id, template_id, channel, outcome)
-               VALUES (%s, %s, %s, 'email', %s)
+            """INSERT INTO contact_template_history (contact_id, campaign_id, template_id, channel, outcome, user_id)
+               VALUES (%s, %s, %s, 'email', %s, %s)
                ON CONFLICT (contact_id, campaign_id, template_id) DO UPDATE SET outcome = EXCLUDED.outcome""",
-            (contact_id, campaign_id, template_id, outcome),
+            (contact_id, campaign_id, template_id, outcome, TEST_USER_ID),
         )
     conn.commit()
 

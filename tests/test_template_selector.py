@@ -82,9 +82,9 @@ def test_exploit_picks_best_performer(tmp_db):
         )
         cid = cur.fetchone()["id"]
         cur.execute(
-            """INSERT INTO contact_template_history (contact_id, campaign_id, template_id, channel, outcome)
-               VALUES (%s, %s, %s, 'email', %s)""",
-            (cid, campaign_id, t1, outcome),
+            """INSERT INTO contact_template_history (contact_id, campaign_id, template_id, channel, outcome, user_id)
+               VALUES (%s, %s, %s, 'email', %s, %s)""",
+            (cid, campaign_id, t1, outcome, TEST_USER_ID),
         )
 
     # t2: 1 positive, 3 negative
@@ -96,9 +96,9 @@ def test_exploit_picks_best_performer(tmp_db):
         )
         cid = cur.fetchone()["id"]
         cur.execute(
-            """INSERT INTO contact_template_history (contact_id, campaign_id, template_id, channel, outcome)
-               VALUES (%s, %s, %s, 'email', %s)""",
-            (cid, campaign_id, t2, outcome),
+            """INSERT INTO contact_template_history (contact_id, campaign_id, template_id, channel, outcome, user_id)
+               VALUES (%s, %s, %s, 'email', %s, %s)""",
+            (cid, campaign_id, t2, outcome, TEST_USER_ID),
         )
     conn.commit()
 
@@ -130,9 +130,9 @@ def test_filters_already_sent(tmp_db):
 
     cur = conn.cursor()
     cur.execute(
-        """INSERT INTO contact_template_history (contact_id, campaign_id, template_id, channel)
-           VALUES (%s, %s, %s, 'email')""",
-        (contact_id, campaign_id, t1),
+        """INSERT INTO contact_template_history (contact_id, campaign_id, template_id, channel, user_id)
+           VALUES (%s, %s, %s, 'email', %s)""",
+        (contact_id, campaign_id, t1, TEST_USER_ID),
     )
     conn.commit()
 
@@ -157,9 +157,9 @@ def test_all_templates_sent_reuses(tmp_db):
 
     cur = conn.cursor()
     cur.execute(
-        """INSERT INTO contact_template_history (contact_id, campaign_id, template_id, channel)
-           VALUES (%s, %s, %s, 'email')""",
-        (contact_id, campaign_id, t1),
+        """INSERT INTO contact_template_history (contact_id, campaign_id, template_id, channel, user_id)
+           VALUES (%s, %s, %s, 'email', %s)""",
+        (contact_id, campaign_id, t1, TEST_USER_ID),
     )
     conn.commit()
 

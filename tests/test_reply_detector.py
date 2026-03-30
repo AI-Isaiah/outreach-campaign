@@ -68,6 +68,7 @@ def test_store_pending_reply(tmp_db):
         snippet="Thanks for reaching out, let's chat!",
         classification="positive",
         confidence=0.9,
+        user_id=1,
     )
     conn.commit()
 
@@ -101,6 +102,7 @@ def test_store_pending_reply_dedup(tmp_db):
         snippet="test",
         classification="neutral",
         confidence=0.5,
+        user_id=1,
     )
     conn.commit()
 

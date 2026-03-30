@@ -404,8 +404,8 @@ def batch_import_and_enroll(
                     )
                     deal_id = cur.fetchone()["id"]
                     cur.execute(
-                        "INSERT INTO deal_stage_log (deal_id, to_stage) VALUES (%s, 'cold')",
-                        (deal_id,),
+                        "INSERT INTO deal_stage_log (deal_id, to_stage, user_id) VALUES (%s, 'cold', %s)",
+                        (deal_id, user_id),
                     )
                     deals_created += 1
 
