@@ -111,17 +111,23 @@ def run_migrations(conn) -> None:
         cursor.execute("SELECT filename FROM schema_migrations")
         applied = {row["filename"] for row in cursor.fetchall()}
 
+        import logging
+        _mig_logger = logging.getLogger(__name__)
         for migration_file in migration_files:
             if migration_file.name in applied:
                 continue
             sql = migration_file.read_text().strip()
-            if sql:
-                cursor.execute(sql)
-            cursor.execute(
-                "INSERT INTO schema_migrations (filename) VALUES (%s)",
-                (migration_file.name,),
-            )
-        conn.commit()
+            try:
+                if sql:
+                    cursor.execute(sql)
+                cursor.execute(
+                    "INSERT INTO schema_migrations (filename) VALUES (%s)",
+                    (migration_file.name,),
+                )
+                conn.commit()
+            except Exception as exc:
+                conn.rollback()
+                _mig_logger.warning("Migration %s failed: %s", migration_file.name, exc)
 
 
 def get_table_names(conn) -> list[str]:
