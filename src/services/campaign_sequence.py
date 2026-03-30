@@ -111,20 +111,14 @@ def reorder_campaign_sequence(
             (campaign_id, campaign_id),
         )
 
-        # Recalculate next_action_date for affected contacts
+        # Recalculate next_action_date based on current step's delay
         if affected_count > 0:
             cursor.execute("""
                 UPDATE contact_campaign_status ccs
                 SET next_action_date = (
-                    SELECT CURRENT_DATE + (ss_next.delay_days || ' days')::interval
-                    FROM sequence_steps ss_cur
-                    JOIN sequence_steps ss_next
-                      ON ss_next.campaign_id = ss_cur.campaign_id
-                      AND ss_next.step_order = (
-                        SELECT MIN(step_order) FROM sequence_steps
-                        WHERE campaign_id = ss_cur.campaign_id AND step_order > ss_cur.step_order
-                      )
-                    WHERE ss_cur.stable_id = ccs.current_step_id
+                    SELECT CURRENT_DATE + (ss.delay_days || ' days')::interval
+                    FROM sequence_steps ss
+                    WHERE ss.stable_id = ccs.current_step_id
                 )
                 WHERE ccs.campaign_id = %s
                   AND ccs.status IN ('queued', 'in_progress')

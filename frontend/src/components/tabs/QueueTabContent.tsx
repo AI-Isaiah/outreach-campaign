@@ -182,7 +182,7 @@ export default function QueueTabContent({ campaignName }: { campaignName: string
     <div className="space-y-6">
       {scopePills}
       <p className="text-sm text-gray-500">
-        {allItems.length} action{allItems.length !== 1 ? "s" : ""} today
+        {allItems.length} action{allItems.length !== 1 ? "s" : ""}{queueScope === "all" ? " queued" : queueScope === "overdue" ? " overdue" : " today"}
         {emailItems.length > 0 && ` \u00b7 ${emailItems.length} email`}
         {linkedinItems.length > 0 && ` \u00b7 ${linkedinItems.length} LinkedIn`}
       </p>
