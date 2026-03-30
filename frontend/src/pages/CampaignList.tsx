@@ -154,7 +154,7 @@ function CampaignCard({ campaign: c, viewMode }: { campaign: CampaignWithMetrics
   return (
     <div className="border border-gray-200 rounded-lg p-5 bg-white hover:shadow-sm transition-shadow relative">
       <div className="flex items-start gap-4">
-        <Link to={`/campaigns/${c.name}`} className="flex-1 min-w-0 flex items-start gap-4">
+        <Link to={c.status === "draft" ? `/campaigns/wizard?editCampaign=${c.id}&step=2` : `/campaigns/${c.name}`} className="flex-1 min-w-0 flex items-start gap-4">
           <div className={`w-2.5 h-2.5 rounded-full mt-1.5 shrink-0 ${statusDotColor}`} />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
