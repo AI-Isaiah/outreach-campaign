@@ -901,7 +901,7 @@ class TestDeepResearchUpdateStatus:
         cid = _create_company(conn)
         dr_id = _insert_deep_research(conn, cid, status="pending")
 
-        _update_status(conn, dr_id, "researching")
+        _update_status(conn, dr_id, "researching", user_id=TEST_USER_ID)
 
         with get_cursor(conn) as cur:
             cur.execute("SELECT status, started_at FROM deep_research WHERE id = %s", (dr_id,))
@@ -916,7 +916,7 @@ class TestDeepResearchUpdateStatus:
         cid = _create_company(conn)
         dr_id = _insert_deep_research(conn, cid, status="researching")
 
-        _update_status(conn, dr_id, "completed", company_overview="Overview text")
+        _update_status(conn, dr_id, "completed", user_id=TEST_USER_ID, company_overview="Overview text")
 
         with get_cursor(conn) as cur:
             cur.execute("SELECT status, completed_at, company_overview FROM deep_research WHERE id = %s", (dr_id,))
@@ -932,7 +932,7 @@ class TestDeepResearchUpdateStatus:
         cid = _create_company(conn)
         dr_id = _insert_deep_research(conn, cid, status="researching")
 
-        _update_status(conn, dr_id, "failed", error_message="API down")
+        _update_status(conn, dr_id, "failed", user_id=TEST_USER_ID, error_message="API down")
 
         with get_cursor(conn) as cur:
             cur.execute("SELECT status, error_message, completed_at FROM deep_research WHERE id = %s", (dr_id,))
@@ -951,7 +951,7 @@ class TestDeepResearchIsCancelled:
         conn = _setup_db(tmp_db)
         cid = _create_company(conn)
         dr_id = _insert_deep_research(conn, cid, status="cancelled")
-        assert _is_cancelled(conn, dr_id) is True
+        assert _is_cancelled(conn, dr_id, user_id=TEST_USER_ID) is True
         conn.close()
 
     def test_not_cancelled_returns_false(self, tmp_db):
@@ -959,13 +959,13 @@ class TestDeepResearchIsCancelled:
         conn = _setup_db(tmp_db)
         cid = _create_company(conn)
         dr_id = _insert_deep_research(conn, cid, status="researching")
-        assert _is_cancelled(conn, dr_id) is False
+        assert _is_cancelled(conn, dr_id, user_id=TEST_USER_ID) is False
         conn.close()
 
     def test_nonexistent_id_returns_false(self, tmp_db):
         from src.services.deep_research_service import _is_cancelled
         conn = _setup_db(tmp_db)
-        assert _is_cancelled(conn, 99999) is False
+        assert _is_cancelled(conn, 99999, user_id=TEST_USER_ID) is False
         conn.close()
 
 
@@ -2267,7 +2267,7 @@ class TestGetPreviousCryptoScore:
         from src.services.deep_research_service import _get_previous_crypto_score
         conn = _setup_db(tmp_db)
         cid = _create_company(conn)
-        result = _get_previous_crypto_score(conn, cid)
+        result = _get_previous_crypto_score(conn, cid, user_id=TEST_USER_ID)
         assert result is None
         conn.close()
 
@@ -2291,6 +2291,6 @@ class TestGetPreviousCryptoScore:
             )
             conn.commit()
 
-        result = _get_previous_crypto_score(conn, cid)
+        result = _get_previous_crypto_score(conn, cid, user_id=TEST_USER_ID)
         assert result == 85
         conn.close()

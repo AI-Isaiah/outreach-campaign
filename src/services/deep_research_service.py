@@ -189,18 +189,18 @@ def _extract_fund_signals(research_result: dict) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-def _is_cancelled(conn, deep_research_id: int) -> bool:
+def _is_cancelled(conn, deep_research_id: int, *, user_id: int) -> bool:
     """Check if deep research has been cancelled."""
     with get_cursor(conn) as cur:
         cur.execute(
-            "SELECT status FROM deep_research WHERE id = %s",
-            (deep_research_id,),
+            "SELECT status FROM deep_research WHERE id = %s AND user_id = %s",
+            (deep_research_id, user_id),
         )
         row = cur.fetchone()
         return row is not None and row["status"] == "cancelled"
 
 
-def _update_status(conn, deep_research_id: int, status: str, **kwargs) -> None:
+def _update_status(conn, deep_research_id: int, status: str, *, user_id: int, **kwargs) -> None:
     """Update deep_research row status and optional fields."""
     sets = ["status = %s", "updated_at = NOW()"]
     vals: list = [status]
@@ -223,10 +223,10 @@ def _update_status(conn, deep_research_id: int, status: str, **kwargs) -> None:
     if status in ("completed", "failed", "cancelled"):
         sets.append("completed_at = NOW()")
 
-    vals.append(deep_research_id)
+    vals.extend([deep_research_id, user_id])
     with get_cursor(conn) as cur:
         cur.execute(
-            f"UPDATE deep_research SET {', '.join(sets)} WHERE id = %s",
+            f"UPDATE deep_research SET {', '.join(sets)} WHERE id = %s AND user_id = %s",
             vals,
         )
         conn.commit()
@@ -413,8 +413,8 @@ def _enrich_contacts(conn, company_id: int, key_people: list[dict], user_id: int
             # Match by linkedin_url_normalized
             if linkedin_norm:
                 cur.execute(
-                    "SELECT id, title FROM contacts WHERE linkedin_url_normalized = %s AND company_id = %s",
-                    (linkedin_norm, company_id),
+                    "SELECT id, title FROM contacts WHERE linkedin_url_normalized = %s AND company_id = %s AND user_id = %s",
+                    (linkedin_norm, company_id, user_id),
                 )
                 match = cur.fetchone()
                 if match:
@@ -432,8 +432,8 @@ def _enrich_contacts(conn, company_id: int, key_people: list[dict], user_id: int
             email_norm = normalize_email(email) if email else None
             if email_norm:
                 cur.execute(
-                    "SELECT id, title FROM contacts WHERE email_normalized = %s AND company_id = %s",
-                    (email_norm, company_id),
+                    "SELECT id, title FROM contacts WHERE email_normalized = %s AND company_id = %s AND user_id = %s",
+                    (email_norm, company_id, user_id),
                 )
                 match = cur.fetchone()
                 if match:
@@ -449,8 +449,8 @@ def _enrich_contacts(conn, company_id: int, key_people: list[dict], user_id: int
             # Match by (name, company_id)
             name_norm = name.lower().strip()
             cur.execute(
-                "SELECT id, title FROM contacts WHERE lower(trim(full_name)) = %s AND company_id = %s",
-                (name_norm, company_id),
+                "SELECT id, title FROM contacts WHERE lower(trim(full_name)) = %s AND company_id = %s AND user_id = %s",
+                (name_norm, company_id, user_id),
             )
             match = cur.fetchone()
             if match:
@@ -505,19 +505,20 @@ def _enrich_contacts(conn, company_id: int, key_people: list[dict], user_id: int
 # ---------------------------------------------------------------------------
 
 
-def _get_previous_crypto_score(conn, company_id: int) -> int | None:
+def _get_previous_crypto_score(conn, company_id: int, *, user_id: int) -> int | None:
     """Retrieve the most recent crypto score for a company from bulk research.
 
     Checks research_results by company_id first, falls back to company_name match.
     Returns None if no prior score exists.
     """
     with get_cursor(conn) as cur:
-        # Try by company_id directly
+        # Try by company_id directly (scoped via research_jobs.user_id)
         cur.execute(
-            """SELECT crypto_score FROM research_results
-               WHERE company_id = %s AND status = 'completed'
-               ORDER BY created_at DESC LIMIT 1""",
-            (company_id,),
+            """SELECT rr.crypto_score FROM research_results rr
+               JOIN research_jobs rj ON rj.id = rr.job_id
+               WHERE rr.company_id = %s AND rr.status = 'completed' AND rj.user_id = %s
+               ORDER BY rr.created_at DESC LIMIT 1""",
+            (company_id, user_id),
         )
         row = cur.fetchone()
         if row and row["crypto_score"] is not None:
@@ -527,10 +528,11 @@ def _get_previous_crypto_score(conn, company_id: int) -> int | None:
         cur.execute(
             """SELECT rr.crypto_score
                FROM research_results rr
+               JOIN research_jobs rj ON rj.id = rr.job_id
                JOIN companies c ON lower(trim(rr.company_name)) = c.name_normalized
-               WHERE c.id = %s AND rr.status = 'completed'
+               WHERE c.id = %s AND rr.status = 'completed' AND rj.user_id = %s
                ORDER BY rr.created_at DESC LIMIT 1""",
-            (company_id,),
+            (company_id, user_id),
         )
         row = cur.fetchone()
         if row and row["crypto_score"] is not None:
@@ -572,8 +574,18 @@ def run_deep_research(
     from src.models.database import get_connection, run_migrations
 
     conn = get_connection(db_url)
+    user_id = None
     try:
         run_migrations(conn)
+
+        # Fetch user_id from the deep_research row for scoped updates
+        with get_cursor(conn) as cur:
+            cur.execute("SELECT user_id FROM deep_research WHERE id = %s", (deep_research_id,))
+            row = cur.fetchone()
+            if not row:
+                logger.error("Deep research %d not found", deep_research_id)
+                return
+            user_id = row["user_id"]
 
         keys = api_keys or {}
         if not keys.get("perplexity"):
@@ -584,10 +596,11 @@ def run_deep_research(
         _execute_deep_research(conn, deep_research_id, keys)
     except (httpx.HTTPError, psycopg2.Error, json.JSONDecodeError, KeyError, RuntimeError) as e:
         logger.exception("Deep research %d failed", deep_research_id)
-        try:
-            _update_status(conn, deep_research_id, "failed", error_message=str(e))
-        except psycopg2.Error:
-            logger.exception("Failed to update deep research %d status", deep_research_id)
+        if user_id is not None:
+            try:
+                _update_status(conn, deep_research_id, "failed", user_id=user_id, error_message=str(e))
+            except psycopg2.Error:
+                logger.exception("Failed to update deep research %d status", deep_research_id)
     finally:
         conn.close()
 
@@ -621,14 +634,14 @@ def _execute_deep_research(conn, deep_research_id: int, api_keys: dict) -> None:
     anthropic_key = api_keys.get("anthropic", "")
 
     if not perplexity_key:
-        _update_status(conn, deep_research_id, "failed", error_message="PERPLEXITY_API_KEY not configured")
+        _update_status(conn, deep_research_id, "failed", user_id=user_id, error_message="PERPLEXITY_API_KEY not configured")
         return
     if not anthropic_key:
-        _update_status(conn, deep_research_id, "failed", error_message="ANTHROPIC_API_KEY not configured")
+        _update_status(conn, deep_research_id, "failed", user_id=user_id, error_message="ANTHROPIC_API_KEY not configured")
         return
 
     # --- Phase 1: Parallel Perplexity queries ---
-    _update_status(conn, deep_research_id, "researching")
+    _update_status(conn, deep_research_id, "researching", user_id=user_id)
 
     queries = _build_research_queries(company_name, is_us_based)
     query_results: list[dict] = []
@@ -658,9 +671,10 @@ def _execute_deep_research(conn, deep_research_id: int, api_keys: dict) -> None:
             total_cost += result.get("cost_usd", 0)
 
     # Check cancellation between phases
-    if _is_cancelled(conn, deep_research_id):
+    if _is_cancelled(conn, deep_research_id, user_id=user_id):
         _update_status(
             conn, deep_research_id, "cancelled",
+            user_id=user_id,
             raw_queries=query_results,
             actual_cost_usd=round(total_cost, 4),
             query_count=len(queries),
@@ -672,6 +686,7 @@ def _execute_deep_research(conn, deep_research_id: int, api_keys: dict) -> None:
     if len(successful) < 2:
         _update_status(
             conn, deep_research_id, "failed",
+            user_id=user_id,
             raw_queries=query_results,
             actual_cost_usd=round(total_cost, 4),
             query_count=len(queries),
@@ -682,20 +697,22 @@ def _execute_deep_research(conn, deep_research_id: int, api_keys: dict) -> None:
     # --- Phase 2: Sonnet synthesis ---
     _update_status(
         conn, deep_research_id, "synthesizing",
+        user_id=user_id,
         raw_queries=query_results,
         actual_cost_usd=round(total_cost, 4),
         query_count=len(queries),
     )
 
-    # Fetch any prior bulk research data for this company
+    # Fetch any prior bulk research data for this company (scoped via research_jobs.user_id)
     bulk_research = None
     with get_cursor(conn) as cur:
         cur.execute(
-            """SELECT web_search_raw, website_crawl_raw
-               FROM research_results
-               WHERE company_id = %s AND status = 'completed'
-               ORDER BY created_at DESC LIMIT 1""",
-            (company_id,),
+            """SELECT rr.web_search_raw, rr.website_crawl_raw
+               FROM research_results rr
+               JOIN research_jobs rj ON rj.id = rr.job_id
+               WHERE rr.company_id = %s AND rr.status = 'completed' AND rj.user_id = %s
+               ORDER BY rr.created_at DESC LIMIT 1""",
+            (company_id, user_id),
         )
         bulk_research = cur.fetchone()
 
@@ -703,15 +720,16 @@ def _execute_deep_research(conn, deep_research_id: int, api_keys: dict) -> None:
     total_cost += COST_SONNET_SYNTHESIS
 
     # Check cancellation after synthesis
-    if _is_cancelled(conn, deep_research_id):
+    if _is_cancelled(conn, deep_research_id, user_id=user_id):
         _update_status(
             conn, deep_research_id, "cancelled",
+            user_id=user_id,
             actual_cost_usd=round(total_cost, 4),
         )
         return
 
     # --- Phase 3: Enrich contacts + snapshot previous score ---
-    previous_score = _get_previous_crypto_score(conn, company_id)
+    previous_score = _get_previous_crypto_score(conn, company_id, user_id=user_id)
 
     key_people = synthesis.get("key_people") or []
     if not isinstance(key_people, list):
@@ -730,6 +748,7 @@ def _execute_deep_research(conn, deep_research_id: int, api_keys: dict) -> None:
     # --- Final update ---
     _update_status(
         conn, deep_research_id, "completed",
+        user_id=user_id,
         raw_queries=query_results,
         company_overview=synthesis.get("company_overview"),
         crypto_signals=synthesis.get("crypto_signals"),

@@ -117,7 +117,7 @@ def test_estimate_job_cost_crawl_only():
 # ---------- Duplicate Detection ----------
 
 def test_check_duplicates_empty_db(db_conn):
-    result = check_duplicate_companies(db_conn, ["Alpha Fund", "Beta Capital"])
+    result = check_duplicate_companies(db_conn, ["Alpha Fund", "Beta Capital"], user_id=TEST_USER_ID)
     assert result["already_researched"] == []
     assert len(result["new"]) == 2
 
@@ -136,7 +136,7 @@ def test_check_duplicates_finds_existing(db_conn):
     cur.execute("UPDATE research_jobs SET status = 'completed' WHERE id = %s", (job_id,))
     db_conn.commit()
 
-    result = check_duplicate_companies(db_conn, ["Alpha Fund", "New Corp"])
+    result = check_duplicate_companies(db_conn, ["Alpha Fund", "New Corp"], user_id=TEST_USER_ID)
     assert "Alpha Fund" in result["already_researched"]
     assert "New Corp" in result["new"]
 

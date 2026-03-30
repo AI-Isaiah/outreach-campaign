@@ -35,7 +35,7 @@ def score_contacts(
         return []
 
     # Get segment performance for reply rates
-    segments = get_segment_performance(conn, campaign_id)
+    segments = get_segment_performance(conn, campaign_id, user_id=user_id)
     segment_rates = {s["aum_tier"]: s["reply_rate"] for s in segments}
 
     # Get max AUM for normalization
@@ -58,8 +58,9 @@ def score_contacts(
             JOIN companies comp ON comp.id = c.company_id
             JOIN contact_campaign_status ccs ON ccs.contact_id = c.id AND ccs.campaign_id = %s
             WHERE c.id IN ({placeholders})
+              AND c.user_id = %s
             """,
-            [campaign_id] + contact_ids,
+            [campaign_id] + contact_ids + [user_id],
         )
         rows = cursor.fetchall()
 

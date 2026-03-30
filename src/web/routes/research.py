@@ -230,8 +230,8 @@ def create_research_job(
             # Batch lookup existing companies (avoid N+1)
             all_norms = [normalize_company_name(c["company_name"]) for c in companies]
             cur.execute(
-                "SELECT id, name_normalized FROM companies WHERE name_normalized = ANY(%s)",
-                (all_norms,),
+                "SELECT id, name_normalized FROM companies WHERE name_normalized = ANY(%s) AND user_id = %s",
+                (all_norms, user["id"]),
             )
             company_map = {row["name_normalized"]: row["id"] for row in cur.fetchall()}
 
@@ -471,7 +471,7 @@ def cancel_job(job_id: int, conn=Depends(get_db), user=Depends(get_current_user)
         if not cur.fetchone():
             raise HTTPException(404, "Research job not found")
 
-    result = cancel_research_job(conn, job_id)
+    result = cancel_research_job(conn, job_id, user_id=user["id"])
     if not result["success"]:
         raise HTTPException(400, result["error"])
     return result

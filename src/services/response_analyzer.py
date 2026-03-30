@@ -88,7 +88,7 @@ def annotate_is_winning(results: list[dict], min_sends: int = 5) -> list[dict]:
     return results
 
 
-def get_channel_performance(conn, campaign_id: int) -> list[dict]:
+def get_channel_performance(conn, campaign_id: int, *, user_id: int) -> list[dict]:
     """Positive rate per channel (email, linkedin_*)."""
     with get_cursor(conn) as cursor:
         cursor.execute(
@@ -99,10 +99,11 @@ def get_channel_performance(conn, campaign_id: int) -> list[dict]:
                 SUM(CASE WHEN cth.outcome = 'positive' THEN 1 ELSE 0 END) AS positive,
                 SUM(CASE WHEN cth.outcome = 'negative' THEN 1 ELSE 0 END) AS negative
             FROM contact_template_history cth
-            WHERE cth.campaign_id = %s
+            JOIN campaigns cam ON cam.id = cth.campaign_id
+            WHERE cth.campaign_id = %s AND cam.user_id = %s
             GROUP BY cth.channel
             """,
-            (campaign_id,),
+            (campaign_id, user_id),
         )
         rows = cursor.fetchall()
 
@@ -121,7 +122,7 @@ def get_channel_performance(conn, campaign_id: int) -> list[dict]:
         return results
 
 
-def get_segment_performance(conn, campaign_id: int) -> list[dict]:
+def get_segment_performance(conn, campaign_id: int, *, user_id: int) -> list[dict]:
     """Reply rate by AUM tier: $0-100M, $100M-500M, $500M-1B, $1B+."""
     with get_cursor(conn) as cursor:
         cursor.execute(
@@ -141,11 +142,11 @@ def get_segment_performance(conn, campaign_id: int) -> list[dict]:
             FROM contact_campaign_status ccs
             JOIN contacts c ON c.id = ccs.contact_id
             LEFT JOIN companies comp ON comp.id = c.company_id
-            WHERE ccs.campaign_id = %s
+            WHERE ccs.campaign_id = %s AND c.user_id = %s
             GROUP BY aum_tier
             ORDER BY aum_tier
             """,
-            (campaign_id,),
+            (campaign_id, user_id),
         )
         rows = cursor.fetchall()
 

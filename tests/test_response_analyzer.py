@@ -75,7 +75,7 @@ def test_channel_performance_empty(tmp_db):
     conn = get_connection(tmp_db)
     run_migrations(conn)
     campaign_id = create_campaign(conn, "empty_camp", user_id=TEST_USER_ID)
-    result = get_channel_performance(conn, campaign_id)
+    result = get_channel_performance(conn, campaign_id, user_id=TEST_USER_ID)
     assert result == []
     conn.close()
 
@@ -88,7 +88,7 @@ def test_segment_performance(tmp_db):
     from src.models.campaigns import enroll_contact
     enroll_contact(conn, contact_id, campaign_id, user_id=1)
 
-    result = get_segment_performance(conn, campaign_id)
+    result = get_segment_performance(conn, campaign_id, user_id=TEST_USER_ID)
     assert len(result) >= 1
     # Big Fund has 2000M AUM -> "$1B+" tier
     tiers = [r["aum_tier"] for r in result]

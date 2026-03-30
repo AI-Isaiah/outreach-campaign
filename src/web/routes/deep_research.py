@@ -227,16 +227,13 @@ def cancel_deep_research(
     """Cancel an in-progress deep research job."""
     with get_cursor(conn) as cur:
         cur.execute(
-            "SELECT id, user_id, status FROM deep_research WHERE id = %s",
-            (deep_research_id,),
+            "SELECT id, status FROM deep_research WHERE id = %s AND user_id = %s",
+            (deep_research_id, user["id"]),
         )
         row = cur.fetchone()
 
     if not row:
         raise HTTPException(404, "Deep research not found")
-
-    if row["user_id"] != user["id"]:
-        raise HTTPException(403, "Not authorized to cancel this research")
 
     cancelable = ("pending", "researching", "synthesizing")
     if row["status"] not in cancelable:

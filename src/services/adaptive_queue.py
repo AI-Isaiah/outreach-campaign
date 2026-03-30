@@ -52,13 +52,10 @@ def get_adaptive_queue(
 
     # Get available templates per channel
     with get_cursor(conn) as cursor:
-        templates_query = "SELECT * FROM templates WHERE is_active = true"
-        templates_params: list = []
-        if user_id is not None:
-            templates_query += " AND user_id = %s"
-            templates_params.append(user_id)
-        templates_query += " ORDER BY id"
-        cursor.execute(templates_query, templates_params)
+        cursor.execute(
+            "SELECT * FROM templates WHERE is_active = true AND user_id = %s ORDER BY id",
+            (user_id,),
+        )
         all_templates = [dict(r) for r in cursor.fetchall()]
 
         templates_by_channel = {}
@@ -95,16 +92,10 @@ def get_adaptive_queue(
 
             # Check for manual override
             override_key = f"override_{contact_id}_{campaign_id}"
-            if user_id is not None:
-                cursor.execute(
-                    "SELECT value FROM engine_config WHERE key = %s AND user_id = %s",
-                    (override_key, user_id),
-                )
-            else:
-                cursor.execute(
-                    "SELECT value FROM engine_config WHERE key = %s",
-                    (override_key,),
-                )
+            cursor.execute(
+                "SELECT value FROM engine_config WHERE key = %s AND user_id = %s",
+                (override_key, user_id),
+            )
             override_row = cursor.fetchone()
 
             if override_row:
@@ -116,10 +107,7 @@ def get_adaptive_queue(
                     "alternatives": [],
                 }
                 # Clean up the override (one-time use)
-                if user_id is not None:
-                    cursor.execute("DELETE FROM engine_config WHERE key = %s AND user_id = %s", (override_key, user_id))
-                else:
-                    cursor.execute("DELETE FROM engine_config WHERE key = %s", (override_key,))
+                cursor.execute("DELETE FROM engine_config WHERE key = %s AND user_id = %s", (override_key, user_id))
                 conn.commit()
             else:
                 # Adaptive template selection

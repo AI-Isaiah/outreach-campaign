@@ -160,7 +160,7 @@ def preview_research_csv(csv_content: str) -> dict:
 # Duplicate Detection
 # ---------------------------------------------------------------------------
 
-def check_duplicate_companies(conn, company_names: list[str], user_id: int | None = None) -> dict:
+def check_duplicate_companies(conn, company_names: list[str], *, user_id: int) -> dict:
     """Check which companies have already been researched in prior jobs.
 
     Returns dict with 'already_researched' (list of names) and 'new' (list of names).
@@ -173,16 +173,15 @@ def check_duplicate_companies(conn, company_names: list[str], user_id: int | Non
     norm_to_orig = dict(zip(simple_norm, company_names))
 
     with get_cursor(conn) as cur:
-        query = """SELECT DISTINCT regexp_replace(lower(trim(rr.company_name)), '\\s+', ' ', 'g') AS name_norm
+        cur.execute(
+            """SELECT DISTINCT regexp_replace(lower(trim(rr.company_name)), '\\s+', ' ', 'g') AS name_norm
                FROM research_results rr
                JOIN research_jobs rj ON rj.id = rr.job_id
                WHERE rj.status IN ('completed', 'researching', 'classifying')
-                 AND regexp_replace(lower(trim(rr.company_name)), '\\s+', ' ', 'g') = ANY(%s)"""
-        params: list = [simple_norm]
-        if user_id is not None:
-            query += " AND rj.user_id = %s"
-            params.append(user_id)
-        cur.execute(query, params)
+                 AND regexp_replace(lower(trim(rr.company_name)), '\\s+', ' ', 'g') = ANY(%s)
+                 AND rj.user_id = %s""",
+            [simple_norm, user_id],
+        )
         existing = {row["name_norm"] for row in cur.fetchall()}
 
     already = [norm_to_orig[n] for n in simple_norm if n in existing]
@@ -472,14 +471,14 @@ def _update_job_status(conn, job_id: int, status: str, **kwargs):
         conn.commit()
 
 
-def cancel_research_job(conn, job_id: int) -> dict:
+def cancel_research_job(conn, job_id: int, *, user_id: int) -> dict:
     """Request cancellation of a running job.
 
     Sets status to 'cancelling'. The background thread will detect this
     and stop after the current company finishes.
     """
     with get_cursor(conn) as cur:
-        cur.execute("SELECT status FROM research_jobs WHERE id = %s", (job_id,))
+        cur.execute("SELECT status FROM research_jobs WHERE id = %s AND user_id = %s", (job_id, user_id))
         row = cur.fetchone()
         if not row:
             return {"success": False, "error": "Job not found"}
@@ -490,8 +489,8 @@ def cancel_research_job(conn, job_id: int) -> dict:
         cur.execute(
             """UPDATE research_jobs
                SET status = 'cancelling', updated_at = NOW()
-               WHERE id = %s""",
-            (job_id,),
+               WHERE id = %s AND user_id = %s""",
+            (job_id, user_id),
         )
         conn.commit()
         return {"success": True, "status": "cancelling"}

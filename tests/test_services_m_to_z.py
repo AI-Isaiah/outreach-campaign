@@ -1491,7 +1491,9 @@ class TestTokenEncryption:
         """When TOKEN_ENCRYPTION_KEY is not set, encrypt_token should raise."""
         import src.services.token_encryption as te
         original_fernet = te._fernet
+        original_initialized = te._initialized
         te._fernet = None
+        te._initialized = True
         try:
             with pytest.raises(RuntimeError, match="TOKEN_ENCRYPTION_KEY"):
                 te.encrypt_token("secret")
@@ -1499,6 +1501,7 @@ class TestTokenEncryption:
                 te.decrypt_token("ciphertext")
         finally:
             te._fernet = original_fernet
+            te._initialized = original_initialized
 
 
 # ===========================================================================
@@ -1729,7 +1732,7 @@ class TestResponseAnalyzerDB:
         from src.services.response_analyzer import get_channel_performance
         conn = _conn(tmp_db)
         cid = _create_campaign(conn)
-        result = get_channel_performance(conn, cid)
+        result = get_channel_performance(conn, cid, user_id=TEST_USER_ID)
         assert result == []
         conn.close()
 
@@ -1737,7 +1740,7 @@ class TestResponseAnalyzerDB:
         from src.services.response_analyzer import get_segment_performance
         conn = _conn(tmp_db)
         cid = _create_campaign(conn)
-        result = get_segment_performance(conn, cid)
+        result = get_segment_performance(conn, cid, user_id=TEST_USER_ID)
         assert result == []
         conn.close()
 
@@ -1753,7 +1756,7 @@ class TestResponseAnalyzerDB:
         co2 = insert_company(conn, "BigCo", aum_millions=2000)
         ct2 = insert_contact(conn, co2)
         _enroll_contact(conn, ct2, cid, status="replied_positive")
-        result = get_segment_performance(conn, cid)
+        result = get_segment_performance(conn, cid, user_id=TEST_USER_ID)
         tiers = [r["aum_tier"] for r in result]
         assert "$0-100M" in tiers
         assert "$1B+" in tiers

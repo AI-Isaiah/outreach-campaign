@@ -453,7 +453,7 @@ def test_cancellation_between_research_and_synthesis(db_conn):
 
     call_count = {"n": 0}
 
-    def _mock_is_cancelled(conn, dr_id_arg):
+    def _mock_is_cancelled(conn, dr_id_arg, **kwargs):
         call_count["n"] += 1
         # Cancel on the first check (between research and synthesis)
         return call_count["n"] >= 1
@@ -607,7 +607,7 @@ def test_cancellation_during_synthesis_phase(db_conn):
 
     cancel_calls = {"n": 0}
 
-    def _mock_is_cancelled(conn, dr_id_arg):
+    def _mock_is_cancelled(conn, dr_id_arg, **kwargs):
         cancel_calls["n"] += 1
         # Allow research phase, cancel after synthesis
         return cancel_calls["n"] >= 2
@@ -760,7 +760,7 @@ def test_previous_crypto_score_from_research_result(db_conn):
     job_id = _insert_research_job(db_conn, "Prior Job")
     _insert_research_result(db_conn, job_id, "Test Corp", company_id=company_id, crypto_score=72)
 
-    score = _get_previous_crypto_score(db_conn, company_id)
+    score = _get_previous_crypto_score(db_conn, company_id, user_id=TEST_USER_ID)
     assert score == 72
 
 
@@ -887,7 +887,7 @@ def test_cancel_wrong_user_returns_403(client, db_conn):
     dr_id = _insert_deep_research(db_conn, company_id, user_id=other_user_id, status="researching")
 
     resp = client.post(f"/api/research/deep/{dr_id}/cancel")
-    assert resp.status_code == 403
+    assert resp.status_code == 404
 
 
 # ---------------------------------------------------------------------------

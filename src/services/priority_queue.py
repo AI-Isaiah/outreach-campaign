@@ -320,8 +320,9 @@ def defer_contact(
             """UPDATE contact_campaign_status
                SET next_action_date = %s, updated_at = NOW()
                WHERE contact_id = %s AND campaign_id = %s
+                 AND contact_id IN (SELECT id FROM contacts WHERE user_id = %s)
                RETURNING id""",
-            (tomorrow, contact_id, campaign_id),
+            (tomorrow, contact_id, campaign_id, user_id),
         )
         row = cursor.fetchone()
         if row is None:

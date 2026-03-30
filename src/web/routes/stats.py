@@ -15,7 +15,7 @@ def get_stats(conn=Depends(get_db), user=Depends(get_current_user)):
     """Get database statistics with current and previous period comparison."""
     uid = user["id"]
     with get_cursor(conn) as cur:
-        # Single query for all contact-level stats (scoped via companies)
+        # Single query for all contact-level stats (scoped directly via contacts.user_id)
         cur.execute("""
             SELECT
                 COUNT(*) AS total,
@@ -26,8 +26,7 @@ def get_stats(conn=Depends(get_db), user=Depends(get_current_user)):
                 COUNT(*) FILTER (WHERE c.email_normalized IS NOT NULL) AS with_email,
                 COUNT(*) FILTER (WHERE c.linkedin_url IS NOT NULL AND c.linkedin_url != '') AS with_linkedin
             FROM contacts c
-            JOIN companies co ON co.id = c.company_id
-            WHERE co.user_id = %s
+            WHERE c.user_id = %s
         """, (uid,))
         c = cur.fetchone()
 
@@ -85,7 +84,7 @@ def get_stats(conn=Depends(get_db), user=Depends(get_current_user)):
         """, (uid,))
         period = cur.fetchone()
 
-        # Contacts created this week vs last week (scoped via companies)
+        # Contacts created this week vs last week (scoped directly via contacts.user_id)
         cur.execute("""
             SELECT
                 COUNT(*) FILTER (
@@ -96,8 +95,7 @@ def get_stats(conn=Depends(get_db), user=Depends(get_current_user)):
                       AND c.created_at < date_trunc('week', CURRENT_DATE)
                 ) AS previous_week_contacts
             FROM contacts c
-            JOIN companies co ON co.id = c.company_id
-            WHERE co.user_id = %s
+            WHERE c.user_id = %s
         """, (uid,))
         contact_period = cur.fetchone()
 

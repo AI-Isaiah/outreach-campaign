@@ -11,13 +11,10 @@ import logging
 import os
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-
-_FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
 _limiter = Limiter(key_func=get_remote_address)
 
@@ -25,12 +22,14 @@ from googleapiclient.errors import HttpError
 
 from src.config import DEFAULT_CAMPAIGN, load_config_safe
 from src.enums import EventType
-from src.models.campaigns import get_campaign_by_name
 from src.models.enrollment import get_sequence_steps, record_template_usage
 from src.services.sequence_utils import advance_to_next_step
 from src.models.events import log_event
 from src.services.email_sender import render_campaign_email
+from cryptography.fernet import InvalidToken
+
 from src.services.gmail_drafter import GmailDrafter
+from src.services.token_encryption import decrypt_token
 from src.web.dependencies import get_current_user, get_db
 from src.models.database import get_cursor
 
@@ -38,7 +37,40 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/gmail", tags=["gmail"])
 
-_drafter = GmailDrafter()
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
+
+
+def _get_user_drafter(conn, user_id: int) -> GmailDrafter | None:
+    """Load Gmail OAuth tokens from DB and return a GmailDrafter, or None."""
+    with get_cursor(conn) as cur:
+        cur.execute(
+            """SELECT gmail_access_token, gmail_refresh_token, gmail_connected
+               FROM users WHERE id = %s""",
+            (user_id,),
+        )
+        row = cur.fetchone()
+
+    if not row or not row["gmail_connected"] or not row["gmail_access_token"]:
+        return None
+
+    try:
+        access_token = decrypt_token(row["gmail_access_token"])
+        refresh_token = decrypt_token(row["gmail_refresh_token"]) if row["gmail_refresh_token"] else ""
+    except (InvalidToken, ValueError):
+        logger.exception("Failed to decrypt Gmail tokens for user %s", user_id)
+        return None
+
+    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+        logger.warning("GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET not set")
+        return None
+
+    return GmailDrafter.from_db_tokens(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        client_id=GOOGLE_CLIENT_ID,
+        client_secret=GOOGLE_CLIENT_SECRET,
+    )
 
 
 class DraftRequest(BaseModel):
@@ -57,30 +89,55 @@ class BatchDraftRequest(BaseModel):
 
 
 @router.get("/status")
-def gmail_status():
-    """Check if Gmail is authorized."""
-    return {"authorized": _drafter.is_authorized()}
+def gmail_status(
+    conn=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Check if Gmail is authorized for the current user."""
+    drafter = _get_user_drafter(conn, user["id"])
+    return {"authorized": drafter is not None and drafter.is_authorized()}
 
 
 @router.post("/authorize")
-def gmail_authorize():
-    """Start OAuth flow — returns the URL the user should visit."""
-    try:
-        url = _drafter.get_authorization_url()
-        return {"authorization_url": url}
-    except FileNotFoundError as e:
-        raise HTTPException(400, str(e))
+def gmail_authorize(
+    conn=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Start OAuth flow — redirects to the DB-backed /auth/gmail/connect flow."""
+    # Delegate to the DB-backed OAuth flow in gmail_oauth.py
+    from src.web.routes.gmail_oauth import GOOGLE_REDIRECT_URI, SCOPES as OAUTH_SCOPES
+    import secrets as _secrets
+    import hashlib
+    from datetime import datetime, timedelta, timezone
 
+    if not GOOGLE_CLIENT_ID:
+        raise HTTPException(500, "Google OAuth not configured (GOOGLE_CLIENT_ID missing)")
 
-@router.get("/callback")
-def gmail_callback(code: str = Query(...)):
-    """Handle OAuth callback from Google."""
-    try:
-        _drafter.handle_callback(code)
-        return RedirectResponse(url=f"{_FRONTEND_URL}/settings?gmail=connected")
-    except (HttpError, ValueError, OSError) as e:
-        logger.error("Gmail OAuth callback failed: %s", e)
-        raise HTTPException(400, f"OAuth failed: {e}")
+    state = _secrets.token_urlsafe(32)
+    code_verifier = _secrets.token_urlsafe(43)
+    code_challenge = hashlib.sha256(code_verifier.encode()).hexdigest()
+
+    with get_cursor(conn) as cur:
+        cur.execute("DELETE FROM oauth_states WHERE expires_at < NOW()")
+        cur.execute("DELETE FROM oauth_states WHERE user_id = %s", (user["id"],))
+        cur.execute(
+            "INSERT INTO oauth_states (state, user_id, expires_at, code_challenge) VALUES (%s, %s, %s, %s)",
+            (state, user["id"], datetime.now(timezone.utc) + timedelta(minutes=10), code_challenge),
+        )
+        conn.commit()
+
+    from urllib.parse import urlencode
+    params = urlencode({
+        "client_id": GOOGLE_CLIENT_ID,
+        "redirect_uri": GOOGLE_REDIRECT_URI,
+        "response_type": "code",
+        "scope": OAUTH_SCOPES,
+        "access_type": "offline",
+        "prompt": "consent",
+        "state": state,
+    })
+    authorization_url = f"https://accounts.google.com/o/oauth2/v2/auth?{params}"
+    return {"authorization_url": authorization_url}
 
 
 @router.post("/drafts")
@@ -92,7 +149,8 @@ def create_draft(
     user=Depends(get_current_user),
 ):
     """Push a single email to Gmail as a draft."""
-    if not _drafter.is_authorized():
+    drafter = _get_user_drafter(conn, user["id"])
+    if not drafter or not drafter.is_authorized():
         raise HTTPException(401, "Gmail not authorized. Connect Gmail first.")
 
     with get_cursor(conn) as cur:
@@ -138,7 +196,7 @@ def create_draft(
 
     # Create the Gmail draft
     try:
-        draft_id = _drafter.create_draft(
+        draft_id = drafter.create_draft(
             to_email=to_email,
             subject=subject,
             body_text=body_text,
@@ -174,7 +232,8 @@ def create_batch_drafts(
     user=Depends(get_current_user),
 ):
     """Push all today's email queue items to Gmail as drafts."""
-    if not _drafter.is_authorized():
+    drafter = _get_user_drafter(conn, user["id"])
+    if not drafter or not drafter.is_authorized():
         raise HTTPException(401, "Gmail not authorized. Connect Gmail first.")
 
     with get_cursor(conn) as cur:
@@ -200,8 +259,8 @@ def create_batch_drafts(
         with get_cursor(conn) as cur:
             cur.execute(
                 """SELECT id FROM gmail_drafts
-                   WHERE contact_id = %s AND campaign_id = %s AND status = 'drafted'""",
-                (item["contact_id"], campaign_id),
+                   WHERE contact_id = %s AND campaign_id = %s AND status = 'drafted' AND user_id = %s""",
+                (item["contact_id"], campaign_id, user["id"]),
             )
             existing = cur.fetchone()
         if existing:
@@ -225,7 +284,7 @@ def create_batch_drafts(
             continue
 
         try:
-            draft_id = _drafter.create_draft(
+            draft_id = drafter.create_draft(
                 to_email=rendered["contact_email"],
                 subject=rendered["subject"],
                 body_text=rendered["body_text"],
@@ -275,12 +334,14 @@ def check_draft_status(
     if not camp:
         raise HTTPException(404, f"Campaign '{campaign}' not found")
 
+    drafter = _get_user_drafter(conn, user["id"])
+
     with get_cursor(conn) as cur:
         cur.execute(
             """SELECT * FROM gmail_drafts
-               WHERE contact_id = %s AND campaign_id = %s
+               WHERE contact_id = %s AND campaign_id = %s AND user_id = %s
                ORDER BY id DESC LIMIT 1""",
-            (contact_id, camp["id"]),
+            (contact_id, camp["id"], user["id"]),
         )
         draft_row = cur.fetchone()
 
@@ -288,9 +349,9 @@ def check_draft_status(
             return {"status": "no_draft"}
 
         # If status is 'drafted', check with Gmail API
-        if draft_row["status"] == "drafted" and _drafter.is_authorized():
+        if draft_row["status"] == "drafted" and drafter and drafter.is_authorized():
             try:
-                gmail_status = _drafter.check_draft_status(draft_row["gmail_draft_id"])
+                gmail_status = drafter.check_draft_status(draft_row["gmail_draft_id"])
                 if gmail_status == "sent":
                     # Draft was sent — atomically update only if still 'drafted'
                     cur.execute(

@@ -48,8 +48,8 @@ def run_analysis(conn, campaign_id: int, *, user_id: int) -> dict:
 
     # Gather performance data
     template_perf = get_template_performance(conn, campaign_id)
-    channel_perf = get_channel_performance(conn, campaign_id)
-    segment_perf = get_segment_performance(conn, campaign_id)
+    channel_perf = get_channel_performance(conn, campaign_id, user_id=user_id)
+    segment_perf = get_segment_performance(conn, campaign_id, user_id=user_id)
     timing_perf = get_timing_performance(conn, campaign_id)
 
     # Build the prompt

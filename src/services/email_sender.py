@@ -423,8 +423,9 @@ def send_campaign_email(
             "UPDATE contact_campaign_status "
             "SET sent_at = NOW() "
             "WHERE contact_id = %s AND campaign_id = %s AND sent_at IS NULL "
+            "AND contact_id IN (SELECT id FROM contacts WHERE user_id = %s) "
             "RETURNING current_step",
-            (contact_id, campaign_id),
+            (contact_id, campaign_id, user_id),
         )
         claimed = cur.fetchone()
     if not claimed:

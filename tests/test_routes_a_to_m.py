@@ -1411,17 +1411,21 @@ class TestGmailStatus:
 
 
 class TestGmailDrafts:
-    @patch("src.web.routes.gmail._drafter")
-    def test_create_draft_unauthorized(self, mock_drafter, client):
+    @patch("src.web.routes.gmail._get_user_drafter")
+    def test_create_draft_unauthorized(self, mock_get_drafter, client):
+        mock_drafter = MagicMock()
         mock_drafter.is_authorized.return_value = False
+        mock_get_drafter.return_value = mock_drafter
         resp = client.post("/api/gmail/drafts", json={
             "contact_id": 1, "subject": "Hi", "body_text": "Hello",
         })
         assert resp.status_code == 401
 
-    @patch("src.web.routes.gmail._drafter")
-    def test_create_draft_campaign_not_found(self, mock_drafter, client):
+    @patch("src.web.routes.gmail._get_user_drafter")
+    def test_create_draft_campaign_not_found(self, mock_get_drafter, client):
+        mock_drafter = MagicMock()
         mock_drafter.is_authorized.return_value = True
+        mock_get_drafter.return_value = mock_drafter
         resp = client.post("/api/gmail/drafts", json={
             "contact_id": 1, "campaign": "nonexistent",
             "subject": "Hi", "body_text": "Hello",
@@ -1430,17 +1434,21 @@ class TestGmailDrafts:
 
 
 class TestGmailBatchDrafts:
-    @patch("src.web.routes.gmail._drafter")
-    def test_batch_drafts_unauthorized(self, mock_drafter, client):
+    @patch("src.web.routes.gmail._get_user_drafter")
+    def test_batch_drafts_unauthorized(self, mock_get_drafter, client):
+        mock_drafter = MagicMock()
         mock_drafter.is_authorized.return_value = False
+        mock_get_drafter.return_value = mock_drafter
         resp = client.post("/api/gmail/drafts/batch", json={
             "campaign": "test",
         })
         assert resp.status_code == 401
 
-    @patch("src.web.routes.gmail._drafter")
-    def test_batch_drafts_campaign_not_found(self, mock_drafter, client):
+    @patch("src.web.routes.gmail._get_user_drafter")
+    def test_batch_drafts_campaign_not_found(self, mock_get_drafter, client):
+        mock_drafter = MagicMock()
         mock_drafter.is_authorized.return_value = True
+        mock_get_drafter.return_value = mock_drafter
         resp = client.post("/api/gmail/drafts/batch", json={
             "campaign": "nonexistent",
         })

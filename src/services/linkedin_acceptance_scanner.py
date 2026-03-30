@@ -306,12 +306,14 @@ def scan_linkedin_acceptances(
             contact_display = f"{contact['first_name']} {contact['last_name']}"
             stats["matched"] += 1
 
-            # Find all active campaign enrollments for this contact
+            # Find all active campaign enrollments for this contact (scoped via campaigns.user_id)
             cur.execute(
                 """SELECT ccs.campaign_id, ccs.current_step, ccs.status
                    FROM contact_campaign_status ccs
-                   WHERE ccs.contact_id = %s AND ccs.status IN (%s, %s)""",
-                (contact_id, ContactStatus.QUEUED, ContactStatus.IN_PROGRESS),
+                   JOIN campaigns cam ON cam.id = ccs.campaign_id
+                   WHERE ccs.contact_id = %s AND ccs.status IN (%s, %s)
+                     AND cam.user_id = %s""",
+                (contact_id, ContactStatus.QUEUED, ContactStatus.IN_PROGRESS, user_id),
             )
             enrollments = cur.fetchall()
 

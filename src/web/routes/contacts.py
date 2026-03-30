@@ -372,10 +372,10 @@ def get_contact_events(
             """SELECT e.*, t.name AS template_name
                FROM events e
                LEFT JOIN templates t ON t.id = e.template_id
-               WHERE e.contact_id = %s
+               WHERE e.contact_id = %s AND e.user_id = %s
                ORDER BY e.created_at DESC
                LIMIT %s""",
-            (contact_id, MAX_CONTACTS_PER_PAGE),
+            (contact_id, user["id"], MAX_CONTACTS_PER_PAGE),
         )
         events = cur.fetchall()
 
