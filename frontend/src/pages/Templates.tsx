@@ -113,14 +113,25 @@ export default function Templates() {
           <h1 className="text-2xl font-bold text-gray-900">Templates</h1>
           <p className="text-sm text-gray-500 mt-1">Manage email and LinkedIn templates</p>
         </div>
-        <Button
-          variant="primary"
-          size="md"
-          leftIcon={<Plus size={16} />}
-          onClick={() => { resetForm(); setShowForm(true); }}
-        >
-          New Template
-        </Button>
+        <div className="flex items-center gap-3">
+          <Link to="/campaigns/wizard?step=2">
+            <Button
+              variant="secondary"
+              size="md"
+              leftIcon={<Sparkles size={16} />}
+            >
+              Generate Sequence
+            </Button>
+          </Link>
+          <Button
+            variant="primary"
+            size="md"
+            leftIcon={<Plus size={16} />}
+            onClick={() => { resetForm(); setShowForm(true); }}
+          >
+            New Template
+          </Button>
+        </div>
       </div>
 
       {/* Create/Edit form */}

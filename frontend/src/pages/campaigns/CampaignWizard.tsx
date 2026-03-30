@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useForm, useFormContext, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -80,27 +80,40 @@ function CampaignWizardInner() {
   const editCampaignId = searchParams.get("editCampaign");
   const initialStep = Number(searchParams.get("step") || "0");
   const [step, setStep] = useState(initialStep);
+  // Track whether we've applied edit data so persistence doesn't overwrite it
+  const editDataApplied = useRef(false);
 
-  // Load existing campaign data + sequence steps when editing
-  const { data: existingCampaign } = useQuery({
+  // Load existing campaign data + sequence steps + contacts when editing
+  const { data: existingCampaign, isLoading: isLoadingEdit } = useQuery({
     queryKey: ["campaign-edit", editCampaignId],
     queryFn: async () => {
-      const [campaign, steps] = await Promise.all([
+      const [campaign, steps, contacts] = await Promise.all([
         request<{ campaign: { id: number; name: string; description: string } }>(`/campaigns/${editCampaignId}`),
         request<{ id: number; step_order: number; channel: string; delay_days: number; template_id: number | null }[]>(`/campaigns/${editCampaignId}/sequence`),
+        campaignsApi.getCampaignContacts(Number(editCampaignId)),
       ]);
-      return { campaign: campaign.campaign, steps };
+      return { campaign: campaign.campaign, steps, contacts };
     },
     enabled: !!editCampaignId,
   });
 
   useEffect(() => {
-    if (existingCampaign?.campaign) {
-      const c = existingCampaign.campaign;
-      form.setValue("name", c.name);
-      if (c.description) form.setValue("description", c.description);
+    if (!existingCampaign?.campaign) return;
+    const c = existingCampaign.campaign;
+
+    // Pre-populate name + description
+    form.setValue("name", c.name);
+    if (c.description) form.setValue("description", c.description);
+
+    // Pre-populate enrolled contacts
+    if (existingCampaign.contacts && existingCampaign.contacts.length > 0) {
+      const contactIds = existingCampaign.contacts.map((ct) => ct.id);
+      form.setValue("contactSource", "crm");
+      form.setValue("crmSelectedIds", contactIds);
     }
-    if (existingCampaign?.steps && existingCampaign.steps.length > 0) {
+
+    // Pre-populate sequence steps
+    if (existingCampaign.steps && existingCampaign.steps.length > 0) {
       const wizardSteps = existingCampaign.steps.map((s) => ({
         _id: `existing-${s.id}`,
         step_order: s.step_order,
@@ -109,10 +122,30 @@ function CampaignWizardInner() {
         template_id: s.template_id,
       }));
       form.setValue("steps", wizardSteps);
-    }
-  }, [existingCampaign, form]);
 
-  const { saveToApi, cleanupDraft, isLoading } = useWizardPersistence(step);
+      // Derive channels from existing steps
+      const channels = [...new Set(existingCampaign.steps.map((s) => s.channel))];
+      form.setValue("channels", channels as any);
+      form.setValue("touchpoints", existingCampaign.steps.length);
+    }
+
+    // Compute the right starting step based on existing data
+    const hasContacts = (existingCampaign.contacts?.length ?? 0) > 0;
+    const hasSteps = (existingCampaign.steps?.length ?? 0) > 0;
+    let resumeStep = 0;
+    if (hasSteps) resumeStep = 3;       // Has steps → jump to Messages
+    else if (hasContacts) resumeStep = 2; // Has contacts only → jump to Sequence
+    else resumeStep = 1;                  // Has name only → jump to Contacts
+
+    // URL param takes priority if explicitly set, otherwise use computed step
+    const urlStep = searchParams.get("step");
+    const targetStep = urlStep ? Number(urlStep) : resumeStep;
+    setStep(targetStep);
+
+    editDataApplied.current = true;
+  }, [existingCampaign, form, searchParams]);
+
+  const { saveToApi, cleanupDraft, isLoading } = useWizardPersistence(step, !!editCampaignId);
 
   // ─── Launch / Save-as-Draft ───
 
@@ -249,14 +282,14 @@ function CampaignWizardInner() {
     }
   }, [step, watchedName, watchedCrmIds, watchedCsvContacts, watchedContactSource, watchedSteps]);
 
-  // ─── Loading state while restoring draft ───
+  // ─── Loading state while restoring draft or fetching edit data ───
 
-  if (isLoading) {
+  if (isLoading || (editCampaignId && isLoadingEdit)) {
     return (
       <div className="max-w-3xl mx-auto px-6 py-8">
         <div className="flex flex-col items-center justify-center py-20 text-gray-400">
           <Loader2 size={24} className="animate-spin mb-3" />
-          <p className="text-sm">Loading draft...</p>
+          <p className="text-sm">{editCampaignId ? "Loading campaign..." : "Loading draft..."}</p>
         </div>
       </div>
     );

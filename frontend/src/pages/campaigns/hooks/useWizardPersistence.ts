@@ -104,6 +104,8 @@ interface UsePersistenceReturn {
 
 export function useWizardPersistence(
   currentStep: number,
+  /** When true, skip localStorage/API draft restore (editing an existing campaign provides its own data) */
+  skipRestore = false,
 ): UsePersistenceReturn {
   const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -207,6 +209,13 @@ export function useWizardPersistence(
   // ─── Draft restore on mount ───
 
   useEffect(() => {
+    // When editing an existing campaign, skip draft restore entirely —
+    // the campaign data useEffect in CampaignWizard handles pre-population.
+    if (skipRestore) {
+      setIsLoading(false);
+      return;
+    }
+
     const urlDraftId = searchParams.get("draftId");
     if (!urlDraftId) {
       // No URL draftId — check localStorage
