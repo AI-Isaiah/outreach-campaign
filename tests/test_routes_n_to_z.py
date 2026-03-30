@@ -763,6 +763,112 @@ class TestQueue:
         )
         assert resp.status_code == 404
 
+    # -----------------------------------------------------------------------
+    # Swap contact regression tests (dogfooding session)
+    # -----------------------------------------------------------------------
+    def test_swap_candidates_returns_same_company_not_enrolled(self, client, db_conn):
+        """get_swap_candidates returns contacts from same company not enrolled."""
+        co = _seed_company(db_conn, name="Swap Co")
+        c1 = _seed_contact(db_conn, co, first="Alice", email="alice@swap.com")
+        c2 = _seed_contact(db_conn, co, first="Bob", email="bob@swap.com")
+        c3 = _seed_contact(db_conn, co, first="Carol", email="carol@swap.com")
+        camp_id = _seed_campaign(db_conn, "swap_test")
+        from src.models.enrollment import add_sequence_step
+        add_sequence_step(db_conn, camp_id, 1, "email", user_id=TEST_USER_ID)
+        from src.models.campaigns import enroll_contact
+        enroll_contact(db_conn, c1, camp_id,
+                       next_action_date=date.today().isoformat(), user_id=TEST_USER_ID)
+
+        resp = client.get(f"/api/queue/swap-candidates/{c1}/{camp_id}")
+        assert resp.status_code == 200
+        data = resp.json()
+        candidate_ids = [c["id"] for c in data["candidates"]]
+        assert c2 in candidate_ids
+        assert c3 in candidate_ids
+        # Enrolled contact should NOT appear as a candidate
+        assert c1 not in candidate_ids
+
+    def test_swap_contact_success(self, client, db_conn):
+        """swap_contact removes current contact and enrolls replacement at step 1."""
+        co = _seed_company(db_conn, name="Swap OK Co")
+        c1 = _seed_contact(db_conn, co, first="Alice", email="alice@swapok.com")
+        c2 = _seed_contact(db_conn, co, first="Bob", email="bob@swapok.com")
+        camp_id = _seed_campaign(db_conn, "swap_ok_test")
+        from src.models.enrollment import add_sequence_step
+        add_sequence_step(db_conn, camp_id, 1, "email", user_id=TEST_USER_ID)
+        from src.models.campaigns import enroll_contact
+        enroll_contact(db_conn, c1, camp_id,
+                       next_action_date=date.today().isoformat(), user_id=TEST_USER_ID)
+
+        resp = client.post("/api/queue/swap-contact", json={
+            "current_contact_id": c1,
+            "replacement_contact_id": c2,
+            "campaign_id": camp_id,
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] is True
+        assert data["enrolled_contact_id"] == c2
+
+        # Verify: c1 no longer enrolled, c2 is enrolled
+        cur = db_conn.cursor()
+        cur.execute(
+            "SELECT contact_id FROM contact_campaign_status WHERE campaign_id = %s",
+            (camp_id,),
+        )
+        enrolled_ids = [r["contact_id"] for r in cur.fetchall()]
+        assert c1 not in enrolled_ids
+        assert c2 in enrolled_ids
+
+    def test_swap_contact_fails_not_step_1(self, client, db_conn):
+        """swap_contact fails if current contact is not at step 1."""
+        co = _seed_company(db_conn, name="Swap Step Co")
+        c1 = _seed_contact(db_conn, co, first="Alice", email="alice@swapstep.com")
+        c2 = _seed_contact(db_conn, co, first="Bob", email="bob@swapstep.com")
+        camp_id = _seed_campaign(db_conn, "swap_step_test")
+        from src.models.enrollment import add_sequence_step
+        add_sequence_step(db_conn, camp_id, 1, "email", user_id=TEST_USER_ID)
+        add_sequence_step(db_conn, camp_id, 2, "email", user_id=TEST_USER_ID)
+        from src.models.campaigns import enroll_contact
+        enroll_contact(db_conn, c1, camp_id,
+                       next_action_date=date.today().isoformat(), user_id=TEST_USER_ID)
+        # Advance c1 to step 2
+        cur = db_conn.cursor()
+        cur.execute(
+            "UPDATE contact_campaign_status SET current_step = 2 WHERE contact_id = %s AND campaign_id = %s",
+            (c1, camp_id),
+        )
+        db_conn.commit()
+
+        resp = client.post("/api/queue/swap-contact", json={
+            "current_contact_id": c1,
+            "replacement_contact_id": c2,
+            "campaign_id": camp_id,
+        })
+        assert resp.status_code == 400
+        assert "step 1" in resp.json()["detail"].lower()
+
+    def test_swap_contact_fails_different_companies(self, client, db_conn):
+        """swap_contact fails if contacts are at different companies."""
+        co1 = _seed_company(db_conn, name="Swap Co Alpha")
+        co2 = _seed_company(db_conn, name="Swap Co Beta")
+        c1 = _seed_contact(db_conn, co1, first="Alice", email="alice@swapalpha.com")
+        c2 = _seed_contact(db_conn, co2, first="Bob", email="bob@swapbeta.com")
+        camp_id = _seed_campaign(db_conn, "swap_diff_test")
+        from src.models.enrollment import add_sequence_step
+        add_sequence_step(db_conn, camp_id, 1, "email", user_id=TEST_USER_ID)
+        from src.models.campaigns import enroll_contact
+        enroll_contact(db_conn, c1, camp_id,
+                       next_action_date=date.today().isoformat(), user_id=TEST_USER_ID)
+
+        resp = client.post("/api/queue/swap-contact", json={
+            "current_contact_id": c1,
+            "replacement_contact_id": c2,
+            "campaign_id": camp_id,
+        })
+        assert resp.status_code == 400
+        assert "same company" in resp.json()["detail"].lower()
+
 
 # ============================================================================
 # REPLIES
@@ -1023,6 +1129,58 @@ class TestResearch:
     def test_import_contacts_result_not_found(self, client):
         resp = client.post("/api/research/results/9999/import-contacts")
         assert resp.status_code == 404
+
+    # -----------------------------------------------------------------------
+    # Auto-heal stuck 'cancelling' jobs (dogfooding regression)
+    # -----------------------------------------------------------------------
+    def test_list_jobs_auto_heals_stuck_cancelling(self, client, db_conn):
+        """Jobs stuck in 'cancelling' for >5 minutes get auto-transitioned to 'cancelled'."""
+        cur = db_conn.cursor()
+        cur.execute(
+            """INSERT INTO research_jobs
+                   (name, method, total_companies, cost_estimate_usd, status, user_id, updated_at)
+               VALUES ('Stuck Job', 'hybrid', 1, 0.01, 'cancelling', %s, NOW() - INTERVAL '10 minutes')
+               RETURNING id""",
+            (TEST_USER_ID,),
+        )
+        jid = cur.fetchone()["id"]
+        db_conn.commit()
+        cur.close()
+
+        # Call the list endpoint which triggers auto-heal
+        resp = client.get("/api/research/jobs")
+        assert resp.status_code == 200
+
+        # Verify the job status is now 'cancelled'
+        cur = db_conn.cursor()
+        cur.execute("SELECT status FROM research_jobs WHERE id = %s", (jid,))
+        row = cur.fetchone()
+        assert row["status"] == "cancelled"
+        cur.close()
+
+    def test_list_jobs_does_not_heal_recent_cancelling(self, client, db_conn):
+        """Jobs in 'cancelling' for <5 minutes should NOT be auto-healed."""
+        cur = db_conn.cursor()
+        cur.execute(
+            """INSERT INTO research_jobs
+                   (name, method, total_companies, cost_estimate_usd, status, user_id, updated_at)
+               VALUES ('Recent Cancel', 'hybrid', 1, 0.01, 'cancelling', %s, NOW() - INTERVAL '2 minutes')
+               RETURNING id""",
+            (TEST_USER_ID,),
+        )
+        jid = cur.fetchone()["id"]
+        db_conn.commit()
+        cur.close()
+
+        resp = client.get("/api/research/jobs")
+        assert resp.status_code == 200
+
+        # Should still be 'cancelling' since it's only 2 minutes old
+        cur = db_conn.cursor()
+        cur.execute("SELECT status FROM research_jobs WHERE id = %s", (jid,))
+        row = cur.fetchone()
+        assert row["status"] == "cancelling"
+        cur.close()
 
 
 # ============================================================================
