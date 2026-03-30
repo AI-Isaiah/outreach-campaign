@@ -192,10 +192,14 @@ class ImproveMessageRequest(BaseModel):
 def generate_sequence_messages_route(
     request: Request,
     body: GenerateSequenceMessagesRequest,
+    conn=Depends(get_db),
     user=Depends(get_current_user),
 ):
     """Generate AI messages for all steps in a campaign sequence."""
     from src.services.message_drafter import generate_sequence_messages
+    from src.web.routes.settings import get_user_api_keys
+
+    api_keys = get_user_api_keys(conn, user["id"])
 
     try:
         with handle_llm_errors():
@@ -205,6 +209,7 @@ def generate_sequence_messages_route(
                 target_audience=body.target_audience,
                 model=body.model,
                 user_id=user["id"],
+                api_key=api_keys.get("anthropic", ""),
             )
             return {"messages": messages}
     except HTTPException:
@@ -219,10 +224,14 @@ def generate_sequence_messages_route(
 def improve_message_route(
     request: Request,
     body: ImproveMessageRequest,
+    conn=Depends(get_db),
     user=Depends(get_current_user),
 ):
     """Improve an existing message based on user instruction."""
     from src.services.message_drafter import improve_message
+    from src.web.routes.settings import get_user_api_keys
+
+    api_keys = get_user_api_keys(conn, user["id"])
 
     try:
         with handle_llm_errors():
@@ -232,6 +241,7 @@ def improve_message_route(
                 subject=body.subject,
                 instruction=body.instruction,
                 user_id=user["id"],
+                api_key=api_keys.get("anthropic", ""),
             )
             return result
     except HTTPException:

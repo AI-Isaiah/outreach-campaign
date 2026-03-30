@@ -343,12 +343,13 @@ def generate_sequence_messages(
     target_audience: str = "crypto fund allocators",
     model: str = "haiku",
     user_id: int,
+    api_key: str = "",
 ) -> list[dict]:
     """Generate messages for all steps in a campaign sequence.
 
     Returns list of {step_order, channel, subject, body} dicts.
     """
-    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    api_key = api_key or os.getenv("ANTHROPIC_API_KEY", "")
     if not api_key:
         raise RuntimeError("ANTHROPIC_API_KEY not configured")
 
@@ -405,12 +406,13 @@ def improve_message(
     subject: str | None = None,
     instruction: str,
     user_id: int,
+    api_key: str = "",
 ) -> dict:
     """Improve an existing message based on user instruction.
 
     Returns {subject, body} dict.
     """
-    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    api_key = api_key or os.getenv("ANTHROPIC_API_KEY", "")
     if not api_key:
         raise RuntimeError("ANTHROPIC_API_KEY not configured")
 
