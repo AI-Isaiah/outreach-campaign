@@ -113,6 +113,7 @@ function SortableStepRow({
     onSuccess: () => {
       toast("Template saved", "success");
       queryClient.invalidateQueries({ queryKey: ["campaign-sequence", campaignId] });
+      queryClient.invalidateQueries({ queryKey: ["queue-all"] });
       onToggleExpand(step.id);
     },
     onError: (err: Error) => {
@@ -145,6 +146,7 @@ function SortableStepRow({
       setNewTemplateName("");
       queryClient.invalidateQueries({ queryKey: ["campaign-sequence", campaignId] });
       queryClient.invalidateQueries({ queryKey: ["templates-list"] });
+      queryClient.invalidateQueries({ queryKey: ["queue-all"] });
       onToggleExpand(step.id);
     },
     onError: (err: Error) => toast(err.message, "error"),
