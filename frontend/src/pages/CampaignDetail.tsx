@@ -421,13 +421,12 @@ function SequenceTab({ campaignName, campaignId }: { campaignName: string; campa
         <p className="text-sm text-gray-500 mb-4">
           Add a message sequence to automate your outreach for this campaign.
         </p>
-        <button
-          onClick={() => addFirstStep.mutate()}
-          disabled={addFirstStep.isPending}
-          className="inline-flex items-center gap-1.5 bg-gray-900 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-800 disabled:opacity-50"
+        <a
+          href={`/campaigns/wizard?editCampaign=${campaignId}&step=2`}
+          className="inline-flex items-center gap-1.5 bg-gray-900 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-800"
         >
-          {addFirstStep.isPending ? "Creating..." : "Set Up Sequence"}
-        </button>
+          Set Up Sequence
+        </a>
       </div>
     );
   }

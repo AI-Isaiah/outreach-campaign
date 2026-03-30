@@ -1,8 +1,9 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useForm, useFormContext, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { request } from "../../api/request";
 import { Check, Loader2 } from "lucide-react";
 import { campaignsApi } from "../../api/campaigns";
 import { api } from "../../api/client";
@@ -70,10 +71,33 @@ export default function CampaignWizard() {
 
 function CampaignWizardInner() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { toast } = useToast();
   const form = useFormContext<WizardFormData>();
   const [pendingAction, setPendingAction] = useState<"launch" | "draft" | null>(null);
-  const [step, setStep] = useState(0);
+
+  // Support editing an existing campaign's sequence (from CampaignDetail)
+  const editCampaignId = searchParams.get("editCampaign");
+  const initialStep = Number(searchParams.get("step") || "0");
+  const [step, setStep] = useState(initialStep);
+
+  // Load existing campaign data when editing
+  const { data: existingCampaign } = useQuery({
+    queryKey: ["campaign-edit", editCampaignId],
+    queryFn: async () => {
+      const res = await request<{ campaign: { id: number; name: string; description: string } }>(`/campaigns/${editCampaignId}`);
+      return res;
+    },
+    enabled: !!editCampaignId,
+  });
+
+  useEffect(() => {
+    if (existingCampaign?.campaign) {
+      const c = existingCampaign.campaign;
+      form.setValue("name", c.name);
+      if (c.description) form.setValue("description", c.description);
+    }
+  }, [existingCampaign, form]);
 
   const { saveToApi, cleanupDraft, isLoading } = useWizardPersistence(step);
 
@@ -112,6 +136,19 @@ function CampaignWizardInner() {
         })
       );
 
+      // Edit mode: add steps to existing campaign
+      if (editCampaignId) {
+        for (const s of stepData) {
+          await campaignsApi.addSequenceStep(Number(editCampaignId), {
+            channel: s.channel,
+            delay_days: s.delay_days,
+            template_id: s.template_id ?? undefined,
+            step_order: s.step_order,
+          });
+        }
+        return { name: values.name, status: data.status, contacts_enrolled: 0 };
+      }
+
       return campaignsApi.launchCampaign({
         name: values.name,
         description: values.description || "",
@@ -123,6 +160,11 @@ function CampaignWizardInner() {
     onSuccess: (data) => {
       setPendingAction(null);
       cleanupDraft();
+      if (editCampaignId) {
+        toast("Sequence saved!", "success");
+        navigate(`/campaigns/${data.name}`);
+        return;
+      }
       if (data.status === "active") {
         toast(`Campaign launched! ${data.contacts_enrolled} contacts enrolled.`, "success");
       } else {
