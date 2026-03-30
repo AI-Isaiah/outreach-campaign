@@ -7,6 +7,7 @@ and unsubscribe processing.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import os
 from datetime import datetime, timezone
 from typing import Optional
@@ -56,7 +57,7 @@ def verify_unsubscribe_token(contact_id: int, token: str) -> bool:
     """
     secret = os.getenv("JWT_SECRET") or os.getenv("TOKEN_ENCRYPTION_KEY") or ""
     expected = hashlib.sha256(f"{contact_id}:{secret}".encode()).hexdigest()[:32]
-    return token == expected
+    return hmac.compare_digest(token, expected)
 
 
 def add_compliance_footer(

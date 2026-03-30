@@ -359,7 +359,7 @@ def test_is_winning_for_top_performer(tmp_db):
         outcome = "positive" if (i < 5 or i in (6, 7)) else "negative"
         _add_template_history(conn, cid, campaign_id, tid, outcome)
 
-    results = get_template_performance(conn, campaign_id)
+    results = get_template_performance(conn, campaign_id, user_id=TEST_USER_ID)
     assert len(results) == 2
 
     annotate_is_winning(results)
@@ -394,7 +394,7 @@ def test_is_winning_false_below_threshold(tmp_db):
 
     _add_template_history(conn, cid, campaign_id, tid, "positive")
 
-    results = get_template_performance(conn, campaign_id)
+    results = get_template_performance(conn, campaign_id, user_id=TEST_USER_ID)
     assert len(results) == 1
     assert results[0]["total_sends"] < 5
 

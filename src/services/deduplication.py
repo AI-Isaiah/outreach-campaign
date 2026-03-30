@@ -72,7 +72,7 @@ def _pass_exact_email(conn, *, user_id: int) -> int:
                     "VALUES (%s, %s, 'exact_email', 1.0, %s)",
                     (keep_id, rid, user_id),
                 )
-                cursor.execute("DELETE FROM contacts WHERE id = %s", (rid,))
+                cursor.execute("DELETE FROM contacts WHERE id = %s AND user_id = %s", (rid, user_id))
                 dupes_removed += 1
                 logger.info("Dedup exact_email: kept %d, removed %d", keep_id, rid)
     return dupes_removed
@@ -105,7 +105,7 @@ def _pass_exact_linkedin(conn, *, user_id: int) -> int:
                     "VALUES (%s, %s, 'exact_linkedin', 1.0, %s)",
                     (keep_id, rid, user_id),
                 )
-                cursor.execute("DELETE FROM contacts WHERE id = %s", (rid,))
+                cursor.execute("DELETE FROM contacts WHERE id = %s AND user_id = %s", (rid, user_id))
                 dupes_removed += 1
                 logger.info("Dedup exact_linkedin: kept %d, removed %d", keep_id, rid)
     return dupes_removed

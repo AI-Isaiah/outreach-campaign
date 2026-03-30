@@ -188,8 +188,8 @@ def _next_priority_rank(
 
     def _query_rank(cur):
         cur.execute(
-            "SELECT MAX(priority_rank) AS max_rank FROM contacts WHERE company_id = %s",
-            (company_id,),
+            "SELECT MAX(priority_rank) AS max_rank FROM contacts WHERE company_id = %s AND user_id = %s",
+            (company_id, 1),
         )
         row = cur.fetchone()
         current_max = row["max_rank"] if row and row["max_rank"] is not None else 0

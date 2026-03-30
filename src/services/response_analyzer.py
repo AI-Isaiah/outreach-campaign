@@ -9,11 +9,11 @@ from __future__ import annotations
 from src.models.database import get_cursor
 
 
-def get_template_performance(conn, campaign_id: int, *, user_id: int | None = None) -> list[dict]:
+def get_template_performance(conn, campaign_id: int, *, user_id: int) -> list[dict]:
     """Positive rate per template with confidence levels.
 
     Confidence: low (<20 sends), medium (20-50), high (50+).
-    Campaign ownership provides tenant isolation via FK.
+    Campaign ownership provides tenant isolation via FK + user_id filter.
     """
     with get_cursor(conn) as cursor:
         cursor.execute(
@@ -28,11 +28,12 @@ def get_template_performance(conn, campaign_id: int, *, user_id: int | None = No
                 SUM(CASE WHEN cth.outcome IS NULL THEN 1 ELSE 0 END) AS pending
             FROM contact_template_history cth
             JOIN templates t ON t.id = cth.template_id
-            WHERE cth.campaign_id = %s
+            JOIN campaigns cam ON cam.id = cth.campaign_id
+            WHERE cth.campaign_id = %s AND cam.user_id = %s
             GROUP BY cth.template_id, t.name, t.channel
             ORDER BY total_sends DESC
             """,
-            (campaign_id,),
+            (campaign_id, user_id),
         )
         rows = cursor.fetchall()
 
@@ -167,7 +168,7 @@ def get_segment_performance(conn, campaign_id: int, *, user_id: int) -> list[dic
         return results
 
 
-def get_timing_performance(conn, campaign_id: int) -> list[dict]:
+def get_timing_performance(conn, campaign_id: int, *, user_id: int) -> list[dict]:
     """Reply rate by inter-touch delay (days between events)."""
     with get_cursor(conn) as cursor:
         # Compute average delay between events per contact, then bucket
@@ -185,7 +186,7 @@ def get_timing_performance(conn, campaign_id: int) -> list[dict]:
                     AND e1.event_type IN ('email_sent', 'linkedin_connect_done', 'linkedin_message_done')
                     AND e2.event_type IN ('email_sent', 'linkedin_connect_done', 'linkedin_message_done',
                                            'status_replied_positive', 'status_replied_negative')
-                WHERE e1.campaign_id = %s
+                WHERE e1.campaign_id = %s AND e1.user_id = %s
             ),
             delays AS (
                 SELECT
@@ -216,7 +217,7 @@ def get_timing_performance(conn, campaign_id: int) -> list[dict]:
             GROUP BY b.delay_bucket
             ORDER BY b.delay_bucket
             """,
-            (campaign_id, campaign_id),
+            (campaign_id, user_id, campaign_id),
         )
         rows = cursor.fetchall()
 

@@ -114,6 +114,7 @@ def get_adaptive_queue(
                 available = templates_by_channel.get(channel, [])
                 template_result = select_template(
                     conn, contact_id, campaign_id, channel, available,
+                    user_id=user_id,
                 )
 
             enriched_item = {

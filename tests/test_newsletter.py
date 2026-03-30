@@ -639,7 +639,7 @@ class TestSendNewsletter:
     ):
         ids = _make_subscribed_contacts(conn, sample_company, count=3)
 
-        result = send_newsletter(conn, newsletter_md, sample_config, dry_run=True)
+        result = send_newsletter(conn, newsletter_md, sample_config, dry_run=True, user_id=TEST_USER_ID)
 
         assert result["subscribers"] == 3
         assert result["sent"] == 0
@@ -653,7 +653,7 @@ class TestSendNewsletter:
         mock_batch.return_value = [True, True, True]
         ids = _make_subscribed_contacts(conn, sample_company, count=3)
 
-        result = send_newsletter(conn, newsletter_md, sample_config)
+        result = send_newsletter(conn, newsletter_md, sample_config, user_id=TEST_USER_ID)
 
         assert result["sent"] == 3
         assert result["failed"] == 0
@@ -668,7 +668,7 @@ class TestSendNewsletter:
         mock_batch.return_value = [True, True]
         ids = _make_subscribed_contacts(conn, sample_company, count=2)
 
-        send_newsletter(conn, newsletter_md, sample_config)
+        send_newsletter(conn, newsletter_md, sample_config, user_id=TEST_USER_ID)
 
         cursor = conn.cursor()
         cursor.execute(
@@ -693,7 +693,7 @@ class TestSendNewsletter:
         mock_batch.return_value = [True, False, True]
         ids = _make_subscribed_contacts(conn, sample_company, count=3)
 
-        result = send_newsletter(conn, newsletter_md, sample_config)
+        result = send_newsletter(conn, newsletter_md, sample_config, user_id=TEST_USER_ID)
 
         assert result["sent"] == 2
         assert result["failed"] == 1
@@ -705,7 +705,7 @@ class TestSendNewsletter:
         mock_batch.return_value = [False, False]
         ids = _make_subscribed_contacts(conn, sample_company, count=2)
 
-        send_newsletter(conn, newsletter_md, sample_config)
+        send_newsletter(conn, newsletter_md, sample_config, user_id=TEST_USER_ID)
 
         cursor = conn.cursor()
         cursor.execute(
@@ -719,7 +719,7 @@ class TestSendNewsletter:
         self, mock_batch, conn, newsletter_md, sample_config
     ):
         mock_batch.return_value = []
-        result = send_newsletter(conn, newsletter_md, sample_config)
+        result = send_newsletter(conn, newsletter_md, sample_config, user_id=TEST_USER_ID)
 
         assert result["subscribers"] == 0
         assert result["sent"] == 0
@@ -734,7 +734,7 @@ class TestSendNewsletter:
         mock_batch.return_value = [True]
         ids = _make_subscribed_contacts(conn, sample_company, count=1)
 
-        send_newsletter(conn, newsletter_md, sample_config)
+        send_newsletter(conn, newsletter_md, sample_config, user_id=TEST_USER_ID)
 
         # Verify subject in the batch messages
         messages = mock_batch.call_args[1]["messages"]
@@ -747,7 +747,7 @@ class TestSendNewsletter:
         mock_batch.return_value = [True]
         ids = _make_subscribed_contacts(conn, sample_company, count=1)
 
-        send_newsletter(conn, newsletter_md, sample_config)
+        send_newsletter(conn, newsletter_md, sample_config, user_id=TEST_USER_ID)
 
         # Verify both body_text and body_html are in the batch messages
         messages = mock_batch.call_args[1]["messages"]
@@ -856,7 +856,7 @@ class TestNewsletterIntegration:
         ids = _make_subscribed_contacts(conn, sample_company, count=2)
 
         # Send newsletter
-        result = send_newsletter(conn, newsletter_md, sample_config)
+        result = send_newsletter(conn, newsletter_md, sample_config, user_id=TEST_USER_ID)
 
         assert result["subscribers"] == 2
         assert result["sent"] == 2

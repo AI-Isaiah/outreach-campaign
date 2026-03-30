@@ -305,7 +305,12 @@ SCHEDULED_SEND_BATCH_SIZE = 10
 
 @cron_router.post("/cron/send-scheduled")
 def cron_send_scheduled(conn=Depends(get_db), _=Depends(verify_cron_secret)):
-    """Send emails whose scheduled_for time has arrived (called by Vercel cron)."""
+    """Send emails whose scheduled_for time has arrived (called by Vercel cron).
+
+    Groups scheduled rows by user_id and loads per-user SMTP config for each
+    group, falling back to global config when no per-user config exists.
+    """
+    from collections import defaultdict
     from src.application.queue_service import send_email_batch
     from src.config import load_config_safe
 
@@ -332,5 +337,40 @@ def cron_send_scheduled(conn=Depends(get_db), _=Depends(verify_cron_secret)):
     if not rows:
         return {"sent": 0, "failed": 0, "errors": []}
 
-    config = load_config_safe()
-    return send_email_batch(conn, rows, config)
+    # Group rows by user_id so each group uses per-user SMTP config
+    groups: dict[int, list[dict]] = defaultdict(list)
+    for row in rows:
+        groups[row["user_id"]].append(row)
+
+    global_config = load_config_safe()
+    total_sent = 0
+    total_failed = 0
+    all_errors: list[str] = []
+
+    for uid, user_rows in groups.items():
+        # Load per-user SMTP config, fall back to global
+        config = dict(global_config)
+        with get_cursor(conn) as cur:
+            cur.execute(
+                """SELECT smtp_host, smtp_port, smtp_username, smtp_password,
+                          smtp_use_tls, smtp_from_email, smtp_from_name
+                   FROM users WHERE id = %s""",
+                (uid,),
+            )
+            user_cfg = cur.fetchone()
+        if user_cfg and user_cfg.get("smtp_host"):
+            from src.services.token_encryption import try_decrypt
+            config["smtp"] = {
+                "host": user_cfg["smtp_host"],
+                "port": user_cfg["smtp_port"] or 587,
+                "username": user_cfg["smtp_username"] or "",
+                "use_tls": user_cfg.get("smtp_use_tls", True),
+            }
+            config["smtp_password"] = try_decrypt(user_cfg["smtp_password"] or "")
+
+        result = send_email_batch(conn, user_rows, config, user_id=uid)
+        total_sent += result["sent"]
+        total_failed += result["failed"]
+        all_errors.extend(result.get("errors", []))
+
+    return {"sent": total_sent, "failed": total_failed, "errors": all_errors}

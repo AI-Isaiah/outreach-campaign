@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -117,8 +118,8 @@ def test_store_pending_reply_dedup(tmp_db):
 
 def test_classify_reply_no_api_key(tmp_db):
     """Without ANTHROPIC_API_KEY, should return neutral."""
-    with patch("src.services.reply_detector.ANTHROPIC_API_KEY", ""):
-        classification, confidence = _classify_reply("Let's schedule a call")
+    with patch.dict(os.environ, {"ANTHROPIC_API_KEY": ""}, clear=False):
+        classification, confidence = _classify_reply("Let's schedule a call", api_key="")
         assert classification == "neutral"
         assert confidence == 0.5
 
@@ -130,7 +131,6 @@ def test_classify_reply_empty_text(tmp_db):
     assert confidence == 0.5
 
 
-@patch("src.services.reply_detector.ANTHROPIC_API_KEY", "test-key")
 @patch("src.services.reply_detector.httpx.post")
 def test_classify_reply_positive(mock_post):
     """Should classify a positive reply correctly."""
@@ -147,17 +147,16 @@ def test_classify_reply_positive(mock_post):
             }
         ),
     )
-    classification, confidence = _classify_reply("Sounds great, let's schedule a call!")
+    classification, confidence = _classify_reply("Sounds great, let's schedule a call!", api_key="test-key")
     assert classification == "positive"
     assert confidence == 0.95
 
 
-@patch("src.services.reply_detector.ANTHROPIC_API_KEY", "test-key")
 @patch("src.services.reply_detector.httpx.post")
 def test_classify_reply_api_error(mock_post):
     """Should return neutral on API error."""
     mock_post.side_effect = httpx.ConnectError("API unreachable")
-    classification, confidence = _classify_reply("Some reply text")
+    classification, confidence = _classify_reply("Some reply text", api_key="test-key")
     assert classification == "neutral"
     assert confidence == 0.5
 

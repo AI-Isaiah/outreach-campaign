@@ -19,6 +19,8 @@ def select_template(
     campaign_id: int,
     channel: str,
     available_templates: list[dict],
+    *,
+    user_id: int = 1,
 ) -> dict:
     """Select a template for a contact using explore/exploit.
 
@@ -51,7 +53,7 @@ def select_template(
             unsent = available_templates
 
         # Get performance data
-        perf = get_template_performance(conn, campaign_id)
+        perf = get_template_performance(conn, campaign_id, user_id=user_id)
         perf_by_id = {p["template_id"]: p for p in perf}
 
         # Get total campaign sends for explore rate calculation

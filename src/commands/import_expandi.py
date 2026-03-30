@@ -163,8 +163,8 @@ def import_expandi_results(
             # Find the contact by normalized LinkedIn URL
             with get_cursor(conn) as cur:
                 cur.execute(
-                    "SELECT id FROM contacts WHERE linkedin_url_normalized = %s",
-                    (normalized_url,),
+                    "SELECT id FROM contacts WHERE linkedin_url_normalized = %s AND user_id = %s",
+                    (normalized_url, 1),
                 )
                 contact_row = cur.fetchone()
 

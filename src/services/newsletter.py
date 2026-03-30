@@ -216,7 +216,8 @@ def send_newsletter(
     markdown_path: str,
     config: dict,
     dry_run: bool = False,
-    user_id: int = 1,
+    *,
+    user_id: int,
 ) -> dict:
     """Send a newsletter to all subscribers.
 
@@ -297,7 +298,8 @@ def send_newsletter_to_recipients(
     recipients: list,
     config: dict,
     attachments: list,
-    user_id: int = 1,
+    *,
+    user_id: int,
 ) -> dict:
     """Send an HTML newsletter to a list of recipients.
 

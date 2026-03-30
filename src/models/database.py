@@ -19,7 +19,7 @@ def get_connection(db_url: str):
     return conn
 
 
-def init_pool(db_url: str, minconn: int = 2, maxconn: int = 10):
+def init_pool(db_url: str, minconn: int = 2, maxconn: int = 20):
     """Initialize the connection pool (call once at web app startup).
 
     Thread-safe: uses a lock to prevent double-initialization in

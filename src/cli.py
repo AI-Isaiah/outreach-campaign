@@ -123,21 +123,21 @@ def stats():
 
     with cli_db() as conn:
         with get_cursor(conn) as cur:
-            cur.execute("SELECT COUNT(*) AS cnt FROM companies")
+            cur.execute("SELECT COUNT(*) AS cnt FROM companies WHERE user_id = %s", (CLI_USER_ID,))
             companies = cur.fetchone()["cnt"]
-            cur.execute("SELECT COUNT(*) AS cnt FROM contacts")
+            cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE user_id = %s", (CLI_USER_ID,))
             contacts = cur.fetchone()["cnt"]
-            cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE is_gdpr = true")
+            cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE is_gdpr = true AND user_id = %s", (CLI_USER_ID,))
             gdpr = cur.fetchone()["cnt"]
-            cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE email_status = 'valid'")
+            cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE email_status = 'valid' AND user_id = %s", (CLI_USER_ID,))
             verified = cur.fetchone()["cnt"]
-            cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE email_status = 'invalid'")
+            cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE email_status = 'invalid' AND user_id = %s", (CLI_USER_ID,))
             invalid = cur.fetchone()["cnt"]
-            cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE email_status = 'unverified'")
+            cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE email_status = 'unverified' AND user_id = %s", (CLI_USER_ID,))
             unverified = cur.fetchone()["cnt"]
-            cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE email_normalized IS NOT NULL")
+            cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE email_normalized IS NOT NULL AND user_id = %s", (CLI_USER_ID,))
             with_email = cur.fetchone()["cnt"]
-            cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE linkedin_url IS NOT NULL AND linkedin_url != ''")
+            cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE linkedin_url IS NOT NULL AND linkedin_url != '' AND user_id = %s", (CLI_USER_ID,))
             with_linkedin = cur.fetchone()["cnt"]
 
         console.print("[bold]Database Statistics[/bold]")
@@ -551,14 +551,14 @@ def status(
         with get_cursor(conn) as cur:
             if identifier.isdigit():
                 cur.execute(
-                    "SELECT id, email, full_name FROM contacts WHERE id = %s",
-                    (int(identifier),),
+                    "SELECT id, email, full_name FROM contacts WHERE id = %s AND user_id = %s",
+                    (int(identifier), CLI_USER_ID),
                 )
                 contact_row = cur.fetchone()
             else:
                 cur.execute(
-                    "SELECT id, email, full_name FROM contacts WHERE email = %s OR email_normalized = %s",
-                    (identifier, identifier.lower().strip()),
+                    "SELECT id, email, full_name FROM contacts WHERE (email = %s OR email_normalized = %s) AND user_id = %s",
+                    (identifier, identifier.lower().strip(), CLI_USER_ID),
                 )
                 contact_row = cur.fetchone()
 

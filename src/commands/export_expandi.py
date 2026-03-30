@@ -70,8 +70,8 @@ def export_expandi_csv(
             contact_id = item["contact_id"]
             with get_cursor(conn) as cursor:
                 cursor.execute(
-                    "SELECT first_name, last_name, email FROM contacts WHERE id = %s",
-                    (contact_id,),
+                    "SELECT first_name, last_name, email FROM contacts WHERE id = %s AND user_id = %s",
+                    (contact_id, 1),
                 )
                 row = cursor.fetchone()
 

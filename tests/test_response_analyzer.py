@@ -43,7 +43,7 @@ def test_template_performance_empty(tmp_db):
     conn = get_connection(tmp_db)
     run_migrations(conn)
     campaign_id = create_campaign(conn, "empty_camp", user_id=TEST_USER_ID)
-    result = get_template_performance(conn, campaign_id)
+    result = get_template_performance(conn, campaign_id, user_id=TEST_USER_ID)
     assert result == []
     conn.close()
 
@@ -64,7 +64,7 @@ def test_template_performance_with_data(tmp_db):
         )
     conn.commit()
 
-    result = get_template_performance(conn, campaign_id)
+    result = get_template_performance(conn, campaign_id, user_id=TEST_USER_ID)
     assert len(result) >= 1
     assert result[0]["template_id"] == template_id
     assert result[0]["confidence"] == "low"  # <20 sends
@@ -100,6 +100,6 @@ def test_timing_performance_empty(tmp_db):
     conn = get_connection(tmp_db)
     run_migrations(conn)
     campaign_id = create_campaign(conn, "empty_camp", user_id=TEST_USER_ID)
-    result = get_timing_performance(conn, campaign_id)
+    result = get_timing_performance(conn, campaign_id, user_id=TEST_USER_ID)
     assert result == []
     conn.close()

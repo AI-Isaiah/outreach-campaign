@@ -47,10 +47,10 @@ def run_analysis(conn, campaign_id: int, *, user_id: int) -> dict:
             raise ValueError(f"Campaign {campaign_id} not found or not owned by user {user_id}")
 
     # Gather performance data
-    template_perf = get_template_performance(conn, campaign_id)
+    template_perf = get_template_performance(conn, campaign_id, user_id=user_id)
     channel_perf = get_channel_performance(conn, campaign_id, user_id=user_id)
     segment_perf = get_segment_performance(conn, campaign_id, user_id=user_id)
-    timing_perf = get_timing_performance(conn, campaign_id)
+    timing_perf = get_timing_performance(conn, campaign_id, user_id=user_id)
 
     # Build the prompt
     prompt = _build_analysis_prompt(

@@ -934,44 +934,28 @@ class TestClassifyReply:
 
     def test_no_api_key_returns_neutral(self):
         from src.services.reply_detector import _classify_reply
-        with patch.object(
-            __import__("src.services.reply_detector", fromlist=["ANTHROPIC_API_KEY"]),
-            "ANTHROPIC_API_KEY", "",
-        ):
-            classification, confidence = _classify_reply("I'd love to meet!")
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": ""}, clear=False):
+            classification, confidence = _classify_reply("I'd love to meet!", api_key="")
             assert classification == "neutral"
             assert confidence == 0.5
 
     def test_empty_text_returns_neutral(self):
         from src.services.reply_detector import _classify_reply
-        with patch.object(
-            __import__("src.services.reply_detector", fromlist=["ANTHROPIC_API_KEY"]),
-            "ANTHROPIC_API_KEY", "",
-        ):
-            classification, confidence = _classify_reply("")
-            assert classification == "neutral"
+        classification, confidence = _classify_reply("")
+        assert classification == "neutral"
 
     def test_whitespace_only_returns_neutral(self):
         from src.services.reply_detector import _classify_reply
-        with patch.object(
-            __import__("src.services.reply_detector", fromlist=["ANTHROPIC_API_KEY"]),
-            "ANTHROPIC_API_KEY", "",
-        ):
-            classification, confidence = _classify_reply("   \n  ")
-            assert classification == "neutral"
+        classification, confidence = _classify_reply("   \n  ")
+        assert classification == "neutral"
 
     def test_api_error_returns_neutral(self):
         import httpx
-        import src.services.reply_detector as rd
-        original_key = rd.ANTHROPIC_API_KEY
-        rd.ANTHROPIC_API_KEY = "test-key"
-        try:
-            with patch("httpx.post", side_effect=httpx.ConnectError("network error")):
-                classification, confidence = rd._classify_reply("some text")
-                assert classification == "neutral"
-                assert confidence == 0.5
-        finally:
-            rd.ANTHROPIC_API_KEY = original_key
+        from src.services.reply_detector import _classify_reply
+        with patch("src.services.reply_detector.httpx.post", side_effect=httpx.ConnectError("network error")):
+            classification, confidence = _classify_reply("some text", api_key="test-key")
+            assert classification == "neutral"
+            assert confidence == 0.5
 
 
 class TestScanGmailForReplies:
@@ -1709,7 +1693,7 @@ class TestResponseAnalyzerDB:
         from src.services.response_analyzer import get_template_performance
         conn = _conn(tmp_db)
         cid = _create_campaign(conn)
-        result = get_template_performance(conn, cid)
+        result = get_template_performance(conn, cid, user_id=TEST_USER_ID)
         assert result == []
         conn.close()
 
@@ -1723,7 +1707,7 @@ class TestResponseAnalyzerDB:
         for i in range(5):
             ct = insert_contact(conn, co, priority_rank=i + 1)
             self._setup_contact_template_history(conn, cid, tid, ct, outcome="positive")
-        result = get_template_performance(conn, cid)
+        result = get_template_performance(conn, cid, user_id=TEST_USER_ID)
         assert len(result) == 1
         assert result[0]["confidence"] == "low"
         conn.close()

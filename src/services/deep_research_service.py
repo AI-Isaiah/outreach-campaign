@@ -583,7 +583,10 @@ def run_deep_research(
             cur.execute("SELECT user_id FROM deep_research WHERE id = %s", (deep_research_id,))
             row = cur.fetchone()
             if not row:
-                logger.error("Deep research %d not found", deep_research_id)
+                logger.warning(
+                    "Deep research %d not found — row may have been deleted before background thread started",
+                    deep_research_id,
+                )
                 return
             user_id = row["user_id"]
 
@@ -601,6 +604,11 @@ def run_deep_research(
                 _update_status(conn, deep_research_id, "failed", user_id=user_id, error_message=str(e))
             except psycopg2.Error:
                 logger.exception("Failed to update deep research %d status", deep_research_id)
+        else:
+            logger.error(
+                "Deep research %d failed and user_id is None — cannot update status: %s",
+                deep_research_id, e,
+            )
     finally:
         conn.close()
 

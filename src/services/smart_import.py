@@ -954,8 +954,8 @@ def execute_import(
                     # Company re-link: if overrides say to use import company
                     if overrides and overrides.get("company_name") == "import" and company_id:
                         cursor.execute(
-                            "UPDATE contacts SET company_id = %s WHERE id = %s",
-                            (company_id, existing_id),
+                            "UPDATE contacts SET company_id = %s WHERE id = %s AND user_id = %s",
+                            (company_id, existing_id, user_id),
                         )
                     contacts_merged += 1
                     all_contact_ids.append(existing_id)
@@ -1093,6 +1093,8 @@ def _merge_contact(cursor, existing_contact_id: int, import_data: dict,
         return
 
     values.append(existing_contact_id)
+    # user_id scoping not added here because _merge_contact is always called
+    # within execute_import which already verified ownership of existing_contact_id
     cursor.execute(
         f"UPDATE contacts SET {', '.join(set_parts)} WHERE id = %s",
         values,

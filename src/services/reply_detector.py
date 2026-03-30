@@ -21,7 +21,6 @@ from src.models.database import get_cursor
 
 logger = logging.getLogger(__name__)
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 CLASSIFY_MODEL = LLM_MODELS["classification"]
 
 
@@ -157,8 +156,11 @@ def _scan_contact_replies(conn, service, contact: dict, stats: dict) -> None:
             snippet = msg.get("snippet", "")
             thread_id = msg.get("threadId", "")
 
+            # Resolve API key: per-user DB key first, then env fallback
+            _api_key = _resolve_api_key(conn, contact["user_id"])
+
             # Classify the reply
-            classification, confidence = _classify_reply(snippet)
+            classification, confidence = _classify_reply(snippet, api_key=_api_key)
 
             # Store as pending reply
             _store_pending_reply(
@@ -176,13 +178,31 @@ def _scan_contact_replies(conn, service, contact: dict, stats: dict) -> None:
             stats["new_replies"] += 1
 
 
-def _classify_reply(reply_text: str) -> tuple[str, float]:
+def _resolve_api_key(conn, user_id: int) -> str:
+    """Resolve Anthropic API key: check user's DB key first, fall back to env."""
+    try:
+        from src.web.routes.settings import get_user_api_keys
+        keys = get_user_api_keys(conn, user_id)
+        if keys.get("anthropic"):
+            return keys["anthropic"]
+    except (ImportError, Exception):
+        pass
+    return os.getenv("ANTHROPIC_API_KEY", "")
+
+
+def _classify_reply(reply_text: str, *, api_key: str = "") -> tuple[str, float]:
     """Classify a reply as positive/negative/neutral using Claude API.
+
+    Args:
+        reply_text: the reply snippet to classify
+        api_key: Anthropic API key to use for classification
 
     Returns:
         (classification, confidence) tuple
     """
-    if not ANTHROPIC_API_KEY:
+    if not api_key:
+        api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    if not api_key:
         logger.warning("ANTHROPIC_API_KEY not set — defaulting to neutral")
         return "neutral", 0.5
 
@@ -203,7 +223,7 @@ def _classify_reply(reply_text: str) -> tuple[str, float]:
         resp = httpx.post(
             "https://api.anthropic.com/v1/messages",
             headers={
-                "x-api-key": ANTHROPIC_API_KEY,
+                "x-api-key": api_key,
                 "anthropic-version": "2023-06-01",
                 "content-type": "application/json",
             },

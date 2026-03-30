@@ -343,6 +343,7 @@ def send_newsletter_route(
             send_newsletter_to_recipients(
                 bg_conn, newsletter_id, newsletter_data,
                 recipients_data, config_copy, attachments,
+                user_id=bg_user_id,
             )
         except (smtplib.SMTPException, psycopg2.Error, OSError) as exc:
             logger.exception("Background newsletter send failed for newsletter %s", newsletter_id)

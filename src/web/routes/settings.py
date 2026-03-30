@@ -6,7 +6,7 @@ import os
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from src.web.dependencies import get_current_user, get_db
 from src.web.query_builder import QueryBuilder
@@ -28,6 +28,21 @@ class SettingsUpdateRequest(BaseModel):
     settings: dict[str, str]
 
 
+class SmtpConfigRequest(BaseModel):
+    host: Optional[str] = Field(default=None, max_length=200)
+    port: Optional[int] = None
+    username: Optional[str] = Field(default=None, max_length=200)
+    password: Optional[str] = Field(default=None, max_length=500)
+    use_tls: Optional[bool] = True
+    from_email: Optional[str] = Field(default=None, max_length=200)
+    from_name: Optional[str] = Field(default=None, max_length=200)
+
+
+class ComplianceConfigRequest(BaseModel):
+    physical_address: Optional[str] = Field(default=None, max_length=500)
+    calendly_url: Optional[str] = Field(default=None, max_length=500)
+
+
 @router.get("/settings")
 def get_settings(
     conn=Depends(get_db),
@@ -43,12 +58,11 @@ def get_settings(
         config_rows = cur.fetchall()
         config = {row["key"]: row["value"] for row in config_rows}
 
-    # Gmail status
-    try:
-        from src.services.gmail_drafter import GmailDrafter
-        gmail_authorized = GmailDrafter().is_authorized()
-    except (ImportError, OSError, ValueError):
-        gmail_authorized = False
+    # Gmail status — check DB column instead of filesystem
+    with get_cursor(conn) as cur2:
+        cur2.execute("SELECT gmail_connected FROM users WHERE id = %s", (user["id"],))
+        user_row = cur2.fetchone()
+    gmail_authorized = bool(user_row and user_row["gmail_connected"])
 
     return {
         "engine_config": config,
@@ -181,12 +195,12 @@ def get_email_config(conn=Depends(get_db), user=Depends(get_current_user)):
 
 
 @router.post("/settings/smtp")
-def save_smtp_config(body: dict, conn=Depends(get_db), user=Depends(get_current_user)):
+def save_smtp_config(body: SmtpConfigRequest, conn=Depends(get_db), user=Depends(get_current_user)):
     """Save SMTP sending configuration."""
     from src.services.token_encryption import encrypt_token
     cur = conn.cursor()
     try:
-        encrypted_password = encrypt_token(body["password"]) if body.get("password") else None
+        encrypted_password = encrypt_token(body.password) if body.password else None
         cur.execute(
             """UPDATE users SET
                 smtp_host = %s, smtp_port = %s,
@@ -195,9 +209,9 @@ def save_smtp_config(body: dict, conn=Depends(get_db), user=Depends(get_current_
                 updated_at = NOW()
             WHERE id = %s""",
             (
-                body.get("host"), body.get("port", 587),
-                body.get("username"), encrypted_password,
-                body.get("use_tls", True), body.get("from_email"), body.get("from_name"),
+                body.host, body.port or 587,
+                body.username, encrypted_password,
+                body.use_tls if body.use_tls is not None else True, body.from_email, body.from_name,
                 user["id"],
             ),
         )
@@ -208,7 +222,7 @@ def save_smtp_config(body: dict, conn=Depends(get_db), user=Depends(get_current_
 
 
 @router.post("/settings/compliance")
-def save_compliance_config(body: dict, conn=Depends(get_db), user=Depends(get_current_user)):
+def save_compliance_config(body: ComplianceConfigRequest, conn=Depends(get_db), user=Depends(get_current_user)):
     """Save per-user compliance settings (physical address, Calendly URL)."""
     cur = conn.cursor()
     try:
@@ -217,7 +231,7 @@ def save_compliance_config(body: dict, conn=Depends(get_db), user=Depends(get_cu
                 physical_address = %s, calendly_url = %s,
                 updated_at = NOW()
             WHERE id = %s""",
-            (body.get("physical_address"), body.get("calendly_url"), user["id"]),
+            (body.physical_address, body.calendly_url, user["id"]),
         )
         conn.commit()
     finally:
