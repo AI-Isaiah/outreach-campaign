@@ -120,9 +120,10 @@ describe("SequenceEditorDetail — cache invalidation on template save", () => {
     await waitFor(() => {
       // Verify that invalidateQueries was called with the queue-all key
       const queueInvalidations = invalidateSpy.mock.calls.filter(
-        ([opts]: [{ queryKey: string[] }]) =>
-          opts.queryKey &&
-          JSON.stringify(opts.queryKey) === JSON.stringify(["queue-all"]),
+        (args: unknown[]) => {
+          const opts = args[0] as { queryKey?: string[] };
+          return opts?.queryKey && JSON.stringify(opts.queryKey) === JSON.stringify(["queue-all"]);
+        },
       );
       expect(queueInvalidations.length).toBeGreaterThan(0);
     });
