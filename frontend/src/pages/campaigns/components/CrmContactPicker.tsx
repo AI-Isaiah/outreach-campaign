@@ -58,10 +58,28 @@ export default function CrmContactPicker({
   const sortArrow = (col: SortCol) =>
     sortBy === col ? (sortDir === "asc" ? " \u25B2" : " \u25BC") : "";
 
+  // Pre-compute selected companies to avoid O(n^2) scan per row
+  const selectedCompanies = useMemo(() => {
+    if (!onePerCompany) return new Set<string>();
+    const s = new Set<string>();
+    for (const c of crmContacts) {
+      if (selectedIds.has(c.id) && c.company_name) s.add(c.company_name);
+    }
+    return s;
+  }, [crmContacts, selectedIds, onePerCompany]);
+
   const toggleOne = (id: number) => {
     const next = new Set(selectedIds);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
+    if (next.has(id)) {
+      next.delete(id);
+    } else {
+      // Enforce one-per-company: block if another contact from same company is already selected
+      if (onePerCompany) {
+        const contact = crmContacts.find((c) => c.id === id);
+        if (contact?.company_name && selectedCompanies.has(contact.company_name)) return;
+      }
+      next.add(id);
+    }
     onSelectionChange(next);
   };
 
@@ -92,16 +110,6 @@ export default function CrmContactPicker({
     onSelectionChange(next);
   };
 
-  // Pre-compute selected companies to avoid O(n^2) scan per row
-  const selectedCompanies = useMemo(() => {
-    if (!onePerCompany) return new Set<string>();
-    const s = new Set<string>();
-    for (const c of crmContacts) {
-      if (selectedIds.has(c.id) && c.company_name) s.add(c.company_name);
-    }
-    return s;
-  }, [crmContacts, selectedIds, onePerCompany]);
-
   const formatAum = (aum: number | null | undefined) => {
     if (aum == null) return "-";
     if (aum >= 1000) return `$${(aum / 1000).toFixed(1)}B`;
@@ -123,7 +131,24 @@ export default function CrmContactPicker({
         {[
           { label: "Has LinkedIn", active: hasLinkedin, toggle: () => { setHasLinkedin(!hasLinkedin); setPage(1); } },
           { label: "Has Email", active: hasEmail, toggle: () => { setHasEmail(!hasEmail); setPage(1); } },
-          { label: "One per company", active: onePerCompany, toggle: () => { setOnePerCompany(!onePerCompany); setPage(1); } },
+          { label: "One per company", active: onePerCompany, toggle: () => {
+            const next = !onePerCompany;
+            setOnePerCompany(next);
+            setPage(1);
+            // Prune duplicate-company selections when enabling the filter
+            if (next && crmContacts.length > 0) {
+              const seen = new Set<string>();
+              const pruned = new Set<number>();
+              for (const c of crmContacts) {
+                if (!selectedIds.has(c.id)) continue;
+                const key = c.company_name || `__no_company_${c.id}`;
+                if (seen.has(key)) continue;
+                seen.add(key);
+                pruned.add(c.id);
+              }
+              if (pruned.size < selectedIds.size) onSelectionChange(pruned);
+            }
+          } },
         ].map((f) => (
           <button
             key={f.label}
