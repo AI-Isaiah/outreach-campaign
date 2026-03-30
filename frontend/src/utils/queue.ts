@@ -1,10 +1,12 @@
+export const REMOVE_REASON = "Remove from Contacts";
+
 export const SKIP_REASONS = [
   "Not relevant now",
   "Bad timing",
   "Need more research",
   "Too junior",
   "Other",
-  "Remove from Contacts",
+  REMOVE_REASON,
 ];
 
 export function splitName(fullName: string): [string, string] {

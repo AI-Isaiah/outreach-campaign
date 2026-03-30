@@ -69,6 +69,7 @@ export interface QueueResponse {
   date: string | null;
   items: QueueItem[];
   total: number;
+  total_enrolled?: number;
   firm_type_counts: Record<string, number>;
 }
 

@@ -690,8 +690,9 @@ def defer_queue_contact(
                 (body.reason, contact_id, user["id"]),
             )
             cur.execute(
-                "DELETE FROM contact_campaign_status WHERE contact_id = %s",
-                (contact_id,),
+                "DELETE FROM contact_campaign_status WHERE contact_id = %s "
+                "AND contact_id IN (SELECT id FROM contacts WHERE user_id = %s)",
+                (contact_id, user["id"]),
             )
             conn.commit()
         return {"success": True, "removed": True}

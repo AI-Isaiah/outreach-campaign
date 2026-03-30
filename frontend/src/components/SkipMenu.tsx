@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { SKIP_REASONS } from "../utils/queue";
+import { SKIP_REASONS, REMOVE_REASON } from "../utils/queue";
 
 export default function SkipMenu({
   onSkip,
@@ -34,7 +34,7 @@ export default function SkipMenu({
       </button>
       {open && (
         <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
-          {SKIP_REASONS.filter(r => r !== "Remove from Contacts").map((reason) => (
+          {SKIP_REASONS.filter(r => r !== REMOVE_REASON).map((reason) => (
             <button
               key={reason}
               onClick={() => {
@@ -51,7 +51,7 @@ export default function SkipMenu({
             onClick={() => {
               if (window.confirm("Remove this contact? They'll be hidden from all lists and queues. You can restore them later if re-uploaded.")) {
                 setOpen(false);
-                onSkip("Remove from Contacts");
+                onSkip(REMOVE_REASON);
               }
             }}
             className="block w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-b-lg"

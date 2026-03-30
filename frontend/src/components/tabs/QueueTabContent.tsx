@@ -27,16 +27,15 @@ export default function QueueTabContent({ campaignName }: { campaignName: string
     queryFn: () => queueApi.getQueue(campaignName, { limit: 50, scope: queueScope }),
   });
 
-  const responseCampaignId: number | undefined = (data as any)?.campaign_id;
+  const responseCampaignId = data?.campaign_id;
   const allItems: QueueItem[] = useMemo(() => {
     const items = data?.items || [];
-    // Inject campaign_id from the response into each item (per-campaign endpoint doesn't set it on items)
     if (responseCampaignId) {
       return items.map(i => i.campaign_id ? i : { ...i, campaign_id: responseCampaignId });
     }
     return items;
   }, [data?.items, responseCampaignId]);
-  const totalEnrolled: number = (data as any)?.total_enrolled ?? 0;
+  const totalEnrolled = data?.total_enrolled ?? 0;
   const emailItems = allItems.filter((i) => i.channel === "email");
   const linkedinItems = allItems.filter((i) => i.channel.startsWith("linkedin"));
   const flatItems = useMemo(
