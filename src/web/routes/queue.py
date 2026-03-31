@@ -22,6 +22,7 @@ from src.services.linkedin_actions import complete_linkedin_action
 from src.services.priority_queue import defer_contact, get_defer_stats
 from src.services.sequence_utils import find_previous_step
 from src.web.dependencies import get_current_user, get_db, handle_llm_errors
+from src.web.schemas import CrossCampaignQueueResponse, QueueResponse
 from src.models.database import get_cursor, verify_ownership
 
 logger = logging.getLogger(__name__)
@@ -445,7 +446,7 @@ def defer_statistics(
     return get_defer_stats(conn, campaign_id=campaign_id, target_date=date, user_id=user["id"])
 
 
-@router.get("/queue/all")
+@router.get("/queue/all", response_model=CrossCampaignQueueResponse)
 def get_all_queues(
     date: Optional[str] = None,
     limit: int = Query(default=50, ge=1, le=200),
@@ -495,7 +496,7 @@ def get_all_queues(
     return {"items": merged, "total": len(merged)}
 
 
-@router.get("/queue/{campaign}")
+@router.get("/queue/{campaign}", response_model=QueueResponse)
 def get_queue(
     campaign: str,
     date: Optional[str] = None,

@@ -23,6 +23,7 @@ from src.services.phone_utils import normalize_phone
 from src.services.state_machine import InvalidTransition
 from src.constants import MAX_CONTACTS_PER_PAGE, RESPONSE_NOTES_LIMIT
 from src.web.dependencies import get_current_user, get_db
+from src.web.schemas import PaginatedContactsResponse
 from src.web.query_builder import QueryBuilder
 from src.models.database import get_cursor
 
@@ -219,7 +220,7 @@ def update_lifecycle_stage(
         return {"success": True, "lifecycle_stage": body.lifecycle_stage}
 
 
-@router.get("/contacts")
+@router.get("/contacts", response_model=PaginatedContactsResponse)
 def list_contacts(
     search: Optional[str] = None,
     page: int = Query(default=1, ge=1),

@@ -105,6 +105,8 @@ Real contact data, database files, and credentials are gitignored. Never commit 
 
 Tech stack: React 18, React Router 6, TanStack React Query 5, Tailwind CSS 3.4, dnd-kit, TypeScript, Vite. Source in `frontend/src/`.
 
+Frontend types can be regenerated from the API schema: `cd frontend && npm run generate-types` (requires the dev server running on port 8000). For offline generation from a saved schema: `cd frontend && npm run generate-types:local` (uses `openapi.json` at repo root). Generated types live at `frontend/src/types/generated.ts`.
+
 ### Design Tokens
 
 No custom tailwind.config.js extensions yet — uses default Tailwind palette. These are the semantic color mappings to follow:

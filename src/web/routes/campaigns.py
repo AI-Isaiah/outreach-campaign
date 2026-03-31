@@ -22,6 +22,7 @@ from src.services.metrics import (
 from src.services.response_analyzer import annotate_is_winning, get_template_performance
 from src.services.campaign_sequence import reorder_campaign_sequence
 from src.web.dependencies import get_current_user, get_db
+from src.web.schemas import CampaignSummary
 from src.models.database import get_cursor, verify_ownership
 
 _limiter = Limiter(key_func=get_remote_address)
