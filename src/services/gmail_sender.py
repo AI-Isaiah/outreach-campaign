@@ -1,5 +1,7 @@
 """Send emails via Gmail API using OAuth tokens."""
 
+from __future__ import annotations
+
 import base64
 import logging
 import re
@@ -42,7 +44,7 @@ class GmailSender:
         token_expiry: datetime,
         client_id: str,
         client_secret: str,
-    ):
+    ) -> None:
         self.access_token = access_token
         self.refresh_token = refresh_token
         self.token_expiry = token_expiry

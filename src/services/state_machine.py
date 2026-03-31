@@ -161,7 +161,7 @@ def get_active_contact_for_company(
     campaign_id: int,
     *,
     user_id: int,
-):
+) -> dict | None:
     """Return the contact that is actively being worked for a company.
 
     A contact is considered active if its campaign status is ``queued`` or

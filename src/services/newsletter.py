@@ -30,7 +30,7 @@ from src.services.email_sender import send_emails_batch
 logger = logging.getLogger(__name__)
 
 
-def get_newsletter_subscribers(conn, *, user_id: int) -> list:
+def get_newsletter_subscribers(conn, *, user_id: int) -> list[dict]:
     """Get all contacts with newsletter_status = 'subscribed' and unsubscribed = 0.
 
     Returns list of dicts with contact info.
@@ -136,7 +136,7 @@ def unsubscribe_contact(conn, contact_id: int, *, user_id: int) -> bool:
         return cursor.rowcount > 0
 
 
-def render_newsletter(markdown_path: str, config: dict) -> tuple:
+def render_newsletter(markdown_path: str, config: dict) -> tuple[str, str]:
     """Render a newsletter from Markdown to HTML + plain text.
 
     Args:

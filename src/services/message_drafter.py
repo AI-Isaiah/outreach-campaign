@@ -5,6 +5,8 @@ with template structure and contact context. Channel-aware: different prompts
 and length constraints for email, LinkedIn connect, and LinkedIn message.
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import os

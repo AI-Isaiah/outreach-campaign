@@ -33,7 +33,7 @@ def create_template(
         return row["id"]
 
 
-def get_template(conn: PgConnection, template_id: int, *, user_id: int):
+def get_template(conn: PgConnection, template_id: int, *, user_id: int) -> dict | None:
     """Return a single template by id, or None."""
     with get_cursor(conn) as cursor:
         cursor.execute(
@@ -49,7 +49,7 @@ def list_templates(
     is_active: bool = True,
     *,
     user_id: int,
-) -> list:
+) -> list[dict]:
     """Return templates, optionally filtered by channel and active status."""
     query = "SELECT * FROM templates WHERE user_id = %s"
     params: list = [user_id]

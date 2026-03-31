@@ -51,7 +51,7 @@ def create_campaign(
         return row["id"]
 
 
-def get_campaign(conn: PgConnection, campaign_id: int, *, user_id: int):
+def get_campaign(conn: PgConnection, campaign_id: int, *, user_id: int) -> dict | None:
     """Return a single campaign by id, or None."""
     with get_cursor(conn) as cursor:
         cursor.execute(
@@ -61,7 +61,7 @@ def get_campaign(conn: PgConnection, campaign_id: int, *, user_id: int):
         return cursor.fetchone()
 
 
-def get_campaign_by_name(conn: PgConnection, name: str, *, user_id: int):
+def get_campaign_by_name(conn: PgConnection, name: str, *, user_id: int) -> dict | None:
     """Return a single campaign by name, or None."""
     with get_cursor(conn) as cursor:
         cursor.execute(
@@ -76,7 +76,7 @@ def list_campaigns(
     status: Optional[str] = None,
     *,
     user_id: int,
-) -> list:
+) -> list[dict]:
     """Return all campaigns, optionally filtered by status."""
     with get_cursor(conn) as cursor:
         if status is not None:

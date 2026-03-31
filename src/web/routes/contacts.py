@@ -606,11 +606,10 @@ def bulk_update_lifecycle(
 
     with get_cursor(conn) as cur:
         # Verify all contacts exist and belong to user
-        placeholders = ", ".join(["%s"] * len(body.contact_ids))
         cur.execute(
-            f"""SELECT c.id, c.lifecycle_stage FROM contacts c
-                WHERE c.id IN ({placeholders}) AND c.user_id = %s""",
-            body.contact_ids + [user["id"]],
+            """SELECT c.id, c.lifecycle_stage FROM contacts c
+                WHERE c.id = ANY(%s) AND c.user_id = %s""",
+            (body.contact_ids, user["id"]),
         )
         found = cur.fetchall()
         found_ids = {r["id"] for r in found}
@@ -620,8 +619,8 @@ def bulk_update_lifecycle(
 
         # Update all
         cur.execute(
-            f"UPDATE contacts SET lifecycle_stage = %s WHERE id IN ({placeholders}) AND user_id = %s",
-            [body.lifecycle_stage] + body.contact_ids + [user["id"]],
+            "UPDATE contacts SET lifecycle_stage = %s WHERE id = ANY(%s) AND user_id = %s",
+            (body.lifecycle_stage, body.contact_ids, user["id"]),
         )
 
         # Log events

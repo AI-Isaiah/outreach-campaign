@@ -67,7 +67,7 @@ def add_sequence_step(
 # Sequence Steps (query)
 # ---------------------------------------------------------------------------
 
-def get_sequence_steps(conn: PgConnection, campaign_id: int, *, user_id: int) -> list:
+def get_sequence_steps(conn: PgConnection, campaign_id: int, *, user_id: int) -> list[dict]:
     """Return all steps for a campaign, ordered by step_order.
 
     Joins to campaigns table to verify ownership.
@@ -211,7 +211,7 @@ def get_contact_campaign_status(
     campaign_id: int,
     *,
     user_id: int,
-):
+) -> dict | None:
     """Return the enrollment/status row for a contact in a campaign, or None.
 
     Joins to campaigns table to verify ownership.
@@ -307,7 +307,7 @@ def get_message_draft(
     step_order: int,
     *,
     user_id: int,
-):
+) -> dict | None:
     """Fetch an existing AI-generated message draft, or None."""
     with get_cursor(conn) as cursor:
         cursor.execute(

@@ -2050,7 +2050,7 @@ class TestGetAnalysisHistory:
 class TestPerplexityQuery:
     """Tests for _perplexity_query."""
 
-    @patch("src.services.deep_research_service.httpx.post")
+    @patch("src.services.deep_research_queries.httpx.post")
     def test_successful_query(self, mock_post):
         from src.services.deep_research_service import _perplexity_query
 
@@ -2067,7 +2067,7 @@ class TestPerplexityQuery:
         assert result["cost_usd"] > 0
         assert result["duration_ms"] >= 0
 
-    @patch("src.services.deep_research_service.httpx.post")
+    @patch("src.services.deep_research_queries.httpx.post")
     def test_429_raises(self, mock_post):
         from src.services.deep_research_service import _perplexity_query
 
@@ -2081,7 +2081,7 @@ class TestPerplexityQuery:
         with pytest.raises(httpx.HTTPStatusError):
             _perplexity_query("test query", "api_key")
 
-    @patch("src.services.deep_research_service.httpx.post")
+    @patch("src.services.deep_research_queries.httpx.post")
     def test_500_returns_error(self, mock_post):
         from src.services.deep_research_service import _perplexity_query
 
@@ -2096,7 +2096,7 @@ class TestPerplexityQuery:
         assert "error" in result
         assert result["cost_usd"] == 0
 
-    @patch("src.services.deep_research_service.httpx.post")
+    @patch("src.services.deep_research_queries.httpx.post")
     def test_network_error_returns_error(self, mock_post):
         from src.services.deep_research_service import _perplexity_query
 
@@ -2115,7 +2115,7 @@ class TestPerplexityQuery:
 class TestSynthesizeWithSonnet:
     """Tests for _synthesize_with_sonnet."""
 
-    @patch("src.services.deep_research_service.httpx.post")
+    @patch("src.services.deep_research_enrichment.httpx.post")
     def test_valid_json_response(self, mock_post):
         from src.services.deep_research_service import _synthesize_with_sonnet
 
@@ -2139,7 +2139,7 @@ class TestSynthesizeWithSonnet:
         )
         assert result["company_overview"] == "Overview"
 
-    @patch("src.services.deep_research_service.httpx.post")
+    @patch("src.services.deep_research_enrichment.httpx.post")
     def test_markdown_fences_stripped(self, mock_post):
         from src.services.deep_research_service import _synthesize_with_sonnet
 
@@ -2156,7 +2156,7 @@ class TestSynthesizeWithSonnet:
         )
         assert result["company_overview"] == "Overview"
 
-    @patch("src.services.deep_research_service.httpx.post")
+    @patch("src.services.deep_research_enrichment.httpx.post")
     def test_fallback_on_double_json_failure(self, mock_post):
         from src.services.deep_research_service import _synthesize_with_sonnet
 
@@ -2172,7 +2172,7 @@ class TestSynthesizeWithSonnet:
         assert result["confidence"] == "low"
         assert result["company_overview"] == "This is not JSON at all"
 
-    @patch("src.services.deep_research_service.httpx.post")
+    @patch("src.services.deep_research_enrichment.httpx.post")
     def test_api_error_raises_runtime_error(self, mock_post):
         from src.services.deep_research_service import _synthesize_with_sonnet
 
@@ -2183,7 +2183,7 @@ class TestSynthesizeWithSonnet:
                 [{"query": "q1", "response": "r1"}], "TestCorp", None, "api_key",
             )
 
-    @patch("src.services.deep_research_service.httpx.post")
+    @patch("src.services.deep_research_enrichment.httpx.post")
     def test_bulk_research_passed_to_prompt(self, mock_post):
         from src.services.deep_research_service import _synthesize_with_sonnet
 

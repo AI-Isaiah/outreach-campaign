@@ -36,7 +36,7 @@ class GmailDrafter:
         self,
         credentials_path: str = "credentials.json",
         token_path: str = ".gmail_token.json",
-    ):
+    ) -> None:
         self.credentials_path = Path(credentials_path)
         self.token_path = Path(token_path)
         self._service = None
@@ -84,7 +84,7 @@ class GmailDrafter:
         except (ValueError, OSError, KeyError):
             return False
 
-    def _load_credentials(self):
+    def _load_credentials(self) -> object | None:
         """Load credentials from the token file."""
         from google.oauth2.credentials import Credentials
 
@@ -97,7 +97,7 @@ class GmailDrafter:
             self._save_credentials(creds)
         return creds
 
-    def _save_credentials(self, creds):
+    def _save_credentials(self, creds) -> None:
         """Save credentials to the token file."""
         self.token_path.write_text(creds.to_json())
 
@@ -148,7 +148,7 @@ class GmailDrafter:
         self._service = None  # reset cached service
         return True
 
-    def _get_service(self):
+    def _get_service(self) -> object:
         """Get or create the Gmail API service."""
         if self._service is not None:
             return self._service

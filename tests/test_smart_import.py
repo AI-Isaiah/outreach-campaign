@@ -176,9 +176,9 @@ def test_analyze_csv_mocked_llm_success():
     sample_rows = [{"Firm Name": "Acme", "Country": "US", "Primary Email": "a@b.com",
                      "City": "NYC", "Phone": "555"}]
 
-    with patch("src.services.smart_import._get_cached_mapping", return_value=None), \
-         patch("src.services.smart_import._save_mapping_cache"), \
-         patch("src.services.smart_import.call_llm", return_value=(llm_response, "anthropic")):
+    with patch("src.services.smart_import_llm._get_cached_mapping", return_value=None), \
+         patch("src.services.smart_import_llm._save_mapping_cache"), \
+         patch("src.services.smart_import_llm.call_llm", return_value=(llm_response, "anthropic")):
         result = analyze_csv(headers, sample_rows, user_id=1, conn=mock_conn)
 
     assert result["provider"] == "anthropic"
@@ -199,8 +199,8 @@ def test_analyze_csv_llm_failure_heuristic_fallback():
     headers = ["Firm Name", "Country", "Primary Email"]
     sample_rows = [{"Firm Name": "Acme", "Country": "US", "Primary Email": "a@b.com"}]
 
-    with patch("src.services.smart_import._get_cached_mapping", return_value=None), \
-         patch("src.services.smart_import.call_llm", side_effect=RuntimeError("No API key")):
+    with patch("src.services.smart_import_llm._get_cached_mapping", return_value=None), \
+         patch("src.services.smart_import_llm.call_llm", side_effect=RuntimeError("No API key")):
         result = analyze_csv(headers, sample_rows, user_id=1, conn=mock_conn)
 
     # Falls back to heuristic: provider should be None
@@ -231,9 +231,9 @@ def test_analyze_csv_llm_partial_heuristic_merge():
     sample_rows = [{"Firm Name": "Acme", "Country": "US",
                      "Primary Email": "a@b.com", "Position": "MD"}]
 
-    with patch("src.services.smart_import._get_cached_mapping", return_value=None), \
-         patch("src.services.smart_import._save_mapping_cache"), \
-         patch("src.services.smart_import.call_llm", return_value=(llm_response, "openai")):
+    with patch("src.services.smart_import_llm._get_cached_mapping", return_value=None), \
+         patch("src.services.smart_import_llm._save_mapping_cache"), \
+         patch("src.services.smart_import_llm.call_llm", return_value=(llm_response, "openai")):
         result = analyze_csv(headers, sample_rows, user_id=1, conn=mock_conn)
 
     assert result["provider"] == "openai"

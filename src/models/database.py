@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 import threading
 from contextlib import contextmanager
@@ -15,14 +17,14 @@ _pool = None
 _pool_lock = threading.Lock()
 
 
-def get_connection(db_url: str):
+def get_connection(db_url: str) -> psycopg2.extensions.connection:
     """Create a single database connection (used by CLI and migrations)."""
     conn = psycopg2.connect(db_url, cursor_factory=psycopg2.extras.RealDictCursor)
     conn.autocommit = False
     return conn
 
 
-def init_pool(db_url: str, minconn: int = 2, maxconn: int = 20):
+def init_pool(db_url: str, minconn: int = 2, maxconn: int = 20) -> psycopg2.pool.ThreadedConnectionPool:
     """Initialize the connection pool (call once at web app startup).
 
     Thread-safe: uses a lock to prevent double-initialization in
@@ -38,7 +40,7 @@ def init_pool(db_url: str, minconn: int = 2, maxconn: int = 20):
     return _pool
 
 
-def get_pool_connection():
+def get_pool_connection() -> psycopg2.extensions.connection:
     """Get a connection from the pool. Caller must return it via put_pool_connection."""
     if _pool is None:
         raise RuntimeError("Connection pool not initialized. Call init_pool() first.")
@@ -47,7 +49,7 @@ def get_pool_connection():
     return conn
 
 
-def put_pool_connection(conn):
+def put_pool_connection(conn) -> None:
     """Return a connection to the pool."""
     if _pool is not None:
         _pool.putconn(conn)
@@ -58,7 +60,7 @@ def is_pool_initialized() -> bool:
     return _pool is not None
 
 
-def close_pool():
+def close_pool() -> None:
     """Close all connections in the pool."""
     global _pool
     if _pool is not None:
@@ -83,7 +85,7 @@ OWNED_TABLES = frozenset({
 })
 
 
-def verify_ownership(conn, table, record_id, user_id):
+def verify_ownership(conn, table, record_id, user_id) -> bool | None:
     """Return True if record belongs to user, None otherwise.
     Table name validated against allowlist to prevent SQL injection."""
     if table not in OWNED_TABLES:

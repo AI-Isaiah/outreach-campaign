@@ -1,51 +1,24 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Calendar, CheckCircle, ChevronDown, Clock, Inbox, Info, Loader2, Mail, Linkedin, Send, X } from "lucide-react";
+import { CheckCircle, Inbox, X } from "lucide-react";
 import { queueApi } from "../api/queue";
 import { queryKeys } from "../api/queryKeys";
-import { SCHEDULE_PRESETS } from "../constants";
 import { api } from "../api/client";
 import type { QueueItem, QueueResponse } from "../types";
-import QueueEmailCard from "../components/QueueEmailCard";
-import QueueLinkedInCard from "../components/QueueLinkedInCard";
 import ReviewGateModal from "../components/ReviewGateModal";
 import { useBatchSendLoop } from "../hooks/useBatchSendLoop";
 import { SkeletonCard } from "../components/Skeleton";
 import ErrorBoundary from "../components/ErrorBoundary";
 import ErrorCard from "../components/ui/ErrorCard";
 import Button from "../components/ui/Button";
+import KeyboardHint from "./queue/KeyboardHint";
+import FilterBar from "./queue/FilterBar";
+import type { ChannelFilter } from "./queue/FilterBar";
+import StickyActionBar from "./queue/StickyActionBar";
+import CardSection from "./queue/CardSection";
 
 const HINT_STORAGE_KEY = "queue_keyboard_hint_seen_count";
 const MAX_HINT_VIEWS = 3;
-
-function KeyboardHint({ onDismiss }: { onDismiss: () => void }) {
-  return (
-    <div className="bg-blue-50 border border-blue-100 rounded-lg px-4 py-2 text-sm text-blue-700 flex items-center justify-between">
-      <span>
-        Navigate with{" "}
-        <kbd className="font-mono bg-white border border-blue-200 rounded px-1.5 py-0.5 text-xs">j</kbd>
-        /
-        <kbd className="font-mono bg-white border border-blue-200 rounded px-1.5 py-0.5 text-xs">k</kbd>
-        {" \u00b7 "}
-        <kbd className="font-mono bg-white border border-blue-200 rounded px-1.5 py-0.5 text-xs">Space</kbd>
-        {" to select \u00b7 "}
-        <kbd className="font-mono bg-white border border-blue-200 rounded px-1.5 py-0.5 text-xs">s</kbd>
-        {" to skip \u00b7 "}
-        <kbd className="font-mono bg-white border border-blue-200 rounded px-1.5 py-0.5 text-xs">Ctrl+Enter</kbd>
-        {" to review & send"}
-      </span>
-      <button
-        onClick={onDismiss}
-        className="text-blue-400 hover:text-blue-600 ml-3 flex-shrink-0"
-        aria-label="Dismiss keyboard hints"
-      >
-        <X size={16} />
-      </button>
-    </div>
-  );
-}
-
-type ChannelFilter = "all" | "email" | "linkedin";
 
 export default function Queue() {
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>("all");
@@ -57,11 +30,8 @@ export default function Queue() {
     return count < MAX_HINT_VIEWS;
   });
   const [showReviewModal, setShowReviewModal] = useState(false);
-  const [scheduleOpen, setScheduleOpen] = useState(false);
-  const [customDateTime, setCustomDateTime] = useState("");
 
   const cardRefs = useRef<Map<number, HTMLDivElement>>(new Map());
-  const scheduleRef = useRef<HTMLDivElement>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
 
@@ -102,26 +72,11 @@ export default function Queue() {
         .map((i) => ({ contact_id: i.contact_id, campaign_id: i.campaign_id! }));
       return queueApi.scheduleSend(selectedPairs, schedule);
     },
-    onSuccess: (result) => {
+    onSuccess: () => {
       setSelectedIds(new Set());
-      setScheduleOpen(false);
-      setCustomDateTime("");
       queryClient.invalidateQueries({ queryKey: queryKeys.queue.all });
     },
   });
-
-  // Close schedule dropdown on outside click
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (scheduleRef.current && !scheduleRef.current.contains(e.target as Node)) {
-        setScheduleOpen(false);
-      }
-    }
-    if (scheduleOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [scheduleOpen]);
 
   const allItems: QueueItem[] = data?.items || [];
 
@@ -380,38 +335,13 @@ export default function Queue() {
         </div>
       </div>
 
-      <div className="flex gap-2 flex-wrap">
-        {(["all", "email", "linkedin"] as ChannelFilter[]).map((f) => (
-          <button
-            key={f}
-            className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-              channelFilter === f
-                ? "bg-gray-900 text-white"
-                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-            }`}
-            onClick={() => setChannelFilter(f)}
-          >
-            {f === "all" ? "All channels" : f === "email" ? "Email" : "LinkedIn"}
-          </button>
-        ))}
-
-        {campaignNames.length > 0 && (
-          <>
-            <div className="w-px bg-gray-200 mx-1" />
-            <select
-              value={campaignFilter}
-              onChange={(e) => setCampaignFilter(e.target.value)}
-              className="px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700 border-0 cursor-pointer hover:bg-gray-200 transition-colors appearance-none pr-6"
-              style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat: "no-repeat", backgroundPosition: "right 6px center" }}
-            >
-              <option value="">All campaigns ({campaignNames.length})</option>
-              {campaignNames.map((cn) => (
-                <option key={cn} value={cn}>{cn}</option>
-              ))}
-            </select>
-          </>
-        )}
-      </div>
+      <FilterBar
+        channelFilter={channelFilter}
+        onChannelFilterChange={setChannelFilter}
+        campaignFilter={campaignFilter}
+        onCampaignFilterChange={setCampaignFilter}
+        campaignNames={campaignNames}
+      />
 
       {showHint && flatItems.length > 0 && <KeyboardHint onDismiss={dismissHint} />}
 
@@ -445,58 +375,15 @@ export default function Queue() {
       )}
 
       <ErrorBoundary>
-        {/* Email section */}
-        {emailItems.length > 0 && (
-          <div>
-            <h2 className="flex items-center gap-1.5 text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
-              <Mail size={16} className="text-amber-600" />
-              Email ({emailItems.length})
-            </h2>
-            <div className="space-y-3">
-              {emailItems.map((item, i) => (
-                <div key={`${item.contact_id}-email`} ref={(el) => setCardRef(i, el)}>
-                  <QueueEmailCard
-                    item={item}
-                    campaign={item.campaign_name || ""}
-                    onDeferred={handleDeferred}
-                    isFocused={focusedIndex === i}
-
-                    isSelected={selectedIds.has(item.contact_id)}
-                    onToggle={toggleSelected}
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* LinkedIn section */}
-        {linkedinItems.length > 0 && (
-          <div>
-            <h2 className="flex items-center gap-1.5 text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
-              <Linkedin size={16} className="text-blue-600" />
-              LinkedIn ({linkedinItems.length})
-            </h2>
-            <div className="space-y-3">
-              {linkedinItems.map((item, i) => {
-                const flatIdx = emailItems.length + i;
-                return (
-                  <div key={`${item.contact_id}-li`} ref={(el) => setCardRef(flatIdx, el)}>
-                    <QueueLinkedInCard
-                      item={item}
-                      campaign={item.campaign_name || ""}
-                      onDeferred={handleDeferred}
-                      isFocused={focusedIndex === flatIdx}
-
-                      isSelected={selectedIds.has(item.contact_id)}
-                      onToggle={toggleSelected}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
+        <CardSection
+          emailItems={emailItems}
+          linkedinItems={linkedinItems}
+          focusedIndex={focusedIndex}
+          selectedIds={selectedIds}
+          onToggle={toggleSelected}
+          onDeferred={handleDeferred}
+          setCardRef={setCardRef}
+        />
       </ErrorBoundary>
 
       {/* Review Gate Modal */}
@@ -513,154 +400,22 @@ export default function Queue() {
         scheduleMode={null}
       />
 
-      {/* Sticky Bottom Bar — 5-state display */}
+      {/* Sticky Bottom Bar */}
       {showStickyBar && (
-        <div className="fixed bottom-0 left-0 md:left-56 right-0 bg-white border-t border-gray-200 px-6 py-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-40" aria-live="polite">
-          <div className="max-w-7xl mx-auto flex items-center justify-between">
-            {/* Left side — status */}
-            <div className="flex items-center gap-3">
-              {sendPhase === "idle" && (
-                <>
-                  <span className="text-sm font-medium text-gray-700">
-                    {selectedIds.size} selected
-                  </span>
-                  <button
-                    onClick={() => setSelectedIds(new Set())}
-                    className="text-xs text-blue-600 hover:text-blue-700 underline"
-                  >
-                    Deselect all
-                  </button>
-                </>
-              )}
-              {sendPhase === "approving" && (
-                <span className="flex items-center gap-2 text-sm text-gray-500">
-                  <Loader2 size={14} className="animate-spin" /> Validating...
-                </span>
-              )}
-              {sendPhase === "sending" && sendProgress && (
-                <span className="flex items-center gap-2 text-sm text-blue-600">
-                  <Loader2 size={14} className="animate-spin" />
-                  Sending... {sendProgress.sent} of {sendProgress.total}
-                  <span title="If interrupted, unsent items stay in your queue."><Info size={14} className="text-gray-400" /></span>
-                </span>
-              )}
-              {sendPhase === "done" && sendProgress && (
-                <span className={`text-sm font-medium ${sendProgress.failed > 0 ? "text-amber-600" : "text-green-600"}`}>
-                  {sendProgress.failed > 0
-                    ? `${sendProgress.sent} sent, ${sendProgress.failed} failed`
-                    : `${sendProgress.sent} sent`}
-                </span>
-              )}
-              {sendPhase === "aborted" && sendProgress && (
-                <span className="text-sm text-amber-600">
-                  Cancelled. {sendProgress.sent} of {sendProgress.total} sent. Remaining items still in queue.
-                </span>
-              )}
-              {sendPhase === "error" && (
-                <span className="text-sm text-red-600">
-                  Send failed. {sendProgress ? `${sendProgress.sent} sent before error.` : ""}
-                </span>
-              )}
-              {scheduleMutation.isError && (
-                <span className="text-sm text-red-600">
-                  {(scheduleMutation.error as Error).message}
-                </span>
-              )}
-            </div>
-
-            {/* Right side — actions */}
-            <div className="flex items-center gap-2">
-              {/* Sending: Cancel button */}
-              {sendPhase === "sending" && (
-                <Button variant="secondary" size="md" onClick={handleCancel}>
-                  Cancel
-                </Button>
-              )}
-
-              {/* Done: Undo + Retry */}
-              {sendPhase === "done" && undoCountdown !== null && undoCountdown > 0 && (
-                <Button variant="secondary" size="md" onClick={handleUndo}>
-                  Undo ({undoCountdown}s)
-                </Button>
-              )}
-              {sendPhase === "done" && sendProgress && sendProgress.failed > 0 && (
-                <Button variant="secondary" size="md" onClick={() => resetState()}>
-                  Retry failed
-                </Button>
-              )}
-
-              {/* Aborted/Error: Reset */}
-              {(sendPhase === "aborted" || sendPhase === "error") && (
-                <Button variant="secondary" size="md" onClick={resetState}>
-                  Dismiss
-                </Button>
-              )}
-
-              {/* Idle: Schedule + Review & Send */}
-              {sendPhase === "idle" && hasSelections && (
-                <>
-                  <div className="relative" ref={scheduleRef}>
-                    <button
-                      type="button"
-                      onClick={() => setScheduleOpen((prev) => !prev)}
-                      disabled={scheduleMutation.isPending}
-                      className="inline-flex items-center gap-1.5 bg-white border border-gray-200 text-gray-700 rounded-lg px-4 py-2.5 text-sm font-medium hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                      <Clock size={16} />
-                      Schedule
-                      <ChevronDown size={14} />
-                    </button>
-                    {scheduleOpen && (
-                      <div className="absolute bottom-full right-0 mb-2 w-64 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-50">
-                        {SCHEDULE_PRESETS.map((preset) => {
-                          const Icon = preset.value === "now" ? Send : preset.value === "tomorrow_9am" ? Clock : Calendar;
-                          return (
-                            <button
-                              key={preset.value}
-                              type="button"
-                              onClick={() => { scheduleMutation.mutate(preset.value); }}
-                              className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                            >
-                              <Icon size={14} className="text-gray-400" />
-                              {preset.label}
-                            </button>
-                          );
-                        })}
-                        <div className="border-t border-gray-100 mt-1 pt-1 px-4 py-2">
-                          <label className="text-xs font-medium text-gray-500 block mb-1.5">
-                            Custom date & time
-                          </label>
-                          <input
-                            type="datetime-local"
-                            value={customDateTime}
-                            onChange={(e) => setCustomDateTime(e.target.value)}
-                            className="w-full border border-gray-200 rounded px-2.5 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          />
-                          <button
-                            type="button"
-                            disabled={!customDateTime}
-                            onClick={() => { scheduleMutation.mutate(new Date(customDateTime).toISOString()); }}
-                            className="mt-2 w-full bg-blue-600 text-white rounded text-sm font-medium px-3 py-1.5 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                          >
-                            Schedule for this time
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  <Button
-                    variant="primary"
-                    size="lg"
-                    onClick={() => setShowReviewModal(true)}
-                    leftIcon={<Send size={16} />}
-                  >
-                    Review & Send {selectedIds.size}
-                  </Button>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
+        <StickyActionBar
+          selectedCount={selectedIds.size}
+          sendPhase={sendPhase}
+          sendProgress={sendProgress}
+          undoCountdown={undoCountdown}
+          schedulePending={scheduleMutation.isPending}
+          scheduleError={scheduleMutation.isError ? (scheduleMutation.error as Error) : null}
+          onDeselectAll={() => setSelectedIds(new Set())}
+          onReview={() => setShowReviewModal(true)}
+          onCancel={handleCancel}
+          onUndo={handleUndo}
+          onReset={resetState}
+          onSchedule={(value) => scheduleMutation.mutate(value)}
+        />
       )}
     </div>
   );

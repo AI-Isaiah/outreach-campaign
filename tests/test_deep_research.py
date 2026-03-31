@@ -255,7 +255,8 @@ def test_all_queries_succeed_populates_raw_queries(db_conn):
 
     api_keys = {"perplexity": "pk-test", "anthropic": "ak-test"}
 
-    with patch("src.services.deep_research_service.httpx.post", side_effect=_mock_post):
+    with patch("src.services.deep_research_queries.httpx.post", side_effect=_mock_post), \
+         patch("src.services.deep_research_enrichment.httpx.post", side_effect=_mock_post):
         _execute_deep_research(db_conn, dr_id, api_keys)
 
     with get_cursor(db_conn) as cur:
@@ -307,7 +308,8 @@ def test_empty_query_result_skipped(db_conn):
         return resp
 
     api_keys = {"perplexity": "pk-test", "anthropic": "ak-test"}
-    with patch("src.services.deep_research_service.httpx.post", side_effect=_mock_post):
+    with patch("src.services.deep_research_queries.httpx.post", side_effect=_mock_post), \
+         patch("src.services.deep_research_enrichment.httpx.post", side_effect=_mock_post):
         _execute_deep_research(db_conn, dr_id, api_keys)
 
     with get_cursor(db_conn) as cur:
@@ -361,9 +363,10 @@ def test_query_rate_limited_retry_succeeds(db_conn):
         return resp
 
     api_keys = {"perplexity": "pk-test", "anthropic": "ak-test"}
-    with patch("src.services.deep_research_service.httpx.post", side_effect=_mock_post):
-        with patch("src.services.deep_research_service.time.sleep"):
-            _execute_deep_research(db_conn, dr_id, api_keys)
+    with patch("src.services.deep_research_queries.httpx.post", side_effect=_mock_post), \
+         patch("src.services.deep_research_enrichment.httpx.post", side_effect=_mock_post), \
+         patch("src.services.deep_research_orchestrator.time.sleep"):
+        _execute_deep_research(db_conn, dr_id, api_keys)
 
     with get_cursor(db_conn) as cur:
         cur.execute("SELECT status FROM deep_research WHERE id = %s", (dr_id,))
@@ -389,9 +392,9 @@ def test_excessive_rate_limiting_causes_failure(db_conn):
 
     api_keys = {"perplexity": "pk-test", "anthropic": "ak-test"}
 
-    with patch("src.services.deep_research_service.httpx.post", side_effect=_mock_post):
-        with patch("src.services.deep_research_service.time.sleep"):
-            _execute_deep_research(db_conn, dr_id, api_keys)
+    with patch("src.services.deep_research_queries.httpx.post", side_effect=_mock_post), \
+         patch("src.services.deep_research_orchestrator.time.sleep"):
+        _execute_deep_research(db_conn, dr_id, api_keys)
 
     with get_cursor(db_conn) as cur:
         cur.execute("SELECT status, error_message FROM deep_research WHERE id = %s", (dr_id,))
@@ -430,7 +433,8 @@ def test_fewer_than_two_successful_queries_fails(db_conn):
         raise AssertionError("Sonnet should not be called with < 2 successful queries")
 
     api_keys = {"perplexity": "pk-test", "anthropic": "ak-test"}
-    with patch("src.services.deep_research_service.httpx.post", side_effect=_mock_post):
+    with patch("src.services.deep_research_queries.httpx.post", side_effect=_mock_post), \
+         patch("src.services.deep_research_enrichment.httpx.post", side_effect=_mock_post):
         _execute_deep_research(db_conn, dr_id, api_keys)
 
     with get_cursor(db_conn) as cur:
@@ -464,8 +468,8 @@ def test_cancellation_between_research_and_synthesis(db_conn):
         raise AssertionError("Sonnet should not be called after cancellation")
 
     api_keys = {"perplexity": "pk-test", "anthropic": "ak-test"}
-    with patch("src.services.deep_research_service.httpx.post", side_effect=_mock_post):
-        with patch("src.services.deep_research_service._is_cancelled", side_effect=_mock_is_cancelled):
+    with patch("src.services.deep_research_queries.httpx.post", side_effect=_mock_post):
+        with patch("src.services.deep_research_orchestrator._is_cancelled", side_effect=_mock_is_cancelled):
             _execute_deep_research(db_conn, dr_id, api_keys)
 
     with get_cursor(db_conn) as cur:
@@ -501,7 +505,8 @@ def test_valid_json_from_sonnet_populates_fields(db_conn):
         return resp
 
     api_keys = {"perplexity": "pk-test", "anthropic": "ak-test"}
-    with patch("src.services.deep_research_service.httpx.post", side_effect=_mock_post):
+    with patch("src.services.deep_research_queries.httpx.post", side_effect=_mock_post), \
+         patch("src.services.deep_research_enrichment.httpx.post", side_effect=_mock_post):
         _execute_deep_research(db_conn, dr_id, api_keys)
 
     with get_cursor(db_conn) as cur:
@@ -548,7 +553,7 @@ def test_invalid_json_first_try_valid_on_retry():
         {"query": "test query 2", "response": "data 2"},
     ]
 
-    with patch("src.services.deep_research_service.httpx.post", side_effect=_mock_post):
+    with patch("src.services.deep_research_enrichment.httpx.post", side_effect=_mock_post):
         result = _synthesize_with_sonnet(raw_results, "Test Corp", None, "ak-test")
 
     assert result["company_overview"] == "Valid on second try"
@@ -572,7 +577,7 @@ def test_invalid_json_twice_returns_fallback():
         {"query": "test query 2", "response": "data 2"},
     ]
 
-    with patch("src.services.deep_research_service.httpx.post", side_effect=_mock_post):
+    with patch("src.services.deep_research_enrichment.httpx.post", side_effect=_mock_post):
         result = _synthesize_with_sonnet(raw_results, "Test Corp", None, "ak-test")
 
     assert result["confidence"] == "low"
@@ -618,9 +623,10 @@ def test_cancellation_during_synthesis_phase(db_conn):
         return sonnet_resp
 
     api_keys = {"perplexity": "pk-test", "anthropic": "ak-test"}
-    with patch("src.services.deep_research_service.httpx.post", side_effect=_mock_post):
-        with patch("src.services.deep_research_service._is_cancelled", side_effect=_mock_is_cancelled):
-            _execute_deep_research(db_conn, dr_id, api_keys)
+    with patch("src.services.deep_research_queries.httpx.post", side_effect=_mock_post), \
+         patch("src.services.deep_research_enrichment.httpx.post", side_effect=_mock_post), \
+         patch("src.services.deep_research_orchestrator._is_cancelled", side_effect=_mock_is_cancelled):
+        _execute_deep_research(db_conn, dr_id, api_keys)
 
     with get_cursor(db_conn) as cur:
         cur.execute("SELECT status FROM deep_research WHERE id = %s", (dr_id,))

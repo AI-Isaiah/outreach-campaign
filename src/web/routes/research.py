@@ -52,6 +52,7 @@ from slowapi.util import get_remote_address
 from src.web.dependencies import get_current_user, get_db
 from src.web.routes.settings import get_user_api_keys
 from src.models.database import get_cursor
+from src.web.query_builder import QueryBuilder
 
 _logger = logging.getLogger(__name__)
 _limiter = Limiter(
@@ -286,22 +287,20 @@ def list_research_jobs(
         if cur.rowcount > 0:
             conn.commit()
 
-    conditions = ["user_id = %s"]
-    params: list = [user["id"]]
+    qb = QueryBuilder()
+    qb.add_condition("user_id = %s", user["id"])
     if status:
-        conditions.append("status = %s")
-        params.append(status)
-    where = "WHERE " + " AND ".join(conditions)
+        qb.add_condition("status = %s", status)
 
     with get_cursor(conn) as cur:
-        cur.execute(f"SELECT COUNT(*) AS cnt FROM research_jobs {where}", params)
+        cur.execute(f"SELECT COUNT(*) AS cnt FROM research_jobs {qb.where_clause}", qb.params)
         total = cur.fetchone()["cnt"]
 
         offset = (page - 1) * per_page
         cur.execute(
-            f"""SELECT * FROM research_jobs {where}
+            f"""SELECT * FROM research_jobs {qb.where_clause}
                 ORDER BY created_at DESC LIMIT %s OFFSET %s""",
-            [*params, per_page, offset],
+            [*qb.params, per_page, offset],
         )
         jobs = [dict(row) for row in cur.fetchall()]
 
@@ -398,21 +397,17 @@ def get_research_results(
         if not cur.fetchone():
             raise HTTPException(404, "Research job not found")
 
-    where_parts = ["job_id = %s"]
-    params: list = [job_id]
+    qb = QueryBuilder()
+    qb.add_condition("job_id = %s", job_id)
 
     if category:
-        where_parts.append("category = %s")
-        params.append(category)
+        qb.add_condition("category = %s", category)
     if min_score is not None:
-        where_parts.append("crypto_score >= %s")
-        params.append(min_score)
+        qb.add_condition("crypto_score >= %s", min_score)
     if has_warm_intros is True:
-        where_parts.append("warm_intro_contact_ids IS NOT NULL AND array_length(warm_intro_contact_ids, 1) > 0")
+        qb.add_condition("warm_intro_contact_ids IS NOT NULL AND array_length(warm_intro_contact_ids, 1) > 0")
     elif has_warm_intros is False:
-        where_parts.append("(warm_intro_contact_ids IS NULL OR array_length(warm_intro_contact_ids, 1) IS NULL)")
-
-    where_clause = " AND ".join(where_parts)
+        qb.add_condition("(warm_intro_contact_ids IS NULL OR array_length(warm_intro_contact_ids, 1) IS NULL)")
 
     # Allowlist sort column to prevent SQL injection — validated before interpolation
     allowed_sorts = {
@@ -425,22 +420,22 @@ def get_research_results(
     safe_dir = "DESC" if sort_dir.lower() == "desc" else "ASC"
 
     # Build the full query with safe column name (from allowlist, not user input)
-    count_sql = f"SELECT COUNT(*) AS cnt FROM research_results WHERE {where_clause}"
+    count_sql = f"SELECT COUNT(*) AS cnt FROM research_results {qb.where_clause}"
     select_sql = f"""SELECT id, job_id, company_id, company_name, company_website,
                        crypto_score, category, evidence_summary,
                        warm_intro_contact_ids, warm_intro_notes, status,
                        discovered_contacts_json, created_at
                 FROM research_results
-                WHERE {where_clause}
+                {qb.where_clause}
                 ORDER BY {safe_sort} {safe_dir} NULLS LAST
                 LIMIT %s OFFSET %s"""
 
     with get_cursor(conn) as cur:
-        cur.execute(count_sql, params)
+        cur.execute(count_sql, qb.params)
         total = cur.fetchone()["cnt"]
 
         offset = (page - 1) * per_page
-        cur.execute(select_sql, [*params, per_page, offset])
+        cur.execute(select_sql, [*qb.params, per_page, offset])
         results = [dict(row) for row in cur.fetchall()]
 
     return {
@@ -613,25 +608,23 @@ def export_research_results(
         if not cur.fetchone():
             raise HTTPException(404, "Research job not found")
 
-        where_parts = ["job_id = %s"]
-        params: list = [job_id]
+        qb = QueryBuilder()
+        qb.add_condition("job_id = %s", job_id)
 
         if min_score is not None:
-            where_parts.append("crypto_score >= %s")
-            params.append(min_score)
+            qb.add_condition("crypto_score >= %s", min_score)
         if categories:
             cat_list = [c.strip() for c in categories.split(",")]
-            where_parts.append("category = ANY(%s)")
-            params.append(cat_list)
+            qb.add_condition("category = ANY(%s)", cat_list)
 
         cur.execute(
             f"""SELECT company_name, company_website, crypto_score, category,
                        evidence_summary, classification_reasoning,
                        discovered_contacts_json, warm_intro_notes
                 FROM research_results
-                WHERE {' AND '.join(where_parts)}
+                {qb.where_clause}
                 ORDER BY crypto_score DESC NULLS LAST""",
-            params,
+            qb.params,
         )
         rows = cur.fetchall()
 

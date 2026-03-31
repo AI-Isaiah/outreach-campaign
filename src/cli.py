@@ -1,8 +1,6 @@
-import json
 import logging
 import os
 from contextlib import contextmanager
-from pathlib import Path
 
 import psycopg2
 import typer
@@ -119,37 +117,21 @@ def verify():
 @app.command()
 def stats():
     """Show database statistics."""
-    from src.models.database import get_cursor
+    from src.commands.stats import get_db_stats
 
     with cli_db() as conn:
-        with get_cursor(conn) as cur:
-            cur.execute("SELECT COUNT(*) AS cnt FROM companies WHERE user_id = %s", (CLI_USER_ID,))
-            companies = cur.fetchone()["cnt"]
-            cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE user_id = %s", (CLI_USER_ID,))
-            contacts = cur.fetchone()["cnt"]
-            cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE is_gdpr = true AND user_id = %s", (CLI_USER_ID,))
-            gdpr = cur.fetchone()["cnt"]
-            cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE email_status = 'valid' AND user_id = %s", (CLI_USER_ID,))
-            verified = cur.fetchone()["cnt"]
-            cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE email_status = 'invalid' AND user_id = %s", (CLI_USER_ID,))
-            invalid = cur.fetchone()["cnt"]
-            cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE email_status = 'unverified' AND user_id = %s", (CLI_USER_ID,))
-            unverified = cur.fetchone()["cnt"]
-            cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE email_normalized IS NOT NULL AND user_id = %s", (CLI_USER_ID,))
-            with_email = cur.fetchone()["cnt"]
-            cur.execute("SELECT COUNT(*) AS cnt FROM contacts WHERE linkedin_url IS NOT NULL AND linkedin_url != '' AND user_id = %s", (CLI_USER_ID,))
-            with_linkedin = cur.fetchone()["cnt"]
+        s = get_db_stats(conn, user_id=CLI_USER_ID)
 
         console.print("[bold]Database Statistics[/bold]")
-        console.print(f"  Companies:      {companies}")
-        console.print(f"  Contacts:       {contacts}")
-        console.print(f"    With email:   {with_email}")
-        console.print(f"    With LinkedIn:{with_linkedin}")
-        console.print(f"    GDPR:         {gdpr}")
+        console.print(f"  Companies:      {s['companies']}")
+        console.print(f"  Contacts:       {s['contacts']}")
+        console.print(f"    With email:   {s['with_email']}")
+        console.print(f"    With LinkedIn:{s['with_linkedin']}")
+        console.print(f"    GDPR:         {s['gdpr']}")
         console.print(f"  Email status:")
-        console.print(f"    Verified:     [green]{verified}[/green]")
-        console.print(f"    Invalid:      [red]{invalid}[/red]")
-        console.print(f"    Unverified:   {unverified}")
+        console.print(f"    Verified:     [green]{s['verified']}[/green]")
+        console.print(f"    Invalid:      [red]{s['invalid']}[/red]")
+        console.print(f"    Unverified:   {s['unverified']}")
 
 
 @app.command()
@@ -268,75 +250,15 @@ def setup_sequence(
     Standard: linkedin_connect -> linkedin_message -> email_cold -> email_followup -> email_breakup
     GDPR: linkedin_connect -> linkedin_message -> email_cold -> email_final (max 2 emails)
     """
-    from src.models.campaigns import (
-        get_campaign_by_name,
-        create_template,
-        add_sequence_step,
-    )
+    from src.commands.setup_sequence import create_standard_sequence
 
     with cli_db() as conn:
-        camp = get_campaign_by_name(conn, campaign, user_id=CLI_USER_ID)
-        if not camp:
-            console.print(f"[red]ERROR: Campaign '{campaign}' not found[/red]")
-            raise typer.Exit(1)
-
-        campaign_id = camp["id"]
-
         try:
-            # Create templates
-            t_li_connect = create_template(
-                conn, f"{campaign}_li_connect", "linkedin_connect",
-                "Hi {{first_name}}, I'd like to connect regarding {{company_name}}.",
-                user_id=CLI_USER_ID,
-            )
-            t_li_message = create_template(
-                conn, f"{campaign}_li_message", "linkedin_message",
-                "Hi {{first_name}}, following up on my connection request.",
-                user_id=CLI_USER_ID,
-            )
-            t_email_cold = create_template(
-                conn, f"{campaign}_email_cold", "email",
-                "Hello {{first_name}},\n\nI wanted to reach out regarding...",
-                subject="Quick introduction", user_id=CLI_USER_ID,
-            )
-
-            # Step 1: LinkedIn connect (day 0)
-            add_sequence_step(conn, campaign_id, 1, "linkedin_connect", t_li_connect, delay_days=0, user_id=CLI_USER_ID)
-            # Step 2: LinkedIn message (day 3)
-            add_sequence_step(conn, campaign_id, 2, "linkedin_message", t_li_message, delay_days=3, user_id=CLI_USER_ID)
-            # Step 3: Cold email (day 5)
-            add_sequence_step(conn, campaign_id, 3, "email", t_email_cold, delay_days=5, user_id=CLI_USER_ID)
-
-            if gdpr:
-                # GDPR: max 2 emails total
-                t_email_final = create_template(
-                    conn, f"{campaign}_email_final", "email",
-                    "Hi {{first_name}},\n\nJust a final note...",
-                    subject="Final note", user_id=CLI_USER_ID,
-                )
-                add_sequence_step(conn, campaign_id, 4, "email", t_email_final, delay_days=7, user_id=CLI_USER_ID)
-                console.print(f"[green]Set up GDPR sequence for '{campaign}' (4 steps, max 2 emails)[/green]")
+            result = create_standard_sequence(conn, campaign, gdpr, user_id=CLI_USER_ID)
+            if result["variant"] == "gdpr":
+                console.print(f"[green]Set up GDPR sequence for '{campaign}' ({result['step_count']} steps, max 2 emails)[/green]")
             else:
-                # Standard: 3 emails total
-                t_email_followup = create_template(
-                    conn, f"{campaign}_email_followup", "email",
-                    "Hi {{first_name}},\n\nFollowing up on my previous email...",
-                    subject="Following up", user_id=CLI_USER_ID,
-                )
-                t_email_breakup = create_template(
-                    conn, f"{campaign}_email_breakup", "email",
-                    "Hi {{first_name}},\n\nI understand you're busy...",
-                    subject="Last note", user_id=CLI_USER_ID,
-                )
-                add_sequence_step(
-                    conn, campaign_id, 4, "email", t_email_followup,
-                    delay_days=7, non_gdpr_only=True, user_id=CLI_USER_ID,
-                )
-                add_sequence_step(
-                    conn, campaign_id, 5, "email", t_email_breakup,
-                    delay_days=14, non_gdpr_only=True, user_id=CLI_USER_ID,
-                )
-                console.print(f"[green]Set up standard sequence for '{campaign}' (5 steps)[/green]")
+                console.print(f"[green]Set up standard sequence for '{campaign}' ({result['step_count']} steps)[/green]")
         except (psycopg2.Error, ValueError) as e:
             console.print(f"[red]ERROR: {e}[/red]")
             raise typer.Exit(1)
@@ -356,71 +278,18 @@ def enroll(
     is enrolled. Contacts are enrolled in AUM descending order (highest
     value targets first).
     """
-    from datetime import date as date_mod
-    from src.models.campaigns import get_campaign_by_name, enroll_contact
-    from src.models.database import get_cursor
+    from src.commands.enroll import enroll_contacts
 
     with cli_db() as conn:
-        camp = get_campaign_by_name(conn, campaign, user_id=CLI_USER_ID)
-        if not camp:
-            console.print(f"[red]ERROR: Campaign '{campaign}' not found[/red]")
+        try:
+            result = enroll_contacts(
+                conn, campaign, user_id=CLI_USER_ID,
+                limit=limit, max_aum=max_aum, min_aum=min_aum,
+            )
+            console.print(f"[green]Enrolled {result['enrolled_count']} contacts into '{campaign}'{result['aum_filter']}[/green]")
+        except ValueError as e:
+            console.print(f"[red]ERROR: {e}[/red]")
             raise typer.Exit(1)
-
-        campaign_id = camp["id"]
-
-        # Find rank-1 eligible contacts per company (not already enrolled)
-        query = """
-        SELECT c.id, c.company_id, co.aum_millions
-        FROM contacts c
-        LEFT JOIN companies co ON co.id = c.company_id
-        WHERE c.priority_rank = 1
-          AND c.unsubscribed = false
-          AND (
-              (c.email_normalized IS NOT NULL AND c.email_normalized != '')
-              OR (c.linkedin_url IS NOT NULL AND c.linkedin_url != '')
-          )
-          AND c.id NOT IN (
-              SELECT contact_id FROM contact_campaign_status WHERE campaign_id = %s
-          )
-        """
-        params: list = [campaign_id]
-
-        if max_aum is not None:
-            query += " AND (co.aum_millions IS NULL OR co.aum_millions < %s)"
-            params.append(max_aum)
-
-        if min_aum is not None:
-            query += " AND co.aum_millions IS NOT NULL AND co.aum_millions >= %s"
-            params.append(min_aum)
-
-        # Order by AUM descending (NULLs last) so highest-value targets enroll first
-        query += " ORDER BY CASE WHEN co.aum_millions IS NULL THEN 1 ELSE 0 END, co.aum_millions DESC"
-
-        if limit is not None:
-            query += " LIMIT %s"
-            params.append(limit)
-
-        with get_cursor(conn) as cur:
-            cur.execute(query, params)
-            rows = cur.fetchall()
-
-        enrolled_count = 0
-        today = date_mod.today().isoformat()
-        for row in rows:
-            result = enroll_contact(conn, row["id"], campaign_id, next_action_date=today, user_id=CLI_USER_ID)
-            if result is not None:
-                enrolled_count += 1
-
-        aum_filter = ""
-        if max_aum is not None or min_aum is not None:
-            parts = []
-            if min_aum is not None:
-                parts.append(f"min ${min_aum:,.0f}M")
-            if max_aum is not None:
-                parts.append(f"max ${max_aum:,.0f}M")
-            aum_filter = f" (AUM filter: {', '.join(parts)})"
-
-        console.print(f"[green]Enrolled {enrolled_count} contacts into '{campaign}'{aum_filter}[/green]")
 
 
 @app.command()
@@ -436,23 +305,16 @@ def send(
     shows a preview, and asks for confirmation before sending.
     """
     from rich.table import Table
-    from src.models.campaigns import get_campaign_by_name
-    from src.services.priority_queue import get_daily_queue
-    from src.services.email_sender import send_campaign_email
+    from src.commands.send import get_email_queue, send_emails
 
     with cli_db() as conn:
-        camp = get_campaign_by_name(conn, campaign, user_id=CLI_USER_ID)
-        if not camp:
-            console.print(f"[red]ERROR: Campaign '{campaign}' not found[/red]")
+        try:
+            queue_data = get_email_queue(conn, campaign, user_id=CLI_USER_ID, limit=limit, date=date)
+        except ValueError as e:
+            console.print(f"[red]ERROR: {e}[/red]")
             raise typer.Exit(1)
 
-        campaign_id = camp["id"]
-
-        # Get today's queue (all channels)
-        queue_items = get_daily_queue(conn, campaign_id, target_date=date, limit=limit, user_id=CLI_USER_ID)
-
-        # Filter to email-channel only
-        email_items = [item for item in queue_items if item["channel"] == "email"]
+        email_items = queue_data["email_items"]
 
         if not email_items:
             console.print("[yellow]No email actions queued for today.[/yellow]")
@@ -488,26 +350,9 @@ def send(
         # Ask for confirmation
         typer.confirm(f"Send {len(email_items)} email(s)?", abort=True)
 
-        # Load SMTP config
         config = _load_config()
-
-        sent = 0
-        failed = 0
-        for item in email_items:
-            success = send_campaign_email(
-                conn,
-                item["contact_id"],
-                campaign_id,
-                item["template_id"],
-                config,
-                user_id=CLI_USER_ID,
-            )
-            if success:
-                sent += 1
-            else:
-                failed += 1
-
-        console.print(f"[green]Sent: {sent}[/green]  [red]Failed: {failed}[/red]")
+        result = send_emails(conn, queue_data["campaign_id"], email_items, config, user_id=CLI_USER_ID)
+        console.print(f"[green]Sent: {result['sent']}[/green]  [red]Failed: {result['failed']}[/red]")
 
 
 @app.command()
@@ -524,108 +369,19 @@ def status(
         outreach status reply john@fund.com negative
         outreach status reply john@fund.com call-booked
     """
-    from src.models.database import get_cursor
-    from src.models.campaigns import (
-        get_campaign_by_name,
-        get_contact_campaign_status,
-    )
-    from src.models.events import log_event
-    from src.services.state_machine import transition_contact, InvalidTransition
-
-    if action != "reply":
-        console.print(f"[red]ERROR: Unknown action '{action}'. Supported: reply[/red]")
-        raise typer.Exit(1)
-
-    outcome_map = {
-        "positive": "replied_positive",
-        "negative": "replied_negative",
-        "call-booked": "replied_positive",
-        "no-response": "no_response",
-    }
-    if outcome not in outcome_map:
-        console.print(f"[red]ERROR: Unknown outcome '{outcome}'. Supported: {', '.join(outcome_map.keys())}[/red]")
-        raise typer.Exit(1)
+    from src.commands.status import log_reply
+    from src.services.state_machine import InvalidTransition
 
     with cli_db() as conn:
-        # Find the contact
-        with get_cursor(conn) as cur:
-            if identifier.isdigit():
-                cur.execute(
-                    "SELECT id, email, full_name FROM contacts WHERE id = %s AND user_id = %s",
-                    (int(identifier), CLI_USER_ID),
-                )
-                contact_row = cur.fetchone()
-            else:
-                cur.execute(
-                    "SELECT id, email, full_name FROM contacts WHERE (email = %s OR email_normalized = %s) AND user_id = %s",
-                    (identifier, identifier.lower().strip(), CLI_USER_ID),
-                )
-                contact_row = cur.fetchone()
-
-            if contact_row is None:
-                console.print(f"[red]ERROR: Contact '{identifier}' not found[/red]")
-                raise typer.Exit(1)
-
-            contact_id = contact_row["id"]
-
-            # Find the campaign
-            if campaign:
-                camp = get_campaign_by_name(conn, campaign, user_id=CLI_USER_ID)
-                if not camp:
-                    console.print(f"[red]ERROR: Campaign '{campaign}' not found[/red]")
-                    raise typer.Exit(1)
-                campaign_id = camp["id"]
-            else:
-                # Use first active campaign this contact is enrolled in
-                cur.execute(
-                    """SELECT ccs.campaign_id FROM contact_campaign_status ccs
-                       JOIN campaigns c ON c.id = ccs.campaign_id
-                       WHERE ccs.contact_id = %s AND c.status = 'active'
-                       ORDER BY ccs.id DESC LIMIT 1""",
-                    (contact_id,),
-                )
-                row = cur.fetchone()
-                if row is None:
-                    console.print(f"[red]ERROR: Contact is not enrolled in any active campaign[/red]")
-                    raise typer.Exit(1)
-                campaign_id = row["campaign_id"]
-
-        # Ensure contact is in_progress before transitioning
-        ccs = get_contact_campaign_status(conn, contact_id, campaign_id, user_id=CLI_USER_ID)
-        if ccs is None:
-            console.print(f"[red]ERROR: Contact is not enrolled in campaign {campaign_id}[/red]")
-            raise typer.Exit(1)
-
-        # If currently queued, auto-advance to in_progress first
-        if ccs["status"] == "queued":
-            try:
-                transition_contact(conn, contact_id, campaign_id, "in_progress", user_id=CLI_USER_ID)
-            except InvalidTransition as e:
-                console.print(f"[red]ERROR: {e}[/red]")
-                raise typer.Exit(1)
-
-        # Apply the transition
-        new_status = outcome_map[outcome]
         try:
-            transition_contact(conn, contact_id, campaign_id, new_status, user_id=CLI_USER_ID)
-        except InvalidTransition as e:
+            result = log_reply(
+                conn, action, identifier, outcome,
+                user_id=CLI_USER_ID, campaign_name=campaign,
+            )
+            console.print(f"[green]Logged '{result['outcome']}' for {result['contact_name']} -> status: {result['new_status']}[/green]")
+        except (ValueError, InvalidTransition) as e:
             console.print(f"[red]ERROR: {e}[/red]")
             raise typer.Exit(1)
-
-        # Log extra metadata for call-booked
-        if outcome == "call-booked":
-            log_event(
-                conn,
-                contact_id,
-                "call_booked",
-                campaign_id=campaign_id,
-                metadata=json.dumps({"call_booked": True}),
-                user_id=CLI_USER_ID,
-            )
-
-        conn.commit()
-        contact_name = contact_row["full_name"] or contact_row["email"] or str(contact_id)
-        console.print(f"[green]Logged '{outcome}' for {contact_name} -> status: {new_status}[/green]")
 
 
 @app.command()
@@ -743,22 +499,20 @@ def report(
     """Full campaign report dashboard."""
     from rich.panel import Panel
     from rich.table import Table
-    from src.models.campaigns import get_campaign_by_name
-    from src.services.metrics import (
-        get_campaign_metrics,
-        get_variant_comparison,
-        get_weekly_summary,
-        get_company_type_breakdown,
-    )
+    from src.commands.report import get_campaign_report
 
     with cli_db() as conn:
-        camp = get_campaign_by_name(conn, campaign, user_id=CLI_USER_ID)
-        if not camp:
-            console.print(f"[red]ERROR: Campaign '{campaign}' not found[/red]")
+        try:
+            data = get_campaign_report(conn, campaign, user_id=CLI_USER_ID)
+        except ValueError as e:
+            console.print(f"[red]ERROR: {e}[/red]")
             raise typer.Exit(1)
 
-        campaign_id = camp["id"]
-        metrics = get_campaign_metrics(conn, campaign_id, user_id=CLI_USER_ID)
+        camp = data["campaign"]
+        metrics = data["metrics"]
+        weekly = data["weekly"]
+        variants = data["variants"]
+        firm_breakdown = data["firm_breakdown"]
 
         # Header
         console.print(
@@ -791,7 +545,6 @@ def report(
         console.print(Panel("\n".join(overview_lines), title="Overall Metrics"))
 
         # Weekly Summary
-        weekly = get_weekly_summary(conn, campaign_id, weeks_back=1, user_id=CLI_USER_ID)
         weekly_lines = [
             f"  Period:            {weekly['period']}",
             f"  Emails sent:       {weekly['emails_sent']}",
@@ -804,7 +557,6 @@ def report(
         console.print(Panel("\n".join(weekly_lines), title="This Week"))
 
         # Variant Comparison
-        variants = get_variant_comparison(conn, campaign_id, user_id=CLI_USER_ID)
         if variants:
             vt = Table(title="A/B Variant Comparison")
             vt.add_column("Variant", style="bold")
@@ -830,7 +582,6 @@ def report(
             console.print("[dim]No A/B variant data available.[/dim]")
 
         # Company Type Breakdown
-        firm_breakdown = get_company_type_breakdown(conn, campaign_id, user_id=CLI_USER_ID)
         if firm_breakdown:
             ft = Table(title="Reply Rate by Firm Type")
             ft.add_column("Firm Type", style="bold")

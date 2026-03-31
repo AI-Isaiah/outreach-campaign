@@ -168,7 +168,7 @@ def test_research_web_search_success(mock_post):
 
 # ---------- Website Crawl ----------
 
-@patch("src.services.crypto_research.httpx.get")
+@patch("src.services.crypto_web_scraper.httpx.get")
 def test_crawl_website(mock_get):
     mock_resp = MagicMock()
     mock_resp.status_code = 200
@@ -184,7 +184,7 @@ def test_crawl_no_website():
 
 
 def test_crawl_no_http_prefix():
-    with patch("src.services.crypto_research.httpx.get") as mock_get:
+    with patch("src.services.crypto_web_scraper.httpx.get") as mock_get:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.text = "<p>content</p>"

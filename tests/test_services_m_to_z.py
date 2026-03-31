@@ -1774,7 +1774,7 @@ class TestAnalyzeCSVMocked:
         from src.services.smart_import import analyze_csv
         conn = _conn(tmp_db)
         with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test"}, clear=False):
-            with patch("src.services.smart_import.call_llm", return_value=("not json", "anthropic")):
+            with patch("src.services.smart_import_llm.call_llm", return_value=("not json", "anthropic")):
                 result = analyze_csv(
                     headers=["Firm Name"],
                     sample_rows=[{"Firm Name": "Acme"}],

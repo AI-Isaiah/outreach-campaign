@@ -210,7 +210,7 @@ def get_next_step_for_contact(
     campaign_id: int,
     *,
     user_id: int,
-):
+) -> dict | None:
     """Return the sequence_step row for the contact's next action, or None.
 
     Looks at the contact's current_step in contact_campaign_status, then finds
